@@ -287,13 +287,15 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     });
     await executeInitExecutionPlan(plan);
 
-    // W3-C + S2 terminal set: archive/review + store/sync + recall-playbook.
+    // W3-C + S2 + W9 terminal set: archive/review + store/sync/config shims +
+    // recall-playbook.
     for (const skill of [
       "fabric-archive",
       "fabric-review",
       "fabric-sync",
       "fabric-store",
       "fabric-recall-playbook",
+      "fabric-config",
     ]) {
       expect(
         existsSync(join(target, ".claude/skills", skill, "SKILL.md")),

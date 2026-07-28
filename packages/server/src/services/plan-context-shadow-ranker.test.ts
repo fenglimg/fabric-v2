@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   STORE_LAYOUT,
+  loadGlobalConfig,
   resolveGlobalRoot,
   saveGlobalConfig,
   storeRelativePathForMount,
@@ -115,19 +116,23 @@ async function createProject(fusion: "additive" | "rrf" | "auto"): Promise<strin
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-shadow-ranker-proj-"));
   tempDirs.push(projectRoot);
   await mkdir(join(projectRoot, ".fabric"), { recursive: true });
+  // config-single-home W2: the repo file carries identity only; fusion / ratio /
+  // top_k are preference-class knobs and resolve from the global policy layer.
   await writeFile(
     join(projectRoot, ".fabric", "fabric-config.json"),
-    `${JSON.stringify(
-      {
-        required_stores: [{ id: "team" }],
-        fusion,
-        recall_relevance_ratio: 0,
-        plan_context_top_k: 100,
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
   );
+  const current = loadGlobalConfig();
+  saveGlobalConfig({
+    uid: current?.uid ?? "test-uid",
+    stores: current?.stores ?? [],
+    defaults: {
+      ...(current?.defaults ?? {}),
+      fusion,
+      recall_relevance_ratio: 0,
+      plan_context_top_k: 100,
+    },
+  });
   return projectRoot;
 }
 

@@ -81,6 +81,11 @@ const SKILL_SYNC_TEMPLATE_REL = "skills/fabric-sync/SKILL.md";
 const SKILL_STORE_TEMPLATE_REL = "skills/fabric-store/SKILL.md";
 // S2 (sivtr inspiration): retrieval protocol playbook for agents.
 const SKILL_RECALL_PLAYBOOK_TEMPLATE_REL = "skills/fabric-recall-playbook/SKILL.md";
+// config-single-home W9: config checkup + conversational tuning. Thin shim over
+// `fabric config` — it translates what a user FEELS ("too noisy") into the key
+// and the layer, and reads the localized copy straight off `--list --json` so
+// there is no second description of a knob to drift.
+const SKILL_CONFIG_TEMPLATE_REL = "skills/fabric-config/SKILL.md";
 const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // rc.6 TASK-019 (E1): SessionStart broad-injection hook script. Sibling to
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
@@ -157,6 +162,11 @@ export const SKILL_DESTINATIONS = {
     ".claude/skills/fabric-recall-playbook/SKILL.md",
     ".codex/skills/fabric-recall-playbook/SKILL.md",
   ],
+  // config-single-home W9: config checkup + conversational tuning.
+  fabricConfig: [
+    ".claude/skills/fabric-config/SKILL.md",
+    ".codex/skills/fabric-config/SKILL.md",
+  ],
 } as const;
 
 type FabricSkillInstallSpec = {
@@ -199,6 +209,12 @@ const FABRIC_SKILL_INSTALL_SPECS = {
     templateRel: SKILL_RECALL_PLAYBOOK_TEMPLATE_REL,
     destinations: SKILL_DESTINATIONS.fabricRecallPlaybook,
     step: "skill-recall-playbook",
+  },
+  fabricConfig: {
+    slug: "fabric-config",
+    templateRel: SKILL_CONFIG_TEMPLATE_REL,
+    destinations: SKILL_DESTINATIONS.fabricConfig,
+    step: "skill-config",
   },
 } as const satisfies Record<keyof typeof SKILL_DESTINATIONS, FabricSkillInstallSpec>;
 
@@ -565,6 +581,19 @@ export async function installFabricRecallPlaybookSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricRecallPlaybook);
+}
+
+/**
+ * config-single-home W9: install the config checkup / conversational-tuning
+ * skill. Same single-file shim path as store/sync — the CLI does the work; the
+ * skill only translates a feeling into a key and reads its explanations off
+ * `fabric config --list --json`.
+ */
+export async function installFabricConfigSkill(
+  projectRoot: string,
+  _options: InstallOptions = {},
+): Promise<InstallStepResult[]> {
+  return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricConfig);
 }
 
 /**

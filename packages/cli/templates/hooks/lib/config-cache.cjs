@@ -18,12 +18,22 @@
  *   - readGlobalConfig() → object
  *       Parsed ~/.fabric/fabric-global.json (or $FABRIC_HOME equivalent),
  *       with the same cache and never-throw behavior.
- *   - readConfigNumber(root, key, fallback, { min, max, integer, globalFallback }) → number
- *   - readConfigBoolean(root, key, fallback, { globalFallback }) → boolean
- *   - readConfigString(root, key, fallback, { globalFallback }) → string
- *       Typed getters with inline range/shape validation; any miss → fallback.
+ *   - readConfigNumber(root, key, fallback, { min, max, integer }) → number
+ *   - readConfigBoolean(root, key, fallback) → boolean
+ *   - readConfigString(root, key, fallback) → string
+ *       PREFERENCE-class getters. Resolution order:
+ *         global.projects[<project_id>] > global.defaults > fallback
+ *       CORPUS-class knobs are NOT served here — they live in the store and are
+ *       read via the sibling `store-config-reader.cjs` (single owner for the
+ *       store-config read + team-store root resolution).
  *   - configPathFor(projectRoot) → absolute config path
  *   - clearConfigCache() → void   (test helper)
+ *
+ * config-single-home W3: the repo config carries IDENTITY only, so the typed
+ * getters no longer read it — `readConfig()` remains for identity lookups
+ * (project_id / workspace_binding_id / store bindings). A policy key left behind
+ * in a repo config is inert, matching the server-side cascade exactly, so there
+ * is no "works in the hook but not in recall" split-brain.
  *
  * Never-throw contract: every export degrades to its fallback rather than
  * throwing, preserving the reminder-layer hook invariant (KT-DEC-0007: hooks
@@ -75,7 +85,14 @@ function readConfig(projectRoot) {
  * Returns {} on any failure. Never throws.
  */
 function readGlobalConfig() {
-  const globalRoot = process.env.FABRIC_HOME || join(homedir(), ".fabric");
+  // FABRIC_HOME is a $HOME stand-in, so the `.fabric` segment is ALWAYS appended
+  // — matching shared's resolveGlobalRoot and the sibling
+  // bindings-snapshot-reader.cjs. The previous form (`FABRIC_HOME || join(home,
+  // ".fabric")`) treated FABRIC_HOME as the global root itself, so under any
+  // isolated home (tests / CI / sandboxes) this reader looked one level too high
+  // and silently found no config. Invisible in production only because nothing
+  // sets FABRIC_HOME there.
+  const globalRoot = join(process.env.FABRIC_HOME || homedir(), ".fabric");
   const path = join(globalRoot, GLOBAL_CONFIG_FILE);
   let mtime;
   try {
@@ -104,56 +121,72 @@ function clearConfigCache() {
   _cache.clear();
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * The two PREFERENCE-class policy segments, most-specific first.
+ * `projects[<project_id>]` = this repo's exceptions; `defaults` = machine-wide.
+ * project_id comes from the repo config, which is exactly what it still owns.
+ */
+function readPolicy(projectRoot) {
+  const global = readGlobalConfig();
+  const defaults = isPlainObject(global.defaults) ? global.defaults : {};
+  const projects = isPlainObject(global.projects) ? global.projects : {};
+  const projectId = readConfig(projectRoot).project_id;
+  const scoped =
+    typeof projectId === "string" && projectId !== "" && isPlainObject(projects[projectId])
+      ? projects[projectId]
+      : {};
+  return [scoped, defaults];
+}
+
 // opts:
-//   min / max          — inclusive range; out-of-range → fallback
-//   integer            — require Number.isInteger; non-integer → fallback (strict)
-//   floor              — accept any in-range number, return Math.floor(v) (lenient)
-//   globalFallback     — try ~/.fabric/fabric-global.json between project and fallback
+//   min / max   — inclusive range; out-of-range → fallback
+//   integer     — require Number.isInteger; non-integer → fallback (strict)
+//   floor       — accept any in-range number, return Math.floor(v) (lenient)
 // `integer` and `floor` are independent: `integer` rejects fractional values,
 // `floor` truncates them. Pick whichever matches the caller's legacy contract.
-function readConfigNumber(projectRoot, key, fallback, opts) {
-  const { min, max, integer, floor, globalFallback } = opts || {};
-  function validate(v) {
+function numberValidator(opts) {
+  const { min, max, integer, floor } = opts || {};
+  return (v) => {
     if (typeof v !== "number" || !Number.isFinite(v)) return undefined;
     if (integer && !Number.isInteger(v)) return undefined;
     if (typeof min === "number" && v < min) return undefined;
     if (typeof max === "number" && v > max) return undefined;
     return floor ? Math.floor(v) : v;
-  }
-  const projVal = validate(readConfig(projectRoot)[key]);
-  if (projVal !== undefined) return projVal;
-  if (globalFallback) {
-    const globalVal = validate(readGlobalConfig()[key]);
-    if (globalVal !== undefined) return globalVal;
-  }
-  return fallback;
+  };
 }
 
-function readConfigBoolean(projectRoot, key, fallback, opts) {
-  const { globalFallback } = opts || {};
-  const v = readConfig(projectRoot)[key];
-  if (typeof v === "boolean") return v;
-  if (globalFallback) {
-    const gv = readGlobalConfig()[key];
-    if (typeof gv === "boolean") return gv;
+function firstValid(layers, key, validate) {
+  for (const layer of layers) {
+    const candidate = validate(layer[key]);
+    if (candidate !== undefined) return candidate;
   }
-  return fallback;
+  return undefined;
 }
 
-function readConfigString(projectRoot, key, fallback, opts) {
-  const { globalFallback } = opts || {};
-  const v = readConfig(projectRoot)[key];
-  if (typeof v === "string" && v.length > 0) return v;
-  if (globalFallback) {
-    const gv = readGlobalConfig()[key];
-    if (typeof gv === "string" && gv.length > 0) return gv;
-  }
-  return fallback;
+function readConfigNumber(projectRoot, key, fallback, opts) {
+  const validate = numberValidator(opts);
+  return firstValid(readPolicy(projectRoot), key, validate) ?? fallback;
+}
+
+function readConfigBoolean(projectRoot, key, fallback) {
+  const validate = (v) => (typeof v === "boolean" ? v : undefined);
+  const found = firstValid(readPolicy(projectRoot), key, validate);
+  return found === undefined ? fallback : found;
+}
+
+function readConfigString(projectRoot, key, fallback) {
+  const validate = (v) => (typeof v === "string" && v.length > 0 ? v : undefined);
+  return firstValid(readPolicy(projectRoot), key, validate) ?? fallback;
 }
 
 module.exports = {
   readConfig,
   readGlobalConfig,
+  readPolicy,
   clearConfigCache,
   readConfigNumber,
   readConfigBoolean,

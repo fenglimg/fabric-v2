@@ -13,24 +13,5 @@
       "store": "fabric-team"
     }
   ],
-  "default_write_store": "fabric-team",
-  "default_layer_filter": "both",
-  "archive_hint_cooldown_hours": 12,
-  "underseed_node_threshold": 10,
-  "archive_edit_threshold": 20,
-  "archive_hint_hours": 24,
-  "review_hint_pending_count": 10,
-  "review_hint_pending_age_days": 7,
-  "maintenance_hint_days": 14,
-  "maintenance_hint_cooldown_days": 7,
-  "review_stale_pending_days": 14,
-  "broad_index_backstop": 100,
-  "nudge_mode": "normal",
-  "cite_recall_nudge": true,
-  "onboard_slots_opted_out": [],
-  "cite_policy_enabled": true,
-  "self_archive_policy_enabled": true,
-  "embed_enabled": true,
-  "embed_weight": 30,
-  "embed_model": "fast-bge-small-zh-v1.5"
+  "default_write_store": "fabric-team"
 }

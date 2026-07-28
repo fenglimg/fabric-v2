@@ -51,6 +51,16 @@ export const resolvedBindingsSnapshotSchema = z
     // fresh regardless of how store content changed (the underseed / review-
     // backlog false-positive root cure; pairs with knowledge_stats above).
     knowledge_store_dirs: z.array(z.string().min(1)).optional(),
+    // config-single-home W3: resolved absolute ROOT dir of the WRITE-TARGET store
+    // — the single home of every CORPUS-class config knob (`store-config.json`
+    // sits directly under it). Hooks need this to resolve corpus knobs without
+    // re-implementing store path resolution.
+    //
+    // Deliberately its OWN field rather than an index into `knowledge_store_dirs`:
+    // that array is read-set-ordered and carries no uuid, so pairing it with
+    // `write_target` would rely on an implicit positional contract that nothing
+    // enforces. Absent when no write target resolves (personal-only / unbound).
+    write_target_store_dir: z.string().min(1).optional(),
   })
   .strict();
 

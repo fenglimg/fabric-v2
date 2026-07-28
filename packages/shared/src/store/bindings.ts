@@ -202,6 +202,21 @@ export function writeBindingsSnapshot(
 
   const { stats, storeDirs } = collectKnowledgeStats(options.globalRoot, options.resolveInput, read_set);
 
+  // config-single-home W3: pre-resolve the write-target store ROOT so hooks can
+  // read its `store-config.json` (the home of every corpus knob) without
+  // re-implementing mount-path resolution. Same algorithm as collectKnowledgeStats.
+  const writeTargetStoreDir =
+    target === null
+      ? undefined
+      : join(
+          options.globalRoot,
+          storeRelativePathForMount(
+            options.resolveInput.mountedStores.find(
+              (entry) => entry.store_uuid === target.store_uuid,
+            ) ?? { store_uuid: target.store_uuid },
+          ),
+        );
+
   const snapshot: ResolvedBindingsSnapshot = resolvedBindingsSnapshotSchema.parse({
     version: 1,
     project_id: options.projectId,
@@ -211,6 +226,7 @@ export function writeBindingsSnapshot(
     write_target: target,
     knowledge_stats: stats,
     knowledge_store_dirs: storeDirs,
+    ...(writeTargetStoreDir !== undefined ? { write_target_store_dir: writeTargetStoreDir } : {}),
   });
 
   const path = bindingsSnapshotPath(options.globalRoot, snapshot.workspace_binding_id);

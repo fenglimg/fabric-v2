@@ -1,13 +1,14 @@
 /**
- * config-layering W3 (TASK-004): env > project > store > default cascade for the
- * two store-overridable HOOK knobs, wired via the single-owner
+ * config-single-home W4: env > store > default cascade for the two CORPUS HOOK knobs, wired via the single-owner
  * store-config-reader.cjs. Covers all THREE reader seams:
  *   - knowledge-hint-broad.cjs readBroadIndexBackstop  (broad_index_backstop)
  *   - knowledge-hint-broad.cjs readUnderseedThreshold  (underseed_node_threshold)
  *   - lib/hint-config.cjs       readUnderseedThreshold  (underseed, fabric-hint path)
  *
  * The STORE layer is reached through a written resolved-bindings snapshot (the
- * hook NEVER re-resolves stores). project always wins over store (C-004).
+ * hook NEVER re-resolves stores). There is NO project layer for these knobs —
+ * they describe the corpus, so the store is their only home and a value left in
+ * a repo config is inert.
  */
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -112,13 +113,13 @@ function setup(opts: { projectKnobs?: object; storeConfig?: object | string | nu
   return projectRoot;
 }
 
-describe("readBroadIndexBackstop — env > project > store > default (20..500)", () => {
+describe("readBroadIndexBackstop — env > store > default (20..500)", () => {
   it("env-only wins", () => {
     process.env.FABRIC_BROAD_INDEX_BACKSTOP = "120";
     expect(broadHook.readBroadIndexBackstop(setup({}))).toBe(120);
   });
-  it("project-only", () => {
-    expect(broadHook.readBroadIndexBackstop(setup({ projectKnobs: { broad_index_backstop: 80 } }))).toBe(80);
+  it("a value left in the repo config is inert", () => {
+    expect(broadHook.readBroadIndexBackstop(setup({ projectKnobs: { broad_index_backstop: 80 } }))).toBe(50);
   });
   it("store-only", () => {
     expect(broadHook.readBroadIndexBackstop(setup({ storeConfig: { broad_index_backstop: 40 } }))).toBe(40);
@@ -129,12 +130,12 @@ describe("readBroadIndexBackstop — env > project > store > default (20..500)",
       broadHook.readBroadIndexBackstop(setup({ projectKnobs: { broad_index_backstop: 80 } })),
     ).toBe(120);
   });
-  it("project beats store (C-004)", () => {
+  it("the store wins over a stale repo value", () => {
     expect(
       broadHook.readBroadIndexBackstop(
         setup({ projectKnobs: { broad_index_backstop: 80 }, storeConfig: { broad_index_backstop: 40 } }),
       ),
-    ).toBe(80);
+    ).toBe(40);
   });
   it("full fallthrough → default 50", () => {
     expect(broadHook.readBroadIndexBackstop(setup({}))).toBe(50);
@@ -147,46 +148,46 @@ describe("readBroadIndexBackstop — env > project > store > default (20..500)",
   });
 });
 
-describe("readUnderseedThreshold (knowledge-hint-broad) — env > project > store > default", () => {
+describe("readUnderseedThreshold (knowledge-hint-broad) — env > store > default", () => {
   it("env-only wins", () => {
     process.env.FABRIC_UNDERSEED_NODE_THRESHOLD = "7";
     expect(broadHook.readUnderseedThreshold(setup({}))).toBe(7);
   });
-  it("project-only", () => {
-    expect(broadHook.readUnderseedThreshold(setup({ projectKnobs: { underseed_node_threshold: 4 } }))).toBe(4);
+  it("a value left in the repo config is inert", () => {
+    expect(broadHook.readUnderseedThreshold(setup({ projectKnobs: { underseed_node_threshold: 4 } }))).toBe(10);
   });
   it("store-only", () => {
     expect(broadHook.readUnderseedThreshold(setup({ storeConfig: { underseed_node_threshold: 3 } }))).toBe(3);
   });
-  it("project beats store (C-004)", () => {
+  it("the store wins over a stale repo value", () => {
     expect(
       broadHook.readUnderseedThreshold(
         setup({ projectKnobs: { underseed_node_threshold: 4 }, storeConfig: { underseed_node_threshold: 3 } }),
       ),
-    ).toBe(4);
+    ).toBe(3);
   });
   it("full fallthrough → default 10", () => {
     expect(broadHook.readUnderseedThreshold(setup({}))).toBe(10);
   });
 });
 
-describe("readUnderseedThreshold (hint-config, fabric-hint path) — env > project > store > default", () => {
+describe("readUnderseedThreshold (hint-config, fabric-hint path) — env > store > default", () => {
   it("env-only wins", () => {
     process.env.FABRIC_UNDERSEED_NODE_THRESHOLD = "9";
     expect(hintConfig.readUnderseedThreshold(setup({}))).toBe(9);
   });
-  it("project-only", () => {
-    expect(hintConfig.readUnderseedThreshold(setup({ projectKnobs: { underseed_node_threshold: 6 } }))).toBe(6);
+  it("a value left in the repo config is inert", () => {
+    expect(hintConfig.readUnderseedThreshold(setup({ projectKnobs: { underseed_node_threshold: 6 } }))).toBe(10);
   });
   it("store-only", () => {
     expect(hintConfig.readUnderseedThreshold(setup({ storeConfig: { underseed_node_threshold: 2 } }))).toBe(2);
   });
-  it("project beats store (C-004)", () => {
+  it("the store wins over a stale repo value", () => {
     expect(
       hintConfig.readUnderseedThreshold(
         setup({ projectKnobs: { underseed_node_threshold: 6 }, storeConfig: { underseed_node_threshold: 2 } }),
       ),
-    ).toBe(6);
+    ).toBe(2);
   });
   it("full fallthrough → default 10", () => {
     expect(hintConfig.readUnderseedThreshold(setup({}))).toBe(10);

@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect, afterEach } from "vitest";
 
+import { saveGlobalConfig } from "@fenglimg/fabric-shared";
 import { enforcePayloadLimit } from "@fenglimg/fabric-shared/node/mcp-payload-guard";
 import { readPayloadLimits } from "../../src/config-loader.js";
 
@@ -27,16 +28,40 @@ import { readPayloadLimits } from "../../src/config-loader.js";
 // Helpers
 // ---------------------------------------------------------------------------
 
+// config-single-home W2: mcpPayloadLimits is a PREFERENCE-class knob, so it now
+// resolves from `~/.fabric/fabric-global.json` → `defaults`, not from the repo
+// config (which carries identity only). Each case gets an isolated FABRIC_HOME.
 function makeTmp(): string {
   const dir = mkdtempSync(join(tmpdir(), "fabric-payload-guard-"));
   tempDirs.push(dir);
-  // A1 (KT-DEC-0003): config lives in `.fabric/fabric-config.json`.
   mkdirSync(join(dir, ".fabric"), { recursive: true });
+  if (originalFabricHome === undefined && !homeCaptured) {
+    originalFabricHome = process.env.FABRIC_HOME;
+    homeCaptured = true;
+  }
+  const home = join(dir, "home");
+  mkdirSync(home, { recursive: true });
+  process.env.FABRIC_HOME = home;
   return dir;
 }
 
+function writeDefaults(defaults: Record<string, unknown>): void {
+  saveGlobalConfig({ uid: "test-uid", stores: [], defaults });
+}
+
 const tempDirs: string[] = [];
+let originalFabricHome: string | undefined;
+let homeCaptured = false;
 afterEach(() => {
+  if (homeCaptured) {
+    if (originalFabricHome === undefined) {
+      delete process.env.FABRIC_HOME;
+    } else {
+      process.env.FABRIC_HOME = originalFabricHome;
+    }
+    homeCaptured = false;
+    originalFabricHome = undefined;
+  }
   for (const dir of tempDirs.splice(0)) {
     try {
       rmSync(dir, { recursive: true, force: true });
@@ -123,40 +148,42 @@ describe("I2 — MCP payload guard (enforcePayloadLimit)", () => {
 // I2: config-loader mcpPayloadLimits override path
 // ---------------------------------------------------------------------------
 
-describe("I2 — readPayloadLimits: mcpPayloadLimits from fabric.config.json", () => {
-  it("returns undefined when fabric.config.json does not exist", () => {
+describe("I2 — readPayloadLimits: mcpPayloadLimits from the global policy layer", () => {
+  it("returns undefined when no global config exists", () => {
     const root = makeTmp();
     const limits = readPayloadLimits(root);
     expect(limits).toBeUndefined();
   });
 
-  it("returns undefined when fabric.config.json has no mcpPayloadLimits key", () => {
+  it("returns undefined when the global defaults carry no mcpPayloadLimits key", () => {
     const root = makeTmp();
-    writeFileSync(join(root, ".fabric", "fabric-config.json"), JSON.stringify({ someOtherKey: true }), "utf8");
+    writeDefaults({ someOtherKey: true });
     const limits = readPayloadLimits(root);
     expect(limits).toBeUndefined();
   });
 
-  it("returns mcpPayloadLimits values when present in config", () => {
+  it("returns mcpPayloadLimits values when present in the global defaults", () => {
     const root = makeTmp();
-    writeFileSync(
-      join(root, ".fabric", "fabric-config.json"),
-      JSON.stringify({ mcpPayloadLimits: { warnBytes: 8192, hardBytes: 32768 } }),
-      "utf8",
-    );
+    writeDefaults({ mcpPayloadLimits: { warnBytes: 8192, hardBytes: 32768 } });
     const limits = readPayloadLimits(root);
     expect(limits).toBeDefined();
     expect(limits?.warnBytes).toBe(8192);
     expect(limits?.hardBytes).toBe(32768);
   });
 
-  it("override passed to enforcePayloadLimit changes the warn threshold", () => {
+  it("a value left in the repo config is inert (identity-only, clean-slate cut)", () => {
     const root = makeTmp();
     writeFileSync(
       join(root, ".fabric", "fabric-config.json"),
-      JSON.stringify({ mcpPayloadLimits: { warnBytes: 500 } }),
+      JSON.stringify({ mcpPayloadLimits: { warnBytes: 8192 } }),
       "utf8",
     );
+    expect(readPayloadLimits(root)).toBeUndefined();
+  });
+
+  it("override passed to enforcePayloadLimit changes the warn threshold", () => {
+    const root = makeTmp();
+    writeDefaults({ mcpPayloadLimits: { warnBytes: 500 } });
     const limits = readPayloadLimits(root);
     const payload = makePayload(600);
     const result = enforcePayloadLimit(payload, limits);
@@ -166,11 +193,7 @@ describe("I2 — readPayloadLimits: mcpPayloadLimits from fabric.config.json", (
 
   it("override passed to enforcePayloadLimit changes the hard limit", () => {
     const root = makeTmp();
-    writeFileSync(
-      join(root, ".fabric", "fabric-config.json"),
-      JSON.stringify({ mcpPayloadLimits: { warnBytes: 100, hardBytes: 200 } }),
-      "utf8",
-    );
+    writeDefaults({ mcpPayloadLimits: { warnBytes: 100, hardBytes: 200 } });
     const limits = readPayloadLimits(root);
     const payload = makePayload(250);
     expect(() => enforcePayloadLimit(payload, limits)).toThrow();

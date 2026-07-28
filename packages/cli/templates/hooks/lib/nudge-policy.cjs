@@ -31,7 +31,7 @@
  * behavior), nor block the hook.
  */
 
-const { readConfig, readGlobalConfig } = require("./config-cache.cjs");
+const { readPolicy } = require("./config-cache.cjs");
 
 const NUDGE_MODES = ["silent", "minimal", "normal", "verbose"];
 // G2 (GRL-STOPHOOK-AIONLY-20260709) boundary decision:
@@ -66,20 +66,15 @@ function readNudgeMode(projectRoot) {
   if (typeof envMode === "string" && NUDGE_MODES.includes(envMode)) {
     return envMode;
   }
-  // Layer 2: project config (existing behaviour). Uses readConfig cache.
+  // Layer 2/3: the global policy layer — projects[<project_id>] then defaults.
+  // config-single-home W3: nudge_mode is a preference knob, so the repo config is
+  // no longer consulted (a value left there is inert, same as every other knob).
   try {
-    const projectMode = readConfig(projectRoot).nudge_mode;
-    if (typeof projectMode === "string" && NUDGE_MODES.includes(projectMode)) {
-      return projectMode;
-    }
-  } catch {
-    // fall through
-  }
-  // Layer 3: shared machine-global config reader.
-  try {
-    const globalMode = readGlobalConfig().nudge_mode;
-    if (typeof globalMode === "string" && NUDGE_MODES.includes(globalMode)) {
-      return globalMode;
+    for (const layer of readPolicy(projectRoot)) {
+      const mode = layer.nudge_mode;
+      if (typeof mode === "string" && NUDGE_MODES.includes(mode)) {
+        return mode;
+      }
     }
   } catch {
     // fall through
@@ -89,6 +84,41 @@ function readNudgeMode(projectRoot) {
   return DEFAULT_NUDGE_MODE;
 }
 
+// ---------------------------------------------------------------------------
+// config-single-home W7 — presentation knobs DERIVED from nudge_mode.
+//
+// Six keys used to expose these numbers individually (hint_narrow_top_k,
+// hint_summary_max_len, hint_broad_cooldown_hours, hint_narrow_cooldown_hours,
+// hint_narrow_dedup_window_turns, hint_reminder_to_context). Nobody tunes six
+// numbers to say "be quieter" — they pick a volume. So the volume dial is the
+// only knob now, and it decides the numbers.
+//
+// The `normal` row is value-for-value identical to the retired per-key defaults,
+// so a workspace that never touched them sees NO behavior change. `silent` and
+// `minimal` share a row deliberately: `silent` mutes the HUMAN sink only, and
+// these numbers also shape the AI sink, which the mode must never touch
+// (flow ⊥ observation, D5).
+//
+//   narrowTopK          — max entries in one PreToolUse hint
+//   summaryMaxLen       — per-entry summary truncation (chars)
+//   broadCooldownHours  — min hours between SessionStart broad menus
+//   narrowCooldownHours — min hours between repeat per-edit hints
+// ---------------------------------------------------------------------------
+const NUDGE_PRESETS = {
+  silent: { narrowTopK: 3, summaryMaxLen: 80, broadCooldownHours: 24, narrowCooldownHours: 1 },
+  minimal: { narrowTopK: 3, summaryMaxLen: 80, broadCooldownHours: 24, narrowCooldownHours: 1 },
+  normal: { narrowTopK: 5, summaryMaxLen: 80, broadCooldownHours: 24, narrowCooldownHours: 0 },
+  verbose: { narrowTopK: 8, summaryMaxLen: 120, broadCooldownHours: 0, narrowCooldownHours: 0 },
+};
+
+/**
+ * The presentation numbers for this workspace's nudge_mode. Never throws — an
+ * unreadable config resolves to `normal`, matching readNudgeMode's contract.
+ */
+function resolveNudgePreset(projectRoot) {
+  return NUDGE_PRESETS[readNudgeMode(projectRoot)] ?? NUDGE_PRESETS[DEFAULT_NUDGE_MODE];
+}
+
 /**
  * Resolve the per-event observe.* override for one event. Returns a strict
  * boolean when explicitly set, otherwise undefined (preset decides). Tolerant of
@@ -96,10 +126,16 @@ function readNudgeMode(projectRoot) {
  */
 function readObserveOverride(projectRoot, event) {
   try {
-    const observe = readConfig(projectRoot).observe;
-    if (!observe || typeof observe !== "object") return undefined;
-    const v = observe[event];
-    return typeof v === "boolean" ? v : undefined;
+    // config-single-home W3: `observe` is a preference knob — first policy layer
+    // that carries an object wins (projects[<project_id>] then defaults).
+    for (const layer of readPolicy(projectRoot)) {
+      const observe = layer.observe;
+      if (observe && typeof observe === "object" && !Array.isArray(observe)) {
+        const v = observe[event];
+        if (typeof v === "boolean") return v;
+      }
+    }
+    return undefined;
   } catch {
     return undefined;
   }
@@ -160,7 +196,9 @@ module.exports = {
   readNudgeMode,
   readObserveOverride,
   resolveHumanSink,
+  resolveNudgePreset,
   NUDGE_MODES,
+  NUDGE_PRESETS,
   DEFAULT_NUDGE_MODE,
   OBSERVE_EVENTS,
 };

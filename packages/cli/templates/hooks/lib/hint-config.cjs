@@ -1,7 +1,7 @@
 // ISS-20260713-040: threshold readers + documented defaults for fabric-hint.
 const { existsSync, readFileSync } = require("node:fs");
 const { join } = require("node:path");
-const { readGlobalConfig } = require("./config-cache.cjs");
+const { readConfigNumber } = require("./config-cache.cjs");
 
 const FABRIC_DIR = ".fabric";
 const CONFIG_FILE = "fabric-config.json";
@@ -37,19 +37,11 @@ try {
 }
 
 function _readConfigNumber(projectRoot, fieldName, defaultValue) {
-  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (existsSync(configPath)) {
-    try {
-      const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-      const v = parsed && parsed[fieldName];
-      if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-    } catch {
-      // fall through to global
-    }
-  }
-  const gv = readGlobalConfig()[fieldName];
-  if (typeof gv === "number" && Number.isFinite(gv) && gv > 0) return gv;
-  return defaultValue;
+  // config-single-home W3: these are all PREFERENCE-class nudge-cadence knobs, so
+  // they resolve `global.projects[<project_id>] > global.defaults > default` via
+  // the shared reader. `min: Number.MIN_VALUE` preserves the historical
+  // "any positive number" guard.
+  return readConfigNumber(projectRoot, fieldName, defaultValue, { min: Number.MIN_VALUE });
 }
 
 function readArchiveHintHours(projectRoot) {
@@ -105,37 +97,27 @@ function readCooldownHours(projectRoot) {
 }
 
 function readUnderseedThreshold(projectRoot) {
-  // config-layering: env > project > global > store > default
+  // config-single-home W3: CORPUS class — `env > store > default`. "How many
+  // entries is too few" describes THIS knowledge base, so the store owning the
+  // corpus is its only home. Must stay byte-identical in behaviour with
+  // knowledge-hint-broad.cjs#readUnderseedThreshold — the two surfaces would
+  // otherwise disagree about whether the same store is underseeded.
   let storeConfigReader = null;
   try {
     storeConfigReader = require("./store-config-reader.cjs");
   } catch {
     storeConfigReader = null;
   }
-  if (storeConfigReader !== null) {
-    const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
-    if (typeof envVal === "number") return envVal;
+  if (storeConfigReader === null) {
+    return DEFAULT_UNDERSEED_NODE_THRESHOLD;
   }
-  const configPath = join(projectRoot, FABRIC_DIR, CONFIG_FILE);
-  if (existsSync(configPath)) {
-    try {
-      const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-      const v = parsed && parsed.underseed_node_threshold;
-      if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-    } catch {
-      // fall through
-    }
-  }
-  const gv = readGlobalConfig().underseed_node_threshold;
-  if (typeof gv === "number" && Number.isFinite(gv) && gv > 0) return gv;
-  if (storeConfigReader !== null) {
-    const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
-    const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
-      min: 1,
-    });
-    if (typeof storeVal === "number") return storeVal;
-  }
-  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+  const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
+  if (typeof envVal === "number") return envVal;
+  const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
+  const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
+    min: 1,
+  });
+  return typeof storeVal === "number" ? storeVal : DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
 function readArchiveEditThreshold(projectRoot) {

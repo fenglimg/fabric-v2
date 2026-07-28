@@ -21,7 +21,11 @@ const tempDirs: string[] = [];
 function collectFiles(root: string, matches: (name: string) => boolean): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if ([".git", ".workflow", "node_modules"].includes(entry.name)) continue;
+    // `.claude` holds `worktrees/<name>/` — full git-worktree checkouts of THIS
+    // repo. Traversing them double-counts every package.json / tsup config, so
+    // the single-declaration assertions below fail purely because a worktree
+    // exists (a false red that says nothing about the repo's real state).
+    if ([".git", ".claude", ".workflow", "node_modules"].includes(entry.name)) continue;
     const path = join(root, entry.name);
     if (entry.isDirectory()) found.push(...collectFiles(path, matches));
     else if (entry.isFile() && matches(entry.name)) found.push(path);

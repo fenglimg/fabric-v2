@@ -59,6 +59,7 @@ const hook = require("../templates/hooks/cite-policy-evict.cjs") as {
 let tempDirs: string[] = [];
 
 afterEach(() => {
+  restoreFabricHome();
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
@@ -68,13 +69,37 @@ afterEach(() => {
 function mkTemp(): string {
   const dir = mkdtempSync(join(tmpdir(), "cite-recall-"));
   tempDirs.push(dir);
+  // config-single-home W3: preference knobs resolve from
+  // `<FABRIC_HOME>/.fabric/fabric-global.json`. Point FABRIC_HOME at the temp dir
+  // so each case gets an isolated policy layer (and never touches the real one).
+  if (originalFabricHome === undefined) originalFabricHome = process.env.FABRIC_HOME ?? null;
+  process.env.FABRIC_HOME = dir;
   return dir;
 }
 
+let originalFabricHome: string | null | undefined;
+
+function restoreFabricHome(): void {
+  if (originalFabricHome === undefined) return;
+  if (originalFabricHome === null) delete process.env.FABRIC_HOME;
+  else process.env.FABRIC_HOME = originalFabricHome;
+  originalFabricHome = undefined;
+}
+
+/**
+ * config-single-home W3: `cite_recall_nudge` / `cite_recall_window_minutes` /
+ * `cite_nudge_ignore_globs` are PREFERENCE-class knobs, so they live in the
+ * global policy layer. The repo file stays identity-only (written empty here so
+ * project-root detection still works).
+ */
 function writeConfig(cwd: string, body: object): void {
   const dir = join(cwd, ".fabric");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "fabric-config.json"), JSON.stringify(body));
+  writeFileSync(join(dir, "fabric-config.json"), JSON.stringify({}));
+  writeFileSync(
+    join(dir, "fabric-global.json"),
+    JSON.stringify({ uid: "test-uid", stores: [], defaults: body }),
+  );
 }
 
 function writeEvents(cwd: string, events: Array<Record<string, unknown>>): void {

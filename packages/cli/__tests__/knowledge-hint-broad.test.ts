@@ -103,6 +103,107 @@ function makePayload(
   };
 }
 
+// config-single-home W3: the repo config is identity-only; policy knobs resolve
+// from `<FABRIC_HOME>/.fabric/fabric-global.json` → `defaults`. The local
+// writeConfig helpers below split an incoming object along this line so existing
+// call sites keep passing one flat object.
+const REPO_IDENTITY_KEYS = new Set([
+  "project_id",
+  "workspace_binding_id",
+  "required_stores",
+  "write_routes",
+  "active_project",
+  "active_write_store",
+  "default_write_store",
+  // NOT identity, but the hook's locale resolution reads it straight off the repo
+  // file — that path predates this refactor and is out of its scope, so keep the
+  // key where the hook still looks for it.
+  "fabric_language",
+]);
+
+let __savedFabricHome: string | null | undefined;
+
+function __routeConfig(root: string, cfg: Record<string, unknown>): void {
+  const identity: Record<string, unknown> = {};
+  const policy: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(cfg)) {
+    if (REPO_IDENTITY_KEYS.has(key)) identity[key] = value;
+    else policy[key] = value;
+  }
+  mkdirSync(join(root, ".fabric"), { recursive: true });
+  writeFileSync(join(root, ".fabric", "fabric-config.json"), JSON.stringify(identity), "utf8");
+  // ALWAYS rewrite the policy segment, even when empty: writeConfig(cfg) means
+  // "the config IS cfg". vitest.setup.ts gives the whole FILE one FABRIC_HOME, so
+  // skipping the write would leave the previous test's defaults in place — that
+  // leak is exactly what made a later `hint_reminder_to_context:false` silence
+  // unrelated cases further down the file.
+  //
+  // Write into the home the test already established (several cases point
+  // FABRIC_HOME at a fixture home holding a bindings snapshot — clobbering it
+  // would break store resolution). Only adopt `root` as the home when unset.
+  let home = process.env.FABRIC_HOME;
+  if (home === undefined) {
+    if (__savedFabricHome === undefined) __savedFabricHome = null;
+    home = root;
+    process.env.FABRIC_HOME = home;
+  }
+  const globalDir = join(home, ".fabric");
+  mkdirSync(globalDir, { recursive: true });
+  writeFileSync(
+    join(globalDir, "fabric-global.json"),
+    JSON.stringify({ uid: "test-uid", stores: [], defaults: policy }),
+    "utf8",
+  );
+}
+
+afterEach(() => {
+  if (__savedFabricHome !== undefined) {
+    if (__savedFabricHome === null) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = __savedFabricHome;
+    __savedFabricHome = undefined;
+  }
+});
+
+/**
+ * CORPUS-class fixture (`broad_index_backstop` / `underseed_node_threshold`):
+ * these describe the knowledge base, so their only home is the write-target
+ * store's `store-config.json`, reached through the bindings snapshot.
+ */
+function __routeStoreConfig(root: string, cfg: Record<string, unknown>): () => void {
+  const prevHome = process.env.FABRIC_HOME;
+  const bindingId = "broad-corpus-fixture";
+  mkdirSync(join(root, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(root, ".fabric", "fabric-config.json"),
+    JSON.stringify({ project_id: bindingId, fabric_language: "en" }),
+    "utf8",
+  );
+  if (__savedFabricHome === undefined) __savedFabricHome = process.env.FABRIC_HOME ?? null;
+  process.env.FABRIC_HOME = root;
+  const storeRoot = join(root, ".fabric", "stores", "team", "fixture-store");
+  mkdirSync(storeRoot, { recursive: true });
+  writeFileSync(join(storeRoot, "store-config.json"), JSON.stringify(cfg), "utf8");
+  const snapDir = join(root, ".fabric", "state", "bindings");
+  mkdirSync(snapDir, { recursive: true });
+  writeFileSync(
+    join(snapDir, `${bindingId}_resolved.json`),
+    JSON.stringify({
+      version: 1,
+      project_id: bindingId,
+      workspace_binding_id: bindingId,
+      generated_at: "2026-01-01T00:00:00.000Z",
+      read_set: { stores: [], warnings: [] },
+      write_target: { store_uuid: "fixture-uuid", alias: "team" },
+      write_target_store_dir: storeRoot,
+    }),
+    "utf8",
+  );
+  return () => {
+    if (prevHome === undefined) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = prevHome;
+  };
+}
+
 function writeProjectConfig(root: string, projectId: string): void {
   mkdirSync(join(root, ".fabric"), { recursive: true });
   writeFileSync(
@@ -116,6 +217,10 @@ function writeBindingsSnapshot(
   home: string,
   projectId: string,
   knowledgeStats?: Record<string, unknown>,
+  // config-single-home W3: seed the write-target store's store-config.json (the
+  // home of every CORPUS knob) and point the snapshot at it, so corpus overrides
+  // resolve exactly the way they do in production.
+  storeConfig?: Record<string, unknown>,
 ): void {
   mkdirSync(join(home, ".fabric", "state", "bindings"), { recursive: true });
   const snapshot: Record<string, unknown> = {
@@ -125,6 +230,13 @@ function writeBindingsSnapshot(
     read_set: { stores: [] },
     write_target: null,
   };
+  if (storeConfig !== undefined) {
+    const storeRoot = join(home, ".fabric", "stores", "team", "fixture-store");
+    mkdirSync(storeRoot, { recursive: true });
+    writeFileSync(join(storeRoot, "store-config.json"), JSON.stringify(storeConfig), "utf8");
+    snapshot.write_target = { store_uuid: "fixture-uuid", alias: "team" };
+    snapshot.write_target_store_dir = storeRoot;
+  }
   if (knowledgeStats !== undefined) {
     // #3: the hooks no longer trust the cached knowledge_stats projection — they
     // recount LIVE off knowledge_store_dirs. Seed a real store dir with the
@@ -827,20 +939,37 @@ describe("knowledge-hint-broad.cjs — readUnderseedThreshold (rc.8)", () => {
     }
   });
 
-  it("returns DEFAULT (10) when fabric-config.json is missing", () => {
+  it("returns DEFAULT (10) when no store-config is present", () => {
     expect(hook.readUnderseedThreshold(tempRoot)).toBe(
       hook.CONSTANTS.DEFAULT_UNDERSEED_NODE_THRESHOLD,
     );
   });
 
-  it("returns the override when fabric-config.json carries underseed_node_threshold", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ underseed_node_threshold: 25 }),
-      "utf8",
-    );
-    expect(hook.readUnderseedThreshold(tempRoot)).toBe(25);
+  // CORPUS class: "how few entries is too few" describes the store's corpus, so
+  // the override lives in that store's store-config.json.
+  it("returns the override when the store-config carries underseed_node_threshold", () => {
+    const restore = __routeStoreConfig(tempRoot, { underseed_node_threshold: 25 });
+    try {
+      expect(hook.readUnderseedThreshold(tempRoot)).toBe(25);
+    } finally {
+      restore();
+    }
+  });
+
+  it("a value left in the repo config is inert", () => {
+    const restore = __routeStoreConfig(tempRoot, {});
+    try {
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({ project_id: "broad-corpus-fixture", underseed_node_threshold: 25 }),
+        "utf8",
+      );
+      expect(hook.readUnderseedThreshold(tempRoot)).toBe(
+        hook.CONSTANTS.DEFAULT_UNDERSEED_NODE_THRESHOLD,
+      );
+    } finally {
+      restore();
+    }
   });
 
   it("returns DEFAULT on malformed config JSON (defensive parse)", () => {
@@ -1001,10 +1130,15 @@ describe("knowledge-hint-broad.cjs — shouldRecommendImport (rc.8)", () => {
     });
   });
 
-  it("respects fabric-config.json underseed_node_threshold override", () => {
+  it("respects the store-config underseed_node_threshold override", () => {
     withIsolatedFabricHome((home) => {
-      plantBound({ underseed_node_threshold: 50 });
-      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 15 });
+      plantBound();
+      writeBindingsSnapshot(
+        home,
+        PROJECT_ID,
+        { canonical_count: 15 },
+        { underseed_node_threshold: 50 },
+      );
       // 15 < 50 → recommend
       expect(hook.shouldRecommendImport(tempRoot)).toBe(true);
     });
@@ -1360,7 +1494,7 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
   });
 
   function writeConfig(cfg: Record<string, unknown>): void {
-    writeFileSync(join(tempRoot, ".fabric", "fabric-config.json"), JSON.stringify(cfg), "utf8");
+    __routeConfig(tempRoot, cfg);
   }
 
   function capture(env: Record<string, unknown>): { out: string[]; err: string[] } {
@@ -1483,9 +1617,11 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     expect(ai).not.toMatch(/over budget/);
   });
 
-  it("ux-w1-3: always-active summary is bounded by hint_summary_max_len", () => {
+  // config-single-home W7: the cap is no longer its own `hint_summary_max_len`
+  // key — it comes from the nudge_mode preset (normal 80 / verbose 120).
+  it("ux-w1-3: always-active summary is bounded by the nudge_mode preset", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
-    writeConfig({ fabric_language: "en", hint_summary_max_len: 40 });
+    writeConfig({ fabric_language: "en", nudge_mode: "normal" });
     const longSummary = "L".repeat(200);
     const { out } = capture({
       payload: makePayload([]),
@@ -1499,14 +1635,33 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     // Truncated with the ellipsis marker; the raw 200-char summary never appears verbatim.
     expect(line).toContain("…");
     expect(line).not.toContain(longSummary);
-    // The summary segment after the id label is capped at hint_summary_max_len (40).
-    const summarySegment = line.split(" · ")[1] ?? "";
-    expect(summarySegment.length).toBeLessThanOrEqual(40);
+    expect((line.split(" · ")[1] ?? "").length).toBeLessThanOrEqual(80);
   });
 
-  it("reminder_to_context=false → no AI sink, human systemMessage still emitted", () => {
+  it("verbose widens the same summary cap to 120", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
-    writeConfig({ fabric_language: "en", hint_reminder_to_context: false });
+    writeConfig({ fabric_language: "en", nudge_mode: "verbose" });
+    const { out } = capture({
+      payload: makePayload([]),
+      census,
+      alwaysBodies: [
+        { id: "team:KT-GLD-0001", type: "guidelines", layer: "team", summary: "L".repeat(200), body: "b" },
+      ],
+    });
+    const ai = JSON.parse(out[0]).hookSpecificOutput.additionalContext as string;
+    const segment =
+      (ai.split("\n").find((l) => l.includes("team:KT-GLD-0001")) ?? "").split(" · ")[1] ?? "";
+    expect(segment.length).toBeGreaterThan(80);
+    expect(segment.length).toBeLessThanOrEqual(120);
+  });
+
+  // W7: `hint_reminder_to_context` is gone. The AI sink is unconditional — D5
+  // (flow ⊥ observation) means the model gets the knowledge no matter how quiet
+  // the human channel is, and a stale on-disk `false` must not resurrect the
+  // old opt-out.
+  it("the AI sink is emitted even under silent + a stale reminder_to_context=false", () => {
+    process.env.FABRIC_HINT_CLIENT = "cc";
+    writeConfig({ fabric_language: "en", nudge_mode: "silent", hint_reminder_to_context: false });
     const { out } = capture({
       payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
       census,
@@ -1514,8 +1669,9 @@ describe("knowledge-hint-broad.cjs — dual-sink SessionStart (Goal A)", () => {
     });
     expect(out.length).toBe(1);
     const env = JSON.parse(out[0]);
-    expect(env.systemMessage).toMatch(/▸ \[fabric\]/);
-    expect(env.hookSpecificOutput).toBeUndefined();
+    expect(env.hookSpecificOutput.additionalContext).toBeTruthy();
+    // silent mutes the HUMAN channel only.
+    expect(env.systemMessage).toBeUndefined();
   });
 });
 
@@ -1557,7 +1713,7 @@ describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => 
   };
 
   function writeConfig(cfg: Record<string, unknown>): void {
-    writeFileSync(join(tempRoot, ".fabric", "fabric-config.json"), JSON.stringify(cfg), "utf8");
+    __routeConfig(tempRoot, cfg);
   }
 
   function aiContext(env: Record<string, unknown>): string {
@@ -1614,7 +1770,10 @@ describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => 
   });
 
   it("folds the broad index tail past broad_index_backstop + emits the drift marker (KT-DEC-0028)", () => {
-    writeConfig({ fabric_language: "en", broad_index_backstop: 20 });
+    // CORPUS class: the backstop scales with how many broad entries a STORE
+    // holds, so it lives in that store's store-config.json.
+    const restore = __routeStoreConfig(tempRoot, { broad_index_backstop: 20 });
+    try {
     const entries: SpineEntry[] = Array.from({ length: 30 }, (_, i) => ({
       id: `team:KT-DEC-${1000 + i}`,
       type: "decision",
@@ -1625,6 +1784,9 @@ describe("knowledge-hint-broad.cjs — W2 spine (KT-DEC-0027/0028/0029)", () => 
     const ai = aiContext({ payload: makeSpinePayload(entries), alwaysBodies: [] });
     // 20 reference lines rendered, 10 folded into the drift marker.
     expect(ai).toMatch(/10 more broad entries folded \(broad index > backstop 20\)\. Run fabric-audit to prune first/);
+    } finally {
+      restore();
+    }
   });
 
   it("guideline/model render as index lines (title + summary), never the eager body (KT-DEC-0036)", () => {

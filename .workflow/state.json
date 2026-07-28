@@ -550,7 +550,7 @@
       "close_decision": "team:KT-DEC-0074"
     }
   ],
-  "last_updated": "2026-07-21T14:01:09+09:00",
+  "last_updated": "2026-07-24T12:51:41+09:00",
   "sessions": [
     {
       "session_id": "config-layering-20260720-072347",
@@ -571,6 +571,38 @@
     {
       "session_id": "20260720-grill-schema-vnext-rfc",
       "intent": "maestro-grill",
+      "status": "sealed",
+      "depends_on": [],
+      "roadmap_artifact_id": null,
+      "seed_ref": null
+    },
+    {
+      "session_id": "maestro-schema-vnext-20260721-063753",
+      "intent": "schema v-next RFC 落地实现",
+      "status": "sealed",
+      "depends_on": [],
+      "roadmap_artifact_id": null,
+      "seed_ref": null
+    },
+    {
+      "session_id": "unified-mcp-worktree-root-20260721-090759",
+      "intent": "整合主线与 schema 分支并实现全局 MCP 动态项目根和 worktree 自动继承",
+      "status": "running",
+      "depends_on": [],
+      "roadmap_artifact_id": null,
+      "seed_ref": null
+    },
+    {
+      "session_id": "20260723-fabric-preview-ui-grill",
+      "intent": "maestro-grill",
+      "status": "sealed",
+      "depends_on": [],
+      "roadmap_artifact_id": null,
+      "seed_ref": null
+    },
+    {
+      "session_id": "20260723-fabric-preview-ui",
+      "intent": "maestro-plan",
       "status": "sealed",
       "depends_on": [],
       "roadmap_artifact_id": null,

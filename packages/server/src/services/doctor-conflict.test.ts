@@ -32,6 +32,21 @@ process.env.FABRIC_HOME = fakeHome;
 
 const STORE = "33333333-3333-4333-8333-333333333333";
 
+function storeRootDir(): string {
+  return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: STORE }));
+}
+
+/**
+ * config-single-home W2: write the store's own `store-config.json` — the single
+ * home of every CORPUS-class knob (it describes this knowledge base, so it
+ * travels with the store rather than living in a repo or the machine config).
+ */
+function writeStoreConfig(config: Record<string, unknown>): void {
+  const root = storeRootDir();
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, STORE_LAYOUT.configFile), `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
 function storeKnowledgeDir(): string {
   return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: STORE }), STORE_LAYOUT.knowledgeDir);
 }
@@ -86,7 +101,13 @@ async function seedProject(name: string): Promise<string> {
   tempRoots.push(root);
   wf(root, "package.json", JSON.stringify({ name, dependencies: { vite: "^7.0.0" } }));
   wf(root, "AGENTS.md", "# AGENTS\nFabric v2.0 bootstrap anchor.\n");
-  wf(root, ".fabric/fabric-config.json", JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2));
+  // `active_write_store` is required for the CORPUS layer to resolve: the store
+  // config is read from the repo's TEAM write-target, and an unbound repo has none.
+  wf(
+    root,
+    ".fabric/fabric-config.json",
+    JSON.stringify({ required_stores: [{ id: "team" }], active_write_store: "team" }, null, 2),
+  );
   saveGlobalConfig({
     uid: "test-uid",
     stores: [{ store_uuid: STORE, alias: "team", remote: "git@e:conflict.git" }],
@@ -156,7 +177,10 @@ describe("runDoctorConflictLint (v2.1 ④)", () => {
     const root = await seedProject("threshold");
     writeStoreEntry("decisions/KT-DEC-0001--auth-jwt.md", decision("KT-DEC-0001", "auth-jwt", JWT_BODY));
     writeStoreEntry("decisions/KT-DEC-0002--auth-session.md", decision("KT-DEC-0002", "auth-session", SESSION_BODY));
-    wf(root, ".fabric/fabric-config.json", JSON.stringify({ required_stores: [{ id: "team" }], conflict_lint_similarity_threshold: 0.99 }));
+    // config-single-home W2: conflict_lint_similarity_threshold is a CORPUS-class
+    // knob — it describes how similar entries in THIS knowledge base are allowed
+    // to be, so its only home is the store's own store-config.json.
+    writeStoreConfig({ conflict_lint_similarity_threshold: 0.99 });
 
     const report = await runDoctorConflictLint(root);
     expect(report.threshold).toBe(0.99);

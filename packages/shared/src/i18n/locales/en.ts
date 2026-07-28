@@ -152,6 +152,28 @@ export const enMessages: Messages = {
   "cli.config.menu.exit": "Exit",
   "cli.config.value.current": "current: {value}",
   "cli.config.value.default-marker": "(default)",
+  // config-single-home W6: which layer supplied the value. The same key can be
+  // set machine-wide, per-project, or by the team store — naming the source is
+  // what explains "why does this repo resolve a different value".
+  "cli.config.source.project": "this project",
+  "cli.config.source.defaults": "machine-wide",
+  "cli.config.source.store": "team store",
+  "cli.config.source.global": "global",
+  "cli.config.source.default": "built-in",
+  // config-single-home W8: a cadence profile settles "how loud + how eagerly it
+  // asks to archive + how long a review backlog may sit" in one choice — those
+  // four keys always move together.
+  "cli.config.profile.label": "Cadence profile",
+  "cli.config.profile.prompt": "Pick a cadence profile (sets 4 keys at once)",
+  "cli.config.profile.custom": "custom",
+  "cli.config.profile.quiet": "quiet",
+  "cli.config.profile.quiet.description": "stays out of the way; you decide when to archive",
+  "cli.config.profile.standard": "standard",
+  "cli.config.profile.standard.description":
+    "the shipped cadence: one status line per session, archive prompts in batches",
+  "cli.config.profile.coach": "coach",
+  "cli.config.profile.coach.description":
+    "asks often — for a young knowledge base you don't want leaking experience",
   "cli.config.prompt.select": "Choose a new value for {key} (current: {current}):",
   "cli.config.prompt.text": "Enter a new value for {key} (current: {current}):",
   "cli.config.write.success": "{key} = {value}",
@@ -169,50 +191,69 @@ export const enMessages: Messages = {
     "Workspace not initialized. Run `fabric install` first.",
   "cli.config.errors.invalid-int": "Must be a positive integer.",
   "cli.config.errors.unknown-field": "Unknown field selection — skipping.",
+  "cli.config.errors.no-store-target":
+    "no writable team store is bound to this repo — run `fabric store bind <alias>` before setting a knowledge-base-level key.",
+  "cli.config.errors.no-project-id":
+    "this repo has no project_id — run `fabric install` first, or use --scope defaults to write the machine-wide default.",
   "cli.config.errors.no-enum-options": "No enum options available for this field — skipping.",
   // Per-field labels (11 total: 2 Group A + 8 Group B + 1 Group C).
   "cli.config.fields.fabric_language.label": "Language",
   "cli.config.fields.fabric_language.description":
     "Fabric's global language base tone (UI + knowledge), saved to ~/.fabric/fabric-global.json.",
-  "cli.config.fields.default_layer_filter.label": "Default knowledge layer",
+  "cli.config.fields.default_layer_filter.label": "Default search scope",
   "cli.config.fields.default_layer_filter.description":
-    "Default layer scope for knowledge listings (team / personal / both).",
-  "cli.config.fields.archive_hint_hours.label": "Archive hint window (hours)",
+    "Which layer the AI searches by default: team only / personal only / both (default).",
+  "cli.config.fields.archive_hint_hours.label": "Archive reminder: how often",
   "cli.config.fields.archive_hint_hours.description":
-    "Window (in hours) used by Signal A to detect frequent edits worth archiving.",
-  "cli.config.fields.archive_hint_cooldown_hours.label": "Archive hint cooldown (hours)",
+    "Remind you there is something worth writing down once this many hours have passed since the last archive. Higher = fewer interruptions.",
+  "cli.config.fields.archive_hint_cooldown_hours.label": "Archive reminder: quiet period after being ignored",
   "cli.config.fields.archive_hint_cooldown_hours.description":
-    "Cooldown (in hours) before the same archive hint can fire again.",
-  "cli.config.fields.archive_edit_threshold.label": "Archive edit threshold",
+    "After you ignore an archive reminder it stays quiet for this many hours, so the same thing is not repeated at you.",
+  "cli.config.fields.archive_edit_threshold.label": "Archive reminder: edits before it fires",
   "cli.config.fields.archive_edit_threshold.description":
-    "Edit-count cutoff that triggers the Signal A archive hint.",
-  "cli.config.fields.underseed_node_threshold.label": "Underseed node threshold",
+    "Remind you after this many file edits (OR the hour window above — whichever comes first). Lower = reminded sooner.",
+  "cli.config.fields.underseed_node_threshold.label": "\"Knowledge base is still empty\" threshold",
   "cli.config.fields.underseed_node_threshold.description":
-    "Minimum knowledge-node count below which Fabric flags the workspace as underseeded.",
-  "cli.config.fields.review_hint_pending_count.label": "Review pending count",
+    "Below this many entries, Fabric treats the knowledge base as not yet established and suggests seeding it. A property of the base itself — it lives in the team store and is shared.",
+  "cli.config.fields.review_hint_pending_count.label": "Review reminder: backlog size",
   "cli.config.fields.review_hint_pending_count.description":
-    "Pending-review count above which the review hint fires.",
-  "cli.config.fields.review_hint_pending_age_days.label": "Review pending age (days)",
+    "Drafts the AI archives need your approval. Remind you to review once this many have piled up.",
+  "cli.config.fields.review_hint_pending_age_days.label": "Review reminder: draft age (days)",
   "cli.config.fields.review_hint_pending_age_days.description":
-    "Pending-review age (in days) above which the review hint fires.",
-  "cli.config.fields.maintenance_hint_days.label": "Maintenance hint window (days)",
+    "Remind you when a draft has sat unreviewed for this many days, so a small backlog is not simply forgotten.",
+  "cli.config.fields.review_stale_pending_days.label": "\"Draft has sat too long\" (days)",
+  "cli.config.fields.review_stale_pending_days.description":
+    "During review, drafts older than this are singled out for an explicit resolve-or-drop decision so the long tail does not accumulate.",
+  "cli.config.fields.maintenance_hint_days.label": "Checkup reminder: how often (days)",
   "cli.config.fields.maintenance_hint_days.description":
-    "Day window for Fabric to surface a knowledge-maintenance hint.",
-  "cli.config.fields.maintenance_hint_cooldown_days.label": "Maintenance hint cooldown (days)",
+    "Remind you to run `fabric doctor` once this many days have passed since the last one.",
+  "cli.config.fields.maintenance_hint_cooldown_days.label": "Checkup reminder: quiet period after being ignored (days)",
   "cli.config.fields.maintenance_hint_cooldown_days.description":
-    "Cooldown (in days) before the maintenance hint can fire again.",
-  "cli.config.fields.audit_mode.label": "Audit mode",
+    "After you ignore a checkup reminder it stays quiet for this many days.",
+  "cli.config.fields.audit_mode.label": "Change-audit strictness",
   "cli.config.fields.audit_mode.description":
-    "Audit verbosity for human-lock + drift detection (strict / warn / off).",
-  "cli.config.fields.nudge_mode.label": "Nudge level",
+    "How strict the check for edits to human-locked content is: strict = block / warn = warn only (recommended) / off = do not check.",
+  "cli.config.fields.nudge_mode.label": "Notification volume",
   "cli.config.fields.nudge_mode.description":
-    "Preset for human-visible nudges (silent / minimal / normal / verbose). Governs only the human channel — never the knowledge injected to the AI.",
-  "cli.config.fields.embed_enabled.label": "Vector semantic search",
+    "How much you see: silent / minimal / normal / verbose. Affects only what YOU see — the AI receives the same knowledge either way, so muting does not make it dumber.",
+  "cli.config.fields.cite_policy_enabled.label": "Check the knowledge base before editing",
+  "cli.config.fields.cite_policy_enabled.description":
+    "When on, the AI is reminded to look up relevant knowledge before editing a file (a nudge, never a block). Off = never mentioned.",
+  "cli.config.fields.self_archive_policy_enabled.label": "Let the AI propose archiving",
+  "cli.config.fields.self_archive_policy_enabled.description":
+    "When on, the AI starts an archive itself once it notices a decision worth keeping (still needs your approval to land). Off = it only archives when you ask.",
+  "cli.config.fields.cite_recall_nudge.label": "Nudge when the knowledge base was skipped",
+  "cli.config.fields.cite_recall_nudge.description":
+    "A soft reminder when the AI edits a file without looking anything up. Turn it off if it feels chatty — archiving and retrieval are unaffected.",
+  "cli.config.fields.fabric_event_retention_days.label": "Activity log retention (days)",
+  "cli.config.fields.fabric_event_retention_days.description":
+    "How long this machine's activity log is kept (7 lean / 30 balanced / 90 good for tracing back). Older lines are moved to an archive file, not deleted.",
+  "cli.config.fields.embed_enabled.label": "Semantic search (by meaning, not just words)",
   "cli.config.fields.embed_enabled.description":
-    "Enable vector semantic recall (true / false). Note: true is just intent — it only takes effect when the running server can resolve the fastembed package AND the model is downloaded (auto-fetched to ~/.fabric/cache/embed on first recall). Check actual state with `fabric info recall`.",
-  "cli.config.fields.fusion.label": "Recall fusion strategy",
+    "When on, a question worded differently from the entry still finds it (especially noticeable in Chinese). This is intent only: it takes effect when the running server can load fastembed AND the model is downloaded (auto-fetched to ~/.fabric/cache/embed on first search). Check the real state with `fabric info recall`.",
+  "cli.config.fields.fusion.label": "Result ranking",
   "cli.config.fields.fusion.description":
-    "How the signals combine into one score: additive = weighted sum (BM25-led, small vector weight) / rrf = Reciprocal Rank Fusion (BM25 and vector on equal footing, so semantics actually count) / auto = adaptive (default: rrf when the vector channel is scoring, else additive — avoids degenerate single-channel rrf being worse).",
+    "How keyword hits and semantic similarity combine into one ranking: auto (default, recommended) / rrf treats them equally (semantics count more) / additive is keyword-led. Leave it on auto — it only switches to rrf when the semantic channel is actually scoring.",
 
   "cli.doctor.description":
     "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift)",
@@ -252,6 +293,7 @@ export const enMessages: Messages = {
   "doctor.store.active-personal-unset": "{count} personal stores are mounted but none is active; run `fabric store switch-personal <alias>` to pick one (or `fabric doctor --fix` to default to the first)",
   "doctor.store.related-broken": "{count} broken `related` link(s) point at ids absent from the corpus: {samples}{overflow} — fix the related edges via `fab_review` (modify) or edit the entry frontmatter",
   "doctor.store.related-hub": "related graph hubs (top {shown} of {total} referenced): {top}",
+  "doctor.store.config-key-relocated": "repo config still carries relocated key '{key}' — policy moved to ~/.fabric/fabric-global.json (preference knobs) or the store's store-config.json (corpus knobs); the value here is inert and can be deleted",
   "doctor.store.knob-repo-override": "repo overrides store-layer knob '{key}' — the project layer wins by design (C-004 D2 user-in-control); align only if intentional",
   "doctor.store.unreachable": "store '{alias}' is in the read-set but unreachable on disk ({reason}); run `fabric store mount` / re-clone it, then `fabric doctor`",
   "doctor.store.unreachable-bound": "bound store dir missing on disk: {stores} — re-clone or remount, then fabric doctor",
@@ -563,7 +605,7 @@ export const enMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl hasn't rotated for {days} days; the 6h rotation tick may not be running.",
   "doctor.check.events_jsonl_health.remediation":
-    "Run `fabric doctor --fix` — it triggers events.jsonl rotation (honors fabric_event_retention_days: 7|30|90 in .fabric/fabric-config.json) AND flushes metrics.jsonl. If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
+    "Run `fabric doctor --fix` — it triggers events.jsonl rotation (honors fabric_event_retention_days: 7|30|90 in ~/.fabric/fabric-global.json under defaults) AND flushes metrics.jsonl. If the warning persists, restart the MCP server so startMetricsFlush + startRotationTick reschedule. If metric_leak fires, audit recent code changes for direct appendEventLedgerEvent calls bypassing bumpCounter for one of the 4 metric-managed event_types.",
   "doctor.check.event_ledger_partial_write.name": "Event ledger partial write",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "No partial-write check needed (ledger missing or not writable).",
@@ -1164,7 +1206,7 @@ export const enMessages: Messages = {
   // so its MCP server loads — that is the default anchor; the --reapply maintenance
   // hint moves to --verbose.
   "cli.install.next-step.restart": "restart any open Claude Code / Codex session to load Fabric (new sessions pick it up automatically).",
-  "cli.install.next-step.nudge-mode": "Human breadcrumbs default to minimal (one status line/session). Mute with nudge_mode: \"silent\" in .fabric/fabric-config.json or FABRIC_NUDGE_MODE=silent; raise with normal/verbose.",
+  "cli.install.next-step.nudge-mode": "Human breadcrumbs default to minimal (one status line/session). Change it in ~/.fabric/fabric-global.json under defaults.nudge_mode (silent | minimal | normal | verbose), via fabric config --set nudge_mode --value silent, or FABRIC_NUDGE_MODE=silent.",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "Choose the Fabric language (used for both UI and knowledge; change later via `fabric config`):",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",

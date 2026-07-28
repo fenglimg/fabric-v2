@@ -116,6 +116,14 @@ function resolveTeamStoreRoot(snapshot) {
   if (!snapshot || typeof snapshot !== "object") {
     return null;
   }
+  // config-single-home W3: prefer the EXPLICIT field. The positional fallback
+  // below pairs `write_target` with `knowledge_store_dirs[i]` via read-set order —
+  // a contract nothing enforces, so it silently returns the WRONG store if that
+  // ordering ever changes. Snapshots written before this field existed still take
+  // the fallback path.
+  if (typeof snapshot.write_target_store_dir === "string" && snapshot.write_target_store_dir.length > 0) {
+    return deriveStoreRoot(snapshot.write_target_store_dir);
+  }
   const target = snapshot.write_target;
   if (!target || typeof target.store_uuid !== "string") {
     return null;

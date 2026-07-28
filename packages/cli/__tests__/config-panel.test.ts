@@ -226,9 +226,26 @@ describe("rc.16 TASK-007: fabric config panel — Group A enum field roundtrip",
 });
 
 describe("rc.16 TASK-007: fabric config panel — Group B int field roundtrip", () => {
-  it("editing archive_hint_hours to '48' writes 48 (number, not string)", async () => {
+  // config-single-home W6: this is a PRODUCER→CONSUMER round-trip, not a
+  // file-content assertion. The previous version asserted the value landed in
+  // `.fabric/fabric-config.json` — which it did, and which proved nothing:
+  // since W5 made the repo config identity-only, no reader consults it, so the
+  // test stayed green while every interactive panel edit was inert. Asserting
+  // through the REAL hook reader is what makes the test able to fail that way.
+  it("editing archive_hint_hours to '48' is read back as 48 by the hook config reader", async () => {
     const configCmd = await loadConfigCmd();
     const dir = makeWorkspace(true);
+
+    const globalHome = mkdtempSync(join(tmpdir(), "fab-config-int-global-"));
+    tempRoots.push(globalHome);
+    const savedFabricHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = globalHome;
+    mkdirSync(join(globalHome, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(globalHome, ".fabric", "fabric-global.json"),
+      JSON.stringify({ uid: "u-test", stores: [] }, null, 2),
+      "utf8",
+    );
 
     // Suppress the panel's clear/render escapes (stable-panel redraw each pass).
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -240,9 +257,23 @@ describe("rc.16 TASK-007: fabric config panel — Group B int field roundtrip", 
 
       await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
 
-      const after = readConfig(dir);
-      expect(after.archive_hint_hours).toBe(48);
-      expect(typeof after.archive_hint_hours).toBe("number");
+      // CONSUMER side: the shipped hook reader, resolving from the same
+      // FABRIC_HOME the panel just wrote to.
+      const { createRequire } = await import("node:module");
+      const require_ = createRequire(import.meta.url);
+      const cachePath = require_.resolve("../templates/hooks/lib/config-cache.cjs");
+      delete require_.cache[cachePath];
+      const configCache = require_(cachePath) as {
+        clearConfigCache(): void;
+        readConfigNumber(root: string, key: string, fallback: number, opts?: unknown): number;
+      };
+      configCache.clearConfigCache();
+      expect(configCache.readConfigNumber(dir, "archive_hint_hours", 24, { integer: true })).toBe(
+        48,
+      );
+
+      // …and the repo config is untouched: policy has exactly one home.
+      expect(readConfig(dir)).not.toHaveProperty("archive_hint_hours", 48);
 
       // No .tmp leftover
       const fabricFiles = readdirSync(join(dir, ".fabric"));
@@ -255,6 +286,11 @@ describe("rc.16 TASK-007: fabric config panel — Group B int field roundtrip", 
       expect(selectMock.mock.calls[1][0].initialValue).toBe("archive_hint_hours");
     } finally {
       stdoutSpy.mockRestore();
+      if (savedFabricHome === undefined) {
+        delete process.env.FABRIC_HOME;
+      } else {
+        process.env.FABRIC_HOME = savedFabricHome;
+      }
     }
   });
 });

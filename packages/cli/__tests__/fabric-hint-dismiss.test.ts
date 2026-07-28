@@ -13,6 +13,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { routePolicyConfig } from "./helpers/policy-fixture.js";
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const hook = require("../templates/hooks/fabric-hint.cjs") as {
   readDismissedSignals: (cwd: string, sessionId: string | null) => Set<string>;
@@ -31,14 +33,20 @@ let cwd: string;
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), "rc37-new16-dismiss-"));
   mkdirSync(join(cwd, ".fabric"), { recursive: true });
+  // vitest.setup.ts hands the whole FILE one FABRIC_HOME, so the policy layer
+  // persists across cases. Reset it per test, otherwise a previous
+  // `hint_dismiss_signals` write silently leaks into cases that never touch it.
+  routePolicyConfig(cwd, {});
 });
 
 afterEach(() => {
   rmSync(cwd, { recursive: true, force: true });
 });
 
+// config-single-home W3: hint_dismiss_signals / nudge_mode are PREFERENCE knobs
+// and resolve from the global policy layer; the repo file is identity-only.
 function writeConfig(body: object): void {
-  writeFileSync(join(cwd, ".fabric", "fabric-config.json"), JSON.stringify(body));
+  routePolicyConfig(cwd, body as Record<string, unknown>);
 }
 
 describe("fabric-hint dismiss helpers (rc.37 NEW-16)", () => {

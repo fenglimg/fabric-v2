@@ -238,7 +238,33 @@ const DEFAULT_HINT_BROAD_INDEX_BACKSTOP = 50;
 // Default 0 preserves rc.32 behavior — every SessionStart re-fires the banner.
 // Cache key uses a separate sidecar from the fabric-hint Signal A/B/C cache
 // so the two cooldowns don't interfere.
-const DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 24; // ISS-20260713-033: quiet default; set 0 for verbose
+const DEFAULT_HINT_BROAD_COOLDOWN_HOURS = 24; // ISS-20260713-033: quiet default; verbose preset uses 0
+
+/**
+ * config-single-home W7: the presentation numbers now come from the nudge_mode
+ * preset. `nudgePolicy` is an OPTIONAL require (an old install may lack the lib),
+ * so fall back to the `normal` row — which is value-identical to the retired
+ * per-key defaults, keeping the degraded path on the historical behavior.
+ */
+// Built lazily, not as a module-level const: DEFAULT_SUMMARY_MAX_LEN is declared
+// further down the file, and a `const` referencing it up here would hit the TDZ
+// at module-eval time.
+function fallbackNudgePreset() {
+  return {
+    narrowTopK: 5,
+    summaryMaxLen: DEFAULT_SUMMARY_MAX_LEN,
+    broadCooldownHours: DEFAULT_HINT_BROAD_COOLDOWN_HOURS,
+    narrowCooldownHours: 0,
+  };
+}
+
+function resolveNudgePreset(projectRoot) {
+  try {
+    return nudgePolicy?.resolveNudgePreset(projectRoot) ?? fallbackNudgePreset();
+  } catch {
+    return fallbackNudgePreset();
+  }
+}
 const MS_PER_HOUR = 60 * 60 * 1000;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
 
@@ -305,34 +331,23 @@ function countCanonicalNodes(projectRoot) {
  * Any read/parse failure → default (never block on config errors).
  */
 function readUnderseedThreshold(projectRoot) {
-  // config-layering W3 (TASK-004): env > project > store > default (project wins
-  // over store, C-004). The store layer (single-owner store-config-reader.cjs)
-  // is integer-strict + positive, matching storeConfigSchema's
-  // `underseed_node_threshold: z.number().int().positive()`.
-  if (storeConfigReader !== null) {
-    const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
-    if (typeof envVal === "number") {
-      return envVal;
-    }
+  // config-single-home W3: CORPUS class — `env > store > default`. "How many
+  // entries is too few" is a property of THIS knowledge base, so the store that
+  // owns the corpus is its only home; there is no project/global layer to lose
+  // to. The store layer (single-owner store-config-reader.cjs) is integer-strict
+  // + positive, matching `underseed_node_threshold: z.number().int().positive()`.
+  if (storeConfigReader === null) {
+    return DEFAULT_UNDERSEED_NODE_THRESHOLD;
   }
-  // Project layer: > 0 guard via min: Number.MIN_VALUE (any positive). undefined
-  // fallback so an absent/invalid project value falls through to the store layer.
-  const projectVal = readConfigNumber(projectRoot, "underseed_node_threshold", undefined, {
-    min: Number.MIN_VALUE,
+  const envVal = storeConfigReader.readEnvInt("FABRIC_UNDERSEED_NODE_THRESHOLD", { min: 1 });
+  if (typeof envVal === "number") {
+    return envVal;
+  }
+  const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
+  const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
+    min: 1,
   });
-  if (typeof projectVal === "number") {
-    return projectVal;
-  }
-  if (storeConfigReader !== null) {
-    const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
-    const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "underseed_node_threshold", {
-      min: 1,
-    });
-    if (typeof storeVal === "number") {
-      return storeVal;
-    }
-  }
-  return DEFAULT_UNDERSEED_NODE_THRESHOLD;
+  return typeof storeVal === "number" ? storeVal : DEFAULT_UNDERSEED_NODE_THRESHOLD;
 }
 
 /**
@@ -342,54 +357,45 @@ function readUnderseedThreshold(projectRoot) {
  * silently falls back to the default.
  */
 function readBroadIndexBackstop(projectRoot) {
-  // config-layering W3 (TASK-004): env > project > store > default (project wins
-  // over store, C-004). Range 20..500 mirrors storeConfigSchema's
+  // config-single-home W3: CORPUS class — `env > store > default`. The backstop
+  // scales with how many broad entries a store actually holds, so it belongs to
+  // the store, not to a repo or a machine-wide preference. Range 20..500 mirrors
   // `broad_index_backstop: z.number().int().min(20).max(500)`.
   const range = { min: 20, max: 500 };
-  if (storeConfigReader !== null) {
-    const envVal = storeConfigReader.readEnvInt("FABRIC_BROAD_INDEX_BACKSTOP", range);
-    if (typeof envVal === "number") {
-      return envVal;
-    }
+  if (storeConfigReader === null) {
+    return DEFAULT_HINT_BROAD_INDEX_BACKSTOP;
   }
-  // Project layer: undefined fallback so an absent/invalid value falls through.
-  const projectVal = readConfigNumber(projectRoot, "broad_index_backstop", undefined, {
-    min: 20,
-    max: 500,
-    floor: true,
-  });
-  if (typeof projectVal === "number") {
-    return projectVal;
+  const envVal = storeConfigReader.readEnvInt("FABRIC_BROAD_INDEX_BACKSTOP", range);
+  if (typeof envVal === "number") {
+    return envVal;
   }
-  if (storeConfigReader !== null) {
-    const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
-    const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "broad_index_backstop", range);
-    if (typeof storeVal === "number") {
-      return storeVal;
-    }
-  }
-  return DEFAULT_HINT_BROAD_INDEX_BACKSTOP;
+  const storeRoot = storeConfigReader.resolveTeamStoreRootFromProject(projectRoot);
+  const storeVal = storeConfigReader.readStoreConfigNumber(storeRoot, "broad_index_backstop", range);
+  return typeof storeVal === "number" ? storeVal : DEFAULT_HINT_BROAD_INDEX_BACKSTOP;
 }
 
 /**
- * v2.0.0-rc.33 W2-5: resolve hint_broad_cooldown_hours. Schema clamps 0..168;
- * 0 means "no cooldown" (re-emit on every SessionStart, rc.32 behavior).
+ * Min hours between SessionStart broad menus. config-single-home W7: derived
+ * from the nudge_mode preset rather than its own `hint_broad_cooldown_hours`
+ * key — "how often do I want to see the menu" is the volume dial, not a
+ * separate number. 0 = no cooldown (verbose re-emits every session open).
  */
 function readBroadCooldownHours(projectRoot) {
-  return readConfigNumber(projectRoot, "hint_broad_cooldown_hours", DEFAULT_HINT_BROAD_COOLDOWN_HOURS, {
-    min: 0,
-    max: 168,
-  });
+  return resolveNudgePreset(projectRoot).broadCooldownHours;
 }
 
 /**
- * v2.0.0-rc.33 W2-6: resolve hint_reminder_to_context. Boolean flag — when
- * true (default) the hook writes a Claude-Code-shaped JSON envelope to stdout
- * carrying the banner under hookSpecificOutput.additionalContext so the model
- * receives the reminder in-context. Stderr stays informational either way.
+ * Whether the banner is also written to stdout as a Claude-Code-shaped JSON
+ * envelope (hookSpecificOutput.additionalContext) so the MODEL receives it.
+ *
+ * config-single-home W7: no longer configurable — always true. This is the AI
+ * sink, and D5 (flow ⊥ observation) makes it independent of how quiet the human
+ * channel is; knowledge that never reaches the model is Fabric not working, so
+ * there is no user-meaningful "off". Kept as a function because telemetry
+ * records the target channel per emit.
  */
-function readReminderToContext(projectRoot) {
-  return readConfigBoolean(projectRoot, "hint_reminder_to_context", DEFAULT_HINT_REMINDER_TO_CONTEXT);
+function readReminderToContext(_projectRoot) {
+  return DEFAULT_HINT_REMINDER_TO_CONTEXT;
 }
 
 /**
@@ -529,12 +535,10 @@ const CLI_TIMEOUT_MS = 8000; // ISS-20260713-028: after body-less wire, still al
 // `hint_summary_max_len` in fabric-config overrides this default (range 40..240).
 const DEFAULT_SUMMARY_MAX_LEN = 80;
 
+// config-single-home W7: derived from the nudge_mode preset (verbose gets longer
+// lines) instead of its own `hint_summary_max_len` key.
 function readSummaryMaxLen(projectRoot) {
-  return readConfigNumber(projectRoot, "hint_summary_max_len", DEFAULT_SUMMARY_MAX_LEN, {
-    min: 40,
-    max: 240,
-    floor: true,
-  });
+  return resolveNudgePreset(projectRoot).summaryMaxLen;
 }
 
 // Canonical type order — render groups in this sequence so output is stable
