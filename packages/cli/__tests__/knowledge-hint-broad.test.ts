@@ -1961,6 +1961,76 @@ describe("knowledge-hint-broad.cjs — empty knowledge base first-run guidance (
     });
   });
 
+  // F05 (review fix): the three assertions above all go through
+  // buildSessionStartSinks, which is side-effect-free BY DESIGN — the cooldown
+  // sidecar, the injection log and the surface-emitted ledger row all live in
+  // main(). So they could not see that making the empty-KB branch render revived
+  // main()'s tail for a path where it had always short-circuited, and let the
+  // guidance stamp the 24h cooldown. These drive main() itself.
+  describe("main() side effects on the empty-KB path", () => {
+    const seededCensus = {
+      by_type: { decisions: 3 },
+      by_layer: { team: 3, personal: 0, project: 0 },
+      broad_by_type: { decisions: 3 },
+      narrow_total: 0,
+      dropped_other_project: 0,
+      total: 3,
+    };
+    const T0 = 1_800_000_000_000;
+    const FIVE_MINUTES = 5 * 60 * 1000;
+
+    function runMain(census: unknown, nowMs: number): string {
+      const writes: string[] = [];
+      hook.main(
+        {
+          cwd: tempRoot,
+          now: nowMs,
+          skipStdout: true,
+          payload: {
+            version: 2,
+            revision_hash: "rev-empty",
+            target_paths: ["**"],
+            entries: [],
+            broad_count: 0,
+          } as unknown as Payload,
+          census,
+          alwaysBodies: [],
+        },
+        { stderr: { write: (chunk: string) => writes.push(chunk) } },
+      );
+      return writes.join("");
+    }
+
+    it("empty-KB guidance renders but does NOT stamp the cooldown, so the first real HUD is not silenced", () => {
+      withIsolatedFabricHome(() => {
+        plantConfig();
+
+        // Session 1: empty KB → guidance shown, sidecar untouched.
+        expect(runMain(emptyCensus, T0)).toContain("knowledge base is empty");
+        expect(hook.readBroadLastEmit(tempRoot)).toBeNull();
+
+        // Session 2, five minutes later: the user followed the guidance and bound
+        // a store. The first REAL knowledge HUD must appear — pre-fix this was
+        // silent for 24 hours.
+        const second = runMain(seededCensus, T0 + FIVE_MINUTES);
+        expect(second).toContain("▸ [fabric] 3 entries");
+        // …and THAT emit is what arms the cooldown.
+        expect(hook.readBroadLastEmit(tempRoot)).toBe(T0 + FIVE_MINUTES);
+      });
+    });
+
+    it("a real emit still arms the 24h cooldown (the gate is intact, not disabled)", () => {
+      withIsolatedFabricHome(() => {
+        plantConfig();
+
+        expect(runMain(seededCensus, T0)).toContain("▸ [fabric] 3 entries");
+        expect(hook.readBroadLastEmit(tempRoot)).toBe(T0);
+        // Same KB five minutes later → still cooling, fully silent.
+        expect(runMain(seededCensus, T0 + FIVE_MINUTES)).toBe("");
+      });
+    });
+  });
+
   it("leaves the non-empty census header byte-identical", () => {
     withIsolatedFabricHome(() => {
       plantConfig();
