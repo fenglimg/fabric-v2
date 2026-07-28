@@ -1986,13 +1986,9 @@ describe("knowledge-hint-broad.cjs — empty knowledge base first-run guidance (
           cwd: tempRoot,
           now: nowMs,
           skipStdout: true,
-          payload: {
-            version: 2,
-            revision_hash: "rev-empty",
-            target_paths: ["**"],
-            entries: [],
-            broad_count: 0,
-          } as unknown as Payload,
+          // Typed helper, not a cast: an empty broad payload is exactly what the
+          // hint CLI returns for these two cases; the census seam drives the rest.
+          payload: makePayload([]),
           census,
           alwaysBodies: [],
         },
