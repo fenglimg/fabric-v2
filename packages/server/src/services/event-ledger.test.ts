@@ -1116,6 +1116,63 @@ describe("appendEventLedgerEvent — 50MB soft-warn (rc.22 Scope A T3)", () => {
   });
 });
 
+// F01 (review fix): the per-field string cap below could not hold the invariant
+// it documents — arrays are mapped element-wise, so N short ids never trip it no
+// matter how large N grows. These pin the whole-LINE budget, which is the thing
+// PIPE_BUF actually constrains.
+describe("appendEventLedgerEvent — whole-line 4KB budget (F01)", () => {
+  it("caps an oversize id array and records its pre-truncation count", async () => {
+    const projectRoot = await createTempProject();
+    // 600 ids × ~24 B ≈ 14 KB in one array — every individual string is tiny, so
+    // the per-field string cap sees nothing to do.
+    const ids = Array.from({ length: 600 }, (_, i) => `team:KT-DEC-${String(i).padStart(4, "0")}`);
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_selection",
+      selection_token: "selection:rev:budget",
+      target_paths: ["src/app.ts"],
+      required_stable_ids: [],
+      ai_selectable_stable_ids: [],
+      ai_selected_stable_ids: [],
+      final_stable_ids: [],
+      ai_selection_reasons: {},
+      rejected_stable_ids: ids,
+      ignored_stable_ids: [],
+    });
+
+    const raw = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
+    const line = raw.split("\n").filter((l) => l.trim().length > 0)[0] as string;
+    expect(Buffer.byteLength(line, "utf8")).toBeLessThanOrEqual(4 * 1024);
+
+    const { events } = await readEventLedger(projectRoot, { event_type: "knowledge_selection" });
+    const stored = events[0] as {
+      rejected_stable_ids: string[];
+      truncated_fields?: Record<string, number>;
+    };
+    // Bounded AND transparent: the row says how many ids it started with, so a
+    // reader can never mistake the sample for the whole set.
+    expect(stored.rejected_stable_ids.length).toBeLessThan(600);
+    expect(stored.truncated_fields?.rejected_stable_ids).toBe(600);
+  });
+
+  it("leaves an in-budget row byte-identical (no truncated_fields key)", async () => {
+    const projectRoot = await createTempProject();
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "knowledge_selection",
+      selection_token: "selection:rev:small",
+      target_paths: ["src/app.ts"],
+      required_stable_ids: [],
+      ai_selectable_stable_ids: ["team:KT-DEC-0001"],
+      ai_selected_stable_ids: ["team:KT-DEC-0001"],
+      final_stable_ids: ["team:KT-DEC-0001"],
+      ai_selection_reasons: {},
+      rejected_stable_ids: [],
+      ignored_stable_ids: [],
+    });
+    const { events } = await readEventLedger(projectRoot, { event_type: "knowledge_selection" });
+    expect(events[0]).not.toHaveProperty("truncated_fields");
+  });
+});
+
 describe("appendEventLedgerEvent — per-field truncate (rc.37 NEW-14)", () => {
   it("truncates a string field exceeding 4 KB and appends a sentinel marker", async () => {
     const projectRoot = await createTempProject();

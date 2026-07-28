@@ -19,6 +19,14 @@ const eventLedgerEnvelopeSchema = {
   schema_version: z.literal(1),
   correlation_id: z.string().optional(),
   session_id: z.string().optional(),
+  // F01 (4KB PIPE_BUF line budget): field name → the element count that field
+  // held BEFORE truncation. Written whenever an array/record field was reduced
+  // to keep the serialized row inside the single-line atomicity budget — either
+  // deliberately by the emitter (a diagnostic SAMPLE instead of the full set) or
+  // structurally by appendEventLedgerEvent's line-budget guard. Absent means
+  // every field on the row is complete, so a reader can always tell a whole set
+  // from a sample instead of silently under-counting.
+  truncated_fields: z.record(z.number().int().nonnegative()).optional(),
 };
 
 const stringRecordSchema = z.record(z.string());

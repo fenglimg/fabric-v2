@@ -175,11 +175,37 @@ export type PreflightDiagnostic = {
 // already on the wire as `result.dropped[]`; this type carries it into the event
 // ledger, where every downstream auditor reads.
 export type DeliveryDiagnostic = {
-  code: "retrieval_budget_dropped" | "payload_budget_dropped" | "delivery_empty";
+  code:
+    | "retrieval_budget_dropped"
+    | "payload_budget_dropped"
+    | "delivery_empty"
+    | "corpus_read_failed";
   severity: "warn";
   message: string;
   stable_ids?: string[];
 };
+
+// F01 (review fix): how many ids a ledger diagnostic may carry. The drop lists
+// are O(corpus) — 116 ids on this repo's own store — and a single row must stay
+// under the 4KB PIPE_BUF line budget (event-ledger EVENT_LINE_MAX_BYTES) or
+// concurrent unlocked appenders (the fabric skills' `echo >>`) can interleave
+// bytes into it. Ids beyond the cap are a SAMPLE, never a silent cut: every
+// message states the true total, and the knowledge_selection row records the
+// pre-truncation counts in `truncated_fields` (KT-DEC-0028 / KT-DEC-0051 —
+// bounded and transparent, never silently hidden). The complete set stays on
+// the wire in `result.dropped[]`, which has its own payload budget.
+const LEDGER_ID_SAMPLE_CAP = 24;
+
+function sampleIds(ids: string[]): string[] {
+  return [...ids].sort().slice(0, LEDGER_ID_SAMPLE_CAP);
+}
+
+/** `"…"` suffix naming the true total whenever the sample is short of it. */
+function sampleNote(total: number): string {
+  return total > LEDGER_ID_SAMPLE_CAP
+    ? ` (stable_ids lists the first ${LEDGER_ID_SAMPLE_CAP} of ${total})`
+    : "";
+}
 
 export type PlanContextResult = {
   revision_hash: string;
@@ -338,7 +364,15 @@ export async function planContext(
   // anymore. Empty-shell suppression (summary === stable_id, no selection
   // signal) is preserved via partitionEmptyShells so store drafts get the same
   // quality gate the project-meta path applied (and the same preflight warning).
-  const storeRawItems = await buildCrossStoreRawItems(projectRoot).catch(() => []);
+  // F02 (review fix): the degrade-to-empty stays (a multi-store hiccup must never
+  // crash the hint), but the REASON is captured instead of swallowed — a failed
+  // store read and a genuinely empty knowledge base used to look identical to
+  // every downstream auditor. It rides the ledger as `corpus_read_failed` below.
+  let corpusReadError: string | undefined;
+  const storeRawItems = await buildCrossStoreRawItems(projectRoot).catch((error: unknown) => {
+    corpusReadError = error instanceof Error ? error.message : String(error);
+    return [];
+  });
   const { rawItems: allRawItems, suppressedStableIds } = partitionEmptyShells(storeRawItems);
 
   // F54 (ISS-20260531-090): honor the declared `layer_filter`. The per-call
@@ -580,6 +614,10 @@ export async function planContext(
     retrievalDropped,
     payloadDropped,
     deliveredIds: sharedStableIds,
+    corpusSize: allRawItems.length,
+    rankedCorpusSize: rawItems.length,
+    layerFilter: effectiveLayerFilter,
+    corpusReadError,
   });
 
   // v2.0.0-rc.37 Wave B (B3): dual-write counter rollup. The audit event still
@@ -629,6 +667,27 @@ export async function planContext(
     // ISS-20260711-217 recalled-id definition the planned event uses).
     // `rejected` = never reached delivery consideration (retrieval_budget);
     // `ignored` = reached it but was trimmed for bytes (payload_budget).
+    //
+    // F01 (review fix): the drop lists are O(corpus) and blew the row past the
+    // 4KB PIPE_BUF line budget (measured 10103 B on this repo). They are a
+    // diagnostic SAMPLE here — capped, with the pre-truncation counts recorded in
+    // `truncated_fields` so a reader can never mistake the sample for the whole
+    // set. The complete lists remain on the recall wire as `result.dropped[]`.
+    const rejectedIds = retrievalDropped.map((d) => d.id);
+    const ignoredIds = payloadDropped.map((d) => d.id);
+    // Rank order, NOT sorted: both lists arrive ranked, so the first N are the
+    // near-misses — the ids an auditor actually wants when asking "what did I
+    // just miss?". (The ledger diagnostics sort instead; they are keyed by id.)
+    const rejectedSample = rejectedIds.slice(0, LEDGER_ID_SAMPLE_CAP);
+    const ignoredSample = ignoredIds.slice(0, LEDGER_ID_SAMPLE_CAP);
+    const selectionTruncated: Record<string, number> = {
+      ...(rejectedSample.length < rejectedIds.length
+        ? { rejected_stable_ids: rejectedIds.length }
+        : {}),
+      ...(ignoredSample.length < ignoredIds.length
+        ? { ignored_stable_ids: ignoredIds.length }
+        : {}),
+    };
     await appendEventLedgerEvent(projectRoot, {
       event_type: "knowledge_selection",
       selection_token: selectionToken,
@@ -637,15 +696,20 @@ export async function planContext(
       ai_selectable_stable_ids: sharedStableIds,
       ai_selected_stable_ids: sharedStableIds,
       final_stable_ids: sharedStableIds,
-      rejected_stable_ids: retrievalDropped.map((d) => d.id),
-      ignored_stable_ids: payloadDropped.map((d) => d.id),
-      // The only free-text explanation channel the schema offers; the drop reason
-      // is the only reason the server actually knows.
-      ai_selection_reasons: Object.fromEntries(
-        [...retrievalDropped, ...payloadDropped].map((d) => [d.id, d.reason]),
-      ),
+      rejected_stable_ids: rejectedSample,
+      ignored_stable_ids: ignoredSample,
+      // F01 (review fix): this used to map every dropped id to its drop reason —
+      // 5.8KB of zero information, because membership in `rejected_stable_ids`
+      // ALREADY means retrieval_budget and membership in `ignored_stable_ids`
+      // ALREADY means payload_budget. The map is emitted empty: the server has no
+      // per-id rationale beyond the bucket the id is already in, and inventing
+      // one per id only costs bytes against the line budget.
+      ai_selection_reasons: {},
       correlation_id: input.correlation_id,
       ...(sessionId ? { session_id: sessionId } : {}),
+      ...(Object.keys(selectionTruncated).length > 0
+        ? { truncated_fields: selectionTruncated }
+        : {}),
     });
   } catch {
     // Planning telemetry is best-effort and must not block rule discovery.
@@ -769,16 +833,31 @@ function buildDeliveryDiagnostics(args: {
   retrievalDropped: { id: string; reason: "retrieval_budget" }[];
   payloadDropped: { id: string; reason: "payload_budget" }[];
   deliveredIds: string[];
+  /** Store corpus size BEFORE the layer filter (0 also means "no corpus at all"). */
+  corpusSize: number;
+  /** Corpus size AFTER the layer filter — the set that entered ranking. */
+  rankedCorpusSize: number;
+  layerFilter: string;
+  /** Message of the store-read failure that degraded the corpus to empty, if any. */
+  corpusReadError?: string;
 }): DeliveryDiagnostic[] {
-  const { retrievalDropped, payloadDropped, deliveredIds } = args;
+  const {
+    retrievalDropped,
+    payloadDropped,
+    deliveredIds,
+    corpusSize,
+    rankedCorpusSize,
+    layerFilter,
+    corpusReadError,
+  } = args;
   const diagnostics: DeliveryDiagnostic[] = [];
 
   if (retrievalDropped.length > 0) {
     diagnostics.push({
       code: "retrieval_budget_dropped",
       severity: "warn",
-      stable_ids: retrievalDropped.map((d) => d.id).sort(),
-      message: `${retrievalDropped.length} candidate(s) dropped by retrieval_budget before delivery.`,
+      stable_ids: sampleIds(retrievalDropped.map((d) => d.id)),
+      message: `${retrievalDropped.length} candidate(s) dropped by retrieval_budget before delivery.${sampleNote(retrievalDropped.length)}`,
     });
   }
 
@@ -786,17 +865,38 @@ function buildDeliveryDiagnostics(args: {
     diagnostics.push({
       code: "payload_budget_dropped",
       severity: "warn",
-      stable_ids: payloadDropped.map((d) => d.id).sort(),
-      message: `${payloadDropped.length} candidate(s) dropped by payload_budget trim.`,
+      stable_ids: sampleIds(payloadDropped.map((d) => d.id)),
+      message: `${payloadDropped.length} candidate(s) dropped by payload_budget trim.${sampleNote(payloadDropped.length)}`,
     });
   }
 
-  const totalDropped = retrievalDropped.length + payloadDropped.length;
-  if (deliveredIds.length === 0 && totalDropped > 0) {
+  // F02 (review fix): the old predicate was `delivered === 0 && totalDropped > 0`,
+  // which is arithmetically unsatisfiable in production — top_k clamps to >= 1,
+  // the relevance floor always keeps the top-scored entry, and the payload trim's
+  // minKeep defaults to 1, so `delivered === 0` implies the ranked corpus was
+  // empty, which implies `totalDropped === 0`. The blind spot this goal exists
+  // for (a NON-EMPTY candidate pool delivered as an EMPTY set) therefore stayed
+  // unreported. Re-keyed on the corpus itself: whenever the store corpus had
+  // entries and delivery is empty, say so, and name which stage emptied it —
+  // the layer filter (rankedCorpusSize === 0) is the live production path that
+  // used to be silent because it drops candidates without counting them.
+  if (deliveredIds.length === 0 && corpusSize > 0) {
     diagnostics.push({
       code: "delivery_empty",
       severity: "warn",
-      message: `delivered 0 of ${totalDropped} candidate(s): retrieval_budget=${retrievalDropped.length}, payload_budget=${payloadDropped.length}.`,
+      message: `delivered 0 of ${corpusSize} corpus candidate(s): layer_filter=${layerFilter} kept ${rankedCorpusSize}, retrieval_budget=${retrievalDropped.length}, payload_budget=${payloadDropped.length}.`,
+    });
+  }
+
+  // F02 (review fix): the other real path to an empty delivery is a store read
+  // that FAILED — `buildCrossStoreRawItems(...).catch(() => [])` degrades to an
+  // empty corpus, so `corpusSize === 0` and every count above is 0. Indistinguishable
+  // from "the knowledge base is genuinely empty" until now.
+  if (corpusReadError !== undefined) {
+    diagnostics.push({
+      code: "corpus_read_failed",
+      severity: "warn",
+      message: `store corpus read failed; delivering from an empty candidate set: ${corpusReadError}`,
     });
   }
 
