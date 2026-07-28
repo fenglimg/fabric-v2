@@ -106,26 +106,49 @@ describe("config-single-home W6: --list reports the effective value, not the rep
     expect(lines).toContain("archive_hint_hours=24 (default)");
   });
 
-  it("--json carries the source and home per field", async () => {
+  it("--json carries the source, home, and localized copy per field", async () => {
     const repo = makeRepo({ project_id: "p-1" });
     writeGlobal({ defaults: { archive_edit_threshold: 40 } });
 
     const lines = await runConfig({ target: repo, list: true, json: true });
     const parsed = JSON.parse(lines.join("\n")) as {
-      fields: Array<{ key: string; value: unknown; source: string; home: string }>;
+      profile: string | null;
+      profiles: Record<string, { label: string; description: string; keys: Record<string, unknown> }>;
+      fields: Array<{
+        key: string;
+        value: unknown;
+        source: string;
+        home: string;
+        label: string;
+        description: string;
+      }>;
     };
 
     const edit = parsed.fields.find((f) => f.key === "archive_edit_threshold");
-    expect(edit).toEqual({
+    expect(edit).toMatchObject({
       key: "archive_edit_threshold",
       value: 40,
       type: "number",
       home: "preference",
       source: "defaults",
+      default: 20,
+    });
+    // W9: the copy ships WITH the data so the fabric-config skill explains each
+    // knob from this one source instead of keeping its own drifting copy.
+    expect(edit?.label.length).toBeGreaterThan(0);
+    expect(edit?.description.length).toBeGreaterThan(0);
+    expect(edit?.label).not.toContain("cli.config.fields"); // not an unresolved i18n key
+    // Enum-ish fields advertise their allowed values.
+    expect(parsed.fields.find((f) => f.key === "nudge_mode")).toMatchObject({
+      allowed: ["silent", "minimal", "normal", "verbose"],
     });
     // underseed_node_threshold is a CORPUS knob — it must not claim a
     // preference home, or `--set` would route it where no reader looks.
     expect(parsed.fields.find((f) => f.key === "underseed_node_threshold")?.home).toBe("corpus");
+    // Every profile is described too, so the skill can present the choice.
+    expect(Object.keys(parsed.profiles)).toEqual(["quiet", "standard", "coach"]);
+    expect(parsed.profiles.coach.keys.nudge_mode).toBe("verbose");
+    expect(parsed.profiles.coach.description.length).toBeGreaterThan(0);
   });
 });
 

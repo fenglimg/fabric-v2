@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { recognizeStoreDir } from "@fenglimg/fabric-shared";
 
 import { loadGlobalConfig, mutateGlobalConfig } from "../src/store/global-config-io.js";
-import { installGlobalCore } from "../src/install/install-global.js";
+import { ensurePolicyDefaults, installGlobalCore } from "../src/install/install-global.js";
 import { GLOBAL_POLICY_DEFAULTS } from "../src/install/install-scaffold-config.js";
 
 // v2.1.0-rc.1 P3 — `install --global` core: transactional global setup
@@ -121,5 +121,33 @@ describe("W6 install --global: policy defaults reach an existing global config",
     await installGlobalCore(opts(globalRoot));
 
     expect(loadGlobalConfig(globalRoot)?.defaults).toEqual({});
+  });
+
+  // W9: the seeding was originally reachable ONLY through installGlobalCore,
+  // which the ordinary per-repo `fabric install` does not call once a global
+  // config exists — so on a real machine it never ran. `ensurePolicyDefaults`
+  // is the standalone step the install stages call; these pin its contract
+  // directly, independent of who happens to invoke it.
+  it("ensurePolicyDefaults seeds a config missing the segment and reports the write", async () => {
+    const globalRoot = isolatedGlobalRoot();
+    await installGlobalCore(opts(globalRoot));
+    await mutateGlobalConfig((current) => {
+      const { defaults: _dropped, ...rest } = current as Record<string, unknown>;
+      return rest as never;
+    }, globalRoot);
+
+    const seeded = await ensurePolicyDefaults(globalRoot);
+
+    expect(seeded?.defaults).toEqual({ ...GLOBAL_POLICY_DEFAULTS });
+    expect(loadGlobalConfig(globalRoot)?.defaults).toEqual({ ...GLOBAL_POLICY_DEFAULTS });
+  });
+
+  it("ensurePolicyDefaults is a no-op (returns null) when the segment exists", async () => {
+    const globalRoot = isolatedGlobalRoot();
+    await installGlobalCore(opts(globalRoot));
+
+    expect(await ensurePolicyDefaults(globalRoot)).toBeNull();
+    // …and on a home with no global config at all.
+    expect(await ensurePolicyDefaults(isolatedGlobalRoot())).toBeNull();
   });
 });

@@ -40,6 +40,38 @@ export interface InstallGlobalResult {
   alreadyInstalled: boolean;
 }
 
+/**
+ * config-single-home W6/W9 — make sure the shipped policy defaults exist.
+ *
+ * W5 seeded `defaults` only when the global config was CREATED, so every machine
+ * that already had one silently kept the library defaults: the install banner
+ * promised `nudge_mode: minimal` while the runtime resolved `normal`. Seeding
+ * has to run on the ordinary `fabric install` path too, not just the
+ * first-ever-global one — which is why this lives here as its own step rather
+ * than inline in installGlobalCore's already-installed branch.
+ *
+ * Narrow on purpose: seeds ONLY when the whole `defaults` segment is missing.
+ * A user who tuned it, or who deliberately emptied it to `{}`, is left alone —
+ * "present but empty" is a choice, "absent" is a config predating the segment.
+ *
+ * Returns the updated config, or null when nothing needed seeding.
+ */
+export async function ensurePolicyDefaults(globalRoot: string): Promise<GlobalConfig | null> {
+  const existing = loadGlobalConfig(globalRoot);
+  if (existing === null || existing.defaults !== undefined) {
+    return null;
+  }
+  return mutateGlobalConfig(
+    // Re-check inside the lock: a concurrent install may have seeded it between
+    // the read above and acquiring the lock.
+    (current) =>
+      current === null || current.defaults !== undefined
+        ? null
+        : { ...current, defaults: { ...GLOBAL_POLICY_DEFAULTS } },
+    globalRoot,
+  );
+}
+
 export async function installGlobalCore(
   options: InstallGlobalOptions,
 ): Promise<InstallGlobalResult> {
@@ -53,18 +85,8 @@ export async function installGlobalCore(
     // fresh installs only.
     //
     // Deliberately narrow: seeds ONLY when the whole `defaults` segment is
-    // absent, and never merges into a segment the user already has. A user who
-    // tuned `defaults` — or who emptied it to `{}` — is left untouched.
-    const seeded =
-      existing.defaults === undefined
-        ? await mutateGlobalConfig(
-            (current) =>
-              current === null || current.defaults !== undefined
-                ? null
-                : { ...current, defaults: { ...GLOBAL_POLICY_DEFAULTS } },
-            options.globalRoot,
-          )
-        : existing;
+    // absent, and never merges into a segment the user already has.
+    const seeded = (await ensurePolicyDefaults(options.globalRoot)) ?? existing;
     return {
       receipt: {
         ok: true,

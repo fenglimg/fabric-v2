@@ -656,6 +656,13 @@ export const configCmd = defineCommand({
               type: f.type,
               home: f.home,
               source,
+              // W9: the localized copy travels WITH the data so the
+              // fabric-config skill explains each knob from this one source
+              // instead of restating it (and drifting from it) in its own text.
+              label: t(f.label_i18n_key),
+              description: t(f.description_i18n_key),
+              ...(f.enum_values === undefined ? {} : { allowed: f.enum_values }),
+              default: f.default,
             };
           });
           // W8: name the cadence profile in force, or `null` when the four
@@ -668,7 +675,16 @@ export const configCmd = defineCommand({
                 {
                   global_config: globalConfigPath(resolveGlobalRoot()),
                   profile,
-                  profiles: CONFIG_PROFILES,
+                  profiles: Object.fromEntries(
+                    CONFIG_PROFILE_NAMES.map((n) => [
+                      n,
+                      {
+                        label: t(`cli.config.profile.${n}`),
+                        description: t(`cli.config.profile.${n}.description`),
+                        keys: CONFIG_PROFILES[n],
+                      },
+                    ]),
+                  ),
                   fields: rows,
                 },
                 null,

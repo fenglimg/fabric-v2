@@ -84,6 +84,10 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
 
     // Pre-conditions: fabric-owned files exist after init.
     expect(existsSync(join(target, ".claude", "skills", "fabric-archive", "SKILL.md"))).toBe(true);
+    // W9: a newly-registered skill must be swept too — install/uninstall
+    // symmetry has been broken once before (fabric-store shipped for several
+    // releases without ever being removed).
+    expect(existsSync(join(target, ".claude", "skills", "fabric-config", "SKILL.md"))).toBe(true);
     expect(existsSync(join(target, ".claude", "hooks", "fabric-hint.cjs"))).toBe(true);
 
     await runUninstall(target);
@@ -92,6 +96,8 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     expect(existsSync(join(target, ".claude", "skills", "fabric-archive", "SKILL.md"))).toBe(false);
     expect(existsSync(join(target, ".claude", "skills", "fabric-review", "SKILL.md"))).toBe(false);
     expect(existsSync(join(target, ".claude", "skills", "fabric-import", "SKILL.md"))).toBe(false);
+    expect(existsSync(join(target, ".claude", "skills", "fabric-config", "SKILL.md"))).toBe(false);
+    expect(existsSync(join(target, ".claude", "skills", "fabric-config"))).toBe(false);
 
     // Fabric-owned hook scripts are removed.
     expect(existsSync(join(target, ".claude", "hooks", "fabric-hint.cjs"))).toBe(false);

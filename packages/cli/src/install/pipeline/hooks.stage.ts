@@ -7,6 +7,7 @@ import {
   installFabricReviewSkill,
   installFabricSyncSkill,
   installFabricStoreSkill,
+  installFabricConfigSkill,
   installFabricRecallPlaybookSkill,
   installSharedSkillLib,
   installArchiveHintHook,
@@ -70,6 +71,7 @@ export class HooksStage implements Stage {
       installResults.push(...await this.runBestEffort("skill-sync-install", () => installFabricSyncSkill(target)));
       installResults.push(...await this.runBestEffort("skill-store-install", () => installFabricStoreSkill(target)));
       installResults.push(...await this.runBestEffort("skill-recall-playbook-install", () => installFabricRecallPlaybookSkill(target)));
+      installResults.push(...await this.runBestEffort("skill-config-install", () => installFabricConfigSkill(target)));
       installResults.push(...await this.runBestEffort("skill-shared-lib", () => installSharedSkillLib(target)));
 
       // Install hook scripts

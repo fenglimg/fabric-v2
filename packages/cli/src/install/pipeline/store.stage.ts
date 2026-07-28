@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { loadGlobalConfig, mutateGlobalConfig, resolveGlobalRoot } from "../../store/global-config-io.js";
 import { cloneGlobalPersonalFromRemote, mountStoreFromRemote, runGlobalInstall } from "../run-global-install.js";
+import { ensurePolicyDefaults } from "../install-global.js";
 import { refreshLocale, t } from "../../i18n.js";
 import {
   personalStoreCandidates,
@@ -100,6 +101,12 @@ export class StoreStage implements Stage {
         context.state.globalConfigCreated = true;
       } else {
         await this.ensurePersonalStore(globalConfig, globalRoot);
+        // W9: the global config predates this install. Seed the shipped policy
+        // defaults if the segment is absent — runGlobalInstall (which does the
+        // seeding on the first-ever path) is deliberately NOT called here, so
+        // without this every existing machine kept the library defaults while
+        // the install banner claimed the shipped ones.
+        await ensurePolicyDefaults(globalRoot);
       }
 
       // Persist the language pick now that the global config exists, then
