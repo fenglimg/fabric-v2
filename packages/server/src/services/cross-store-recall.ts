@@ -15,6 +15,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-builder.js";
+import { isAlwaysActive } from "./always-active.js";
 import { extractBody, sha256 } from "./_shared.js";
 
 // ---------------------------------------------------------------------------
@@ -432,7 +433,9 @@ export async function buildCrossStoreBodyIndex(
 // B. So "always-active" is resolved here by knowledge_type, the only signal
 // present on every store entry today. When Goal B lands activation.tier on store
 // frontmatter, this selector should switch to `tier === "always"`.
-const ALWAYS_ACTIVE_TYPES = new Set(["guidelines", "models"]);
+// F03 (review fix): the type set — and the full membership predicate around it
+// — moved to always-active.ts, shared with recall's body_in_context flag and
+// with `fabric audit why-not-surfaced`.
 
 export interface AlwaysActiveBody {
   /** store-qualified id (`<alias>:<stableId>`). */
@@ -516,8 +519,13 @@ export async function buildKnowledgeCensus(projectRoot: string): Promise<Knowled
       const desc = extractRuleDescription(entry.source);
       const type = desc?.knowledge_type;
       // relevance_scope slice (KT-DEC-0029): narrow == file-specific, everything
-      // else (incl. undefined) is broad — same predicate buildAlwaysActiveBodies
-      // uses, so the spine size stays consistent across both sinks.
+      // else (incl. undefined) is broad.
+      //
+      // The census is an INVENTORY of what the knowledge base holds, so it counts
+      // every maturity. The resident tier (buildAlwaysActiveBodies) additionally
+      // requires a settled maturity, so `broad_by_type.guidelines + .models` is an
+      // upper bound on the resident count, not the resident count itself. Callers
+      // that need the injected set must ask buildAlwaysActiveBodies.
       const isNarrow = desc?.relevance_scope === "narrow";
       if (typeof type === "string") {
         census.by_type[type] = (census.by_type[type] ?? 0) + 1;
@@ -555,23 +563,13 @@ export async function buildAlwaysActiveBodies(
       const desc = extractRuleDescription(entry.source);
       if (desc === undefined) continue;
       const type = desc.knowledge_type;
-      if (typeof type !== "string" || !ALWAYS_ACTIVE_TYPES.has(type)) continue;
-      // SessionStart invariant: both sinks show BROAD only — narrow stays silent
-      // here and surfaces contextually via the PreToolUse narrow hint. Without
-      // this, a narrow guideline/model would leak into "always-active" and be
-      // presented as an unconditional rule, contradicting its narrow scope.
-      // (knowledge_type is today's always-active proxy; when Goal B lands
-      // activation.tier this whole selector switches to tier === "always".)
-      if (desc.relevance_scope === "narrow") continue;
-      // G3: `draft` is the unadjudicated maturity — the entry is a proposal, not
-      // a settled rule, so it must not ride the always-active tier where it is
-      // presented as unconditional. Draft entries remain fully reachable through
-      // the PreToolUse narrow hint and fab_recall; only this tier excludes them.
-      // Deliberately an exclusion (`=== "draft"`), not a verified/proven
-      // whitelist: `maturity` is optional (api-contracts `_maturityEnum`
-      // `.optional()`) and most existing entries omit it, so a whitelist would
-      // silently empty the tier instead of removing drafts.
-      if (desc.maturity === "draft") continue;
+      // F03 (review fix): the tier membership rule (type / relevance_scope /
+      // maturity, in that order) lives in ONE place now — always-active.ts —
+      // shared with fab_recall's `body_in_context` flag and with
+      // `fabric audit why-not-surfaced`. The hand-sync comment that used to sit
+      // here is what let the maturity axis land in this sink only.
+      if (!isAlwaysActive(desc)) continue;
+      if (typeof type !== "string") continue; // narrowing for the payload below
       out.push({
         stable_id: entry.qualifiedId,
         type,

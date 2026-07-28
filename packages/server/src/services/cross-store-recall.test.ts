@@ -205,17 +205,28 @@ describe("buildAlwaysActiveBodies maturity gate (G3)", () => {
     return projectRoot;
   }
 
-  it("excludes draft, keeps verified, and keeps entries with no maturity declared", async () => {
+  it("keeps settled maturities and excludes draft, absent, and unparseable ones", async () => {
     const projectRoot = await seedMaturityMix();
 
     const ids = (await buildAlwaysActiveBodies(projectRoot)).map((b) => b.stable_id);
 
     expect(ids).not.toContain("team:KT-GLD-9001");
     expect(ids).toContain("team:KT-GLD-9002");
-    // Exclusion is `=== "draft"`, NOT a verified/proven whitelist: maturity is
-    // optional in the schema and most existing entries omit it, so a whitelist
-    // would silently empty the always-active tier.
-    expect(ids).toContain("team:KT-GLD-9003");
+    // F10 (review fix): an ABSENT maturity is `draft`, matching every other
+    // reader in the repo (doctor-knowledge-hygiene.ts:40, review-shared.ts:416,
+    // review-search.ts:216/280 all read `(maturity ?? "draft")`). The previous
+    // `=== "draft"` exclusion read absence as "settled" — the same field carrying
+    // opposite meanings in the hygiene lint and the resident tier.
+    expect(ids).not.toContain("team:KT-GLD-9003");
+    // An INVALID value is draft too: knowledge-meta-builder safeParses the
+    // frontmatter and downgrades `Draft` / junk to undefined, so an exclusion
+    // test would have let it ride the resident tier as if adjudicated.
+    await seedGuideline("KT-GLD-9004", "Draft");
+    await seedGuideline("KT-GLD-9005", "not-a-maturity");
+    const afterJunk = (await buildAlwaysActiveBodies(projectRoot)).map((b) => b.stable_id);
+    expect(afterJunk).not.toContain("team:KT-GLD-9004");
+    expect(afterJunk).not.toContain("team:KT-GLD-9005");
+    expect(afterJunk).toContain("team:KT-GLD-9002");
   });
 
   it("leaves the census counts untouched (D2: broad_by_type stays the display axis)", async () => {

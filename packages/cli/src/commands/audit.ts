@@ -608,6 +608,12 @@ function renderWhyNotSurfaced(r: WhyNotSurfacedResult, dt: AuditTranslator): voi
       writeStdout(`${paint.warn("○")} ${dt("cli.audit.why.narrow-timing", { id })}`);
       writeStdout(hint(dt("cli.audit.why.narrow-timing.hint")));
       return;
+    case "maturity_draft":
+      writeStdout(
+        `${paint.warn("○")} ${dt("cli.audit.why.maturity-draft", { id, maturity: r.maturity ?? "draft" })}`,
+      );
+      writeStdout(hint(dt("cli.audit.why.maturity-draft.hint")));
+      return;
     case "should_surface":
       writeStdout(`${paint.success("✓")} ${dt("cli.audit.why.should-surface", { id, store })}`);
       writeStdout(hint(dt("cli.audit.why.should-surface.hint")));

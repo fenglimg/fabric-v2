@@ -36,15 +36,17 @@ function entry(
   id: string,
   scope: string,
   relevanceScope: "broad" | "narrow" = "broad",
+  maturity: string = "proven",
+  type: string = "decision",
 ): string {
   return [
     "---",
     `id: ${id}`,
-    "type: decision",
+    `type: ${type}`,
     "layer: team",
     `semantic_scope: ${scope}`,
     `relevance_scope: ${relevanceScope}`,
-    "maturity: proven",
+    `maturity: ${maturity}`,
     "created_at: 2026-06-04T00:00:00.000Z",
     `summary: ${id} fixture`,
     "---",
@@ -56,7 +58,13 @@ function entry(
   ].join("\n");
 }
 
-async function writeEntry(storeUuid: string, id: string, scope: string, rel: "broad" | "narrow" = "broad"): Promise<void> {
+async function writeEntry(
+  storeUuid: string,
+  id: string,
+  scope: string,
+  rel: "broad" | "narrow" = "broad",
+  maturity: string = "proven",
+): Promise<void> {
   const dir = join(
     resolveGlobalRoot(),
     storeRelativePathForMount({ store_uuid: storeUuid }),
@@ -64,7 +72,19 @@ async function writeEntry(storeUuid: string, id: string, scope: string, rel: "br
     "decisions",
   );
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, `${id}--fixture.md`), entry(id, scope, rel));
+  await writeFile(join(dir, `${id}--fixture.md`), entry(id, scope, rel, maturity));
+}
+
+/** A guideline — a RESIDENT-tier type, so the maturity axis applies to it. */
+async function writeGuideline(storeUuid: string, id: string, maturity: string): Promise<void> {
+  const dir = join(
+    resolveGlobalRoot(),
+    storeRelativePathForMount({ store_uuid: storeUuid }),
+    STORE_LAYOUT.knowledgeDir,
+    "guidelines",
+  );
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, `${id}--fixture.md`), entry(id, "team", "broad", maturity, "guideline"));
 }
 
 // Project bound to the `team` store (alias) + active_project alpha. A second
@@ -141,6 +161,34 @@ describe("explainWhyNotSurfaced — first blocking cause across the 3 scope axes
     const r = await explainWhyNotSurfaced(root, "team:KT-DEC-0001");
     expect(r.localId).toBe("KT-DEC-0001");
     expect(r.verdict).toBe("should_surface");
+  });
+
+  // F04 (review fix): the resident tier gained a maturity axis with no verdict
+  // branch, so this command answered `should_surface` for entries it had just
+  // dropped — on a live instance in the user's own store (KT-GLD-0007, a broad
+  // draft guideline). Both directions are pinned: the axis only blocks entries
+  // that would otherwise BE resident.
+  it("maturity_draft: a broad guideline that is still draft is not resident", async () => {
+    const root = await setup("alpha");
+    await writeGuideline(BOUND, "KT-GLD-0007", "draft");
+    const r = await explainWhyNotSurfaced(root, "KT-GLD-0007");
+    expect(r.verdict).toBe("maturity_draft");
+    expect(r.maturity).toBe("draft");
+    // The prior axes all pass — this is the ONLY thing keeping it out.
+    expect(r.storeBound).toBe(true);
+    expect(r.relevanceScope).toBe("broad");
+  });
+
+  it("maturity_draft does not fire for a settled guideline or for a reference-tier type", async () => {
+    const root = await setup("alpha");
+    await writeGuideline(BOUND, "KT-GLD-0008", "verified");
+    expect((await explainWhyNotSurfaced(root, "KT-GLD-0008")).verdict).toBe("should_surface");
+    // A decision is reference-tier by design: it never rides the resident tier,
+    // so its maturity is not what decides whether it surfaces.
+    await writeEntry(BOUND, "KT-DEC-0004", "team", "broad", "draft");
+    const decision = await explainWhyNotSurfaced(root, "KT-DEC-0004");
+    expect(decision.verdict).toBe("should_surface");
+    expect(decision.maturity).toBe("draft");
   });
 
   it("unbound repo (no active_project): project-scoped entry is NOT a mismatch", async () => {

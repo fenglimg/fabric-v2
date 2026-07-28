@@ -99,6 +99,8 @@ export const enMessages: Messages = {
   "cli.audit.why.project-mismatch.hint": "it surfaces only in repos bound to '{scope}' (semantic_scope axis).",
   "cli.audit.why.narrow-timing": "'{id}' is relevance_scope=narrow — it surfaces via the PreToolUse hint when you EDIT a matching file, not at SessionStart.",
   "cli.audit.why.narrow-timing.hint": "broad entries are the always-on spine; narrow ones are edit-time only (timing axis).",
+  "cli.audit.why.maturity-draft": "'{id}' is maturity={maturity} — a draft guideline/model is a PROPOSAL, so it is kept out of the always-active SessionStart rules.",
+  "cli.audit.why.maturity-draft.hint": "it is still reachable via fab_recall and the edit-time hint; promote it (fab_review modify maturity: verified) to make it resident.",
   "cli.audit.why.should-surface": "'{id}' should be surfacing — store '{store}' bound, scope matches, relevance_scope=broad.",
   "cli.audit.why.should-surface.hint": "if it isn't, the SessionStart snapshot may be stale: start a fresh session or re-run `fabric install`.",
 

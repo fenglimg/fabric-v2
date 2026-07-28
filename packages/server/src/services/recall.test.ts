@@ -727,18 +727,23 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
   // model/guideline BODIES in full ("ALWAYS-ACTIVE RULES") while broad
   // decision/pitfall/process get a REFERENCE id+hook only. recall re-surfaces
   // those same broad model/guideline entries; mark them `always_active:true` so
-  // the agent knows the body is already in context and need not re-Read it. The
-  // predicate is a pure function of (relevance_scope, knowledge_type) — no client
-  // state needed. NOT dropped/demoted: SessionStart injection degrades to an
-  // index line on budget overflow, so the body is not guaranteed present.
-  it("marks broad model/guideline entries body_in_context:true; decisions are not", async () => {
+  // the agent knows the body is already in context and need not re-Read it.
+  // NOT dropped/demoted: SessionStart injection degrades to an index line on
+  // budget overflow, so the body is not guaranteed present.
+  //
+  // F03 (review fix): these fixtures were ALL `maturity: draft` and asserted
+  // body_in_context === true — they were locking in the wrong behaviour after the
+  // resident tier started excluding drafts, which is why the desync ran green.
+  // Split into settled / draft groups so the flag is pinned in BOTH directions:
+  // it must be true exactly when SessionStart really injected the body.
+  it("marks settled broad model/guideline entries body_in_context:true; drafts and decisions are not", async () => {
     const projectRoot = await createTempProject();
     await writeStoreEntry("models", "KT-MOD-0001", [
       "---",
       "id: KT-MOD-0001",
       "type: model",
       "layer: team",
-      "maturity: draft",
+      "maturity: verified",
       "created_at: 2026-06-04T00:00:00.000Z",
       "relevance_scope: broad",
       "summary: scope model",
@@ -751,10 +756,26 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       "id: KT-GLD-0001",
       "type: guideline",
       "layer: team",
-      "maturity: draft",
+      "maturity: verified",
       "created_at: 2026-06-04T00:00:00.000Z",
       "relevance_scope: broad",
       "summary: a guideline",
+      "---",
+      "# body",
+      "",
+    ]);
+    // Draft guideline: recallable, but NOT injected at SessionStart — so claiming
+    // its body is already in context would be a lie that also tells the agent to
+    // skip the Read.
+    await writeStoreEntry("guidelines", "KT-GLD-0002", [
+      "---",
+      "id: KT-GLD-0002",
+      "type: guideline",
+      "layer: team",
+      "maturity: draft",
+      "created_at: 2026-06-04T00:00:00.000Z",
+      "relevance_scope: broad",
+      "summary: a draft guideline still under adjudication",
       "---",
       "# body",
       "",
@@ -764,7 +785,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
       "id: KT-DEC-0001",
       "type: decision",
       "layer: team",
-      "maturity: draft",
+      "maturity: verified",
       "created_at: 2026-06-04T00:00:00.000Z",
       "relevance_scope: broad",
       "summary: a decision",
@@ -781,6 +802,28 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     expect(byId.get("team:KT-GLD-0001")?.body_in_context).toBe(true);
     // REFERENCE-tier (decision) is NOT full-injected at SessionStart → no marker.
     expect(byId.get("team:KT-DEC-0001")?.body_in_context ?? false).toBe(false);
+
+    // The draft guideline stays fully RECALLABLE (that is the promise the
+    // resident-tier exclusion was shipped with) — it just must not claim its body
+    // is already in context. Recalled under its own intent so the relevance floor
+    // does not cut it.
+    const draftRecall = await recall(projectRoot, {
+      paths: ["src/x.ts"],
+      intent: "draft guideline under adjudication",
+    });
+    const draftEntry = draftRecall.entries.find((e) => e.stable_id === "team:KT-GLD-0002");
+    expect(draftEntry).toBeDefined();
+    expect(draftEntry?.body_in_context ?? false).toBe(false);
+
+    // The flag must agree with what the resident tier ACTUALLY injects — that is
+    // the contract body_in_context states. Assert against the tier itself rather
+    // than against a restatement of its rule.
+    const { buildAlwaysActiveBodies } = await import("./cross-store-recall.js");
+    const injected = new Set((await buildAlwaysActiveBodies(projectRoot)).map((b) => b.stable_id));
+    const marked = new Set(
+      result.entries.filter((e) => e.body_in_context === true).map((e) => e.stable_id),
+    );
+    expect([...marked].sort()).toEqual([...injected].sort());
 
     // wire-strip lock (KT-PIT-0005): body_in_context must be DECLARED in
     // recallOutputSchema, else zod .strip() silently drops it at the MCP boundary

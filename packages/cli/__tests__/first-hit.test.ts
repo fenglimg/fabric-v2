@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -98,6 +98,34 @@ describe("assessFirstHitSync", () => {
     const result = await seedStarterKnowledge(storeDir, { layer: "team" });
     expect(result.ids.length).toBe(2);
     expect(result.files.length).toBe(2);
+  });
+
+  // F11 (review fix): the starter GUIDELINE exists to prove the always-active
+  // (resident) tier works — its own summary says "SessionStart should list this
+  // guideline". The resident tier requires broad + guidelines + a SETTLED
+  // maturity (packages/server/src/services/always-active.ts), so seeding it as
+  // `draft` made a fresh install render a resident count above an empty
+  // ALWAYS-ACTIVE section. The starter PITFALL is deliberately the opposite
+  // shape (narrow, edit-time) and must stay draft.
+  it("seeds the starter guideline resident-tier eligible; the starter pitfall stays narrow draft", async () => {
+    const storeDir = tempDir("fh-seed-maturity-");
+    mkdirSync(join(storeDir, "knowledge"), { recursive: true });
+    writeFileSync(join(storeDir, "counters.json"), JSON.stringify({ KT: {}, KP: {} }), "utf8");
+    const result = await seedStarterKnowledge(storeDir, { layer: "team" });
+
+    const guideline = result.files
+      .map((f) => readFileSync(f, "utf8"))
+      .find((body) => /^type:\s*guidelines$/mu.test(body));
+    expect(guideline).toBeDefined();
+    expect(guideline).toMatch(/^relevance_scope:\s*broad$/mu);
+    expect(guideline).toMatch(/^maturity:\s*(verified|proven)$/mu);
+
+    const pitfall = result.files
+      .map((f) => readFileSync(f, "utf8"))
+      .find((body) => /^type:\s*pitfalls$/mu.test(body));
+    expect(pitfall).toBeDefined();
+    expect(pitfall).toMatch(/^relevance_scope:\s*narrow$/mu);
+    expect(pitfall).toMatch(/^maturity:\s*draft$/mu);
   });
 });
 

@@ -13,7 +13,8 @@ import {
   type MountedStoreDir,
 } from "@fenglimg/fabric-shared";
 
-import { deriveRuleIdentity } from "./knowledge-meta-builder.js";
+import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-builder.js";
+import { alwaysActiveExclusion } from "./always-active.js";
 
 // ---------------------------------------------------------------------------
 // W3-H (proposals/05-strategy S6): `fabric audit why-not-surfaced <id>` — a
@@ -25,11 +26,15 @@ import { deriveRuleIdentity } from "./knowledge-meta-builder.js";
 // no unified diagnostic exit. This module answers the first blocking cause.
 //
 // Read-only: it reuses the SAME read-set resolution the recall path uses
-// (buildStoreResolveInput → createStoreResolver.resolveReadSet) and the SAME
+// (buildStoreResolveInput → createStoreResolver.resolveReadSet), the SAME
 // project filter semantics (scopeRoot, mirroring cross-store-recall's
-// filterByActiveProject), so its verdict can never drift from what actually
-// surfaces. It finds the entry across ALL mounted stores (not just the read-set)
-// so an unbound-store entry is still located and explained.
+// filterByActiveProject), and — F04 — the SAME always-active predicate the
+// resident tier is built from (always-active.ts). Reuse, not restatement: the
+// maturity axis was added to the tier alone and this command went on answering
+// `should_surface` for entries it had just dropped, which is the drift the
+// original wording promised could not happen. It finds the entry across ALL
+// mounted stores (not just the read-set) so an unbound-store entry is still
+// located and explained.
 // ---------------------------------------------------------------------------
 
 export type SurfaceVerdict =
@@ -37,6 +42,13 @@ export type SurfaceVerdict =
   | "store_unbound"
   | "project_mismatch"
   | "narrow_timing"
+  // F04 (review fix): the resident (always-active) tier requires a SETTLED
+  // maturity — a draft guideline/model is a proposal, so it is excluded from the
+  // unconditional SessionStart rules while staying reachable via fab_recall and
+  // the PreToolUse narrow hint. Without this branch the command answered
+  // `should_surface` for entries the resident tier had just dropped, which is
+  // exactly the question .fabric/AGENTS.md points users here to ask.
+  | "maturity_draft"
   | "should_surface";
 
 export interface WhyNotSurfacedResult {
@@ -55,6 +67,8 @@ export interface WhyNotSurfacedResult {
   activeProject: string | null;
   /** Entry's relevance_scope (timing axis); defaults to "broad" when absent. */
   relevanceScope: "broad" | "narrow" | null;
+  /** Entry's maturity (adjudication axis); "draft" when absent or unparseable. */
+  maturity: string | null;
 }
 
 // Line-regex frontmatter reads (not full YAML) — matches the write-side emit
@@ -90,6 +104,7 @@ export async function explainWhyNotSurfaced(
     semanticScope: null,
     activeProject: null,
     relevanceScope: null,
+    maturity: null,
   };
 
   const input = buildStoreResolveInput(projectRoot);
@@ -125,6 +140,11 @@ export async function explainWhyNotSurfaced(
 
   const semanticScope = SEMANTIC_SCOPE_LINE.exec(source)?.[1] ?? null;
   const relevanceScope = (RELEVANCE_SCOPE_LINE.exec(source)?.[1] as "broad" | "narrow" | undefined) ?? "broad";
+  // F04: type + maturity come from the SAME parser the recall path uses
+  // (extractRuleDescription → knowledge-meta-builder safeParse), so an invalid
+  // on-disk maturity degrades here exactly as it does when the tier is built.
+  const description = extractRuleDescription(source);
+  const maturity = description?.maturity ?? "draft";
   const activeProject = loadProjectConfig(projectRoot)?.active_project ?? null;
 
   const boundUuids = new Set(
@@ -139,6 +159,7 @@ export async function explainWhyNotSurfaced(
     semanticScope,
     activeProject,
     relevanceScope,
+    maturity,
   };
 
   // Report the FIRST blocking cause, in surfacing-pipeline order.
@@ -158,6 +179,19 @@ export async function explainWhyNotSurfaced(
   }
   if (relevanceScope === "narrow") {
     return { ...found, verdict: "narrow_timing" };
+  }
+  // F04: last axis — the resident tier's maturity gate. Only entries that WOULD
+  // be resident on type + timing can be blocked by it (a broad decision is
+  // reference-tier by design and surfaces regardless of maturity), so the shared
+  // predicate is asked for the exclusion REASON rather than a boolean.
+  if (
+    alwaysActiveExclusion({
+      knowledge_type: description?.knowledge_type,
+      relevance_scope: relevanceScope,
+      maturity,
+    }) === "maturity_draft"
+  ) {
+    return { ...found, verdict: "maturity_draft" };
   }
   return { ...found, verdict: "should_surface" };
 }
