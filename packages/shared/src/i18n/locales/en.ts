@@ -160,6 +160,20 @@ export const enMessages: Messages = {
   "cli.config.source.store": "team store",
   "cli.config.source.global": "global",
   "cli.config.source.default": "built-in",
+  // config-single-home W8: a cadence profile settles "how loud + how eagerly it
+  // asks to archive + how long a review backlog may sit" in one choice — those
+  // four keys always move together.
+  "cli.config.profile.label": "Cadence profile",
+  "cli.config.profile.prompt": "Pick a cadence profile (sets 4 keys at once)",
+  "cli.config.profile.custom": "custom",
+  "cli.config.profile.quiet": "quiet",
+  "cli.config.profile.quiet.description": "stays out of the way; you decide when to archive",
+  "cli.config.profile.standard": "standard",
+  "cli.config.profile.standard.description":
+    "the shipped cadence: one status line per session, archive prompts in batches",
+  "cli.config.profile.coach": "coach",
+  "cli.config.profile.coach.description":
+    "asks often — for a young knowledge base you don't want leaking experience",
   "cli.config.prompt.select": "Choose a new value for {key} (current: {current}):",
   "cli.config.prompt.text": "Enter a new value for {key} (current: {current}):",
   "cli.config.write.success": "{key} = {value}",
@@ -186,45 +200,60 @@ export const enMessages: Messages = {
   "cli.config.fields.fabric_language.label": "Language",
   "cli.config.fields.fabric_language.description":
     "Fabric's global language base tone (UI + knowledge), saved to ~/.fabric/fabric-global.json.",
-  "cli.config.fields.default_layer_filter.label": "Default knowledge layer",
+  "cli.config.fields.default_layer_filter.label": "Default search scope",
   "cli.config.fields.default_layer_filter.description":
-    "Default layer scope for knowledge listings (team / personal / both).",
-  "cli.config.fields.archive_hint_hours.label": "Archive hint window (hours)",
+    "Which layer the AI searches by default: team only / personal only / both (default).",
+  "cli.config.fields.archive_hint_hours.label": "Archive reminder: how often",
   "cli.config.fields.archive_hint_hours.description":
-    "Window (in hours) used by Signal A to detect frequent edits worth archiving.",
-  "cli.config.fields.archive_hint_cooldown_hours.label": "Archive hint cooldown (hours)",
+    "Remind you there is something worth writing down once this many hours have passed since the last archive. Higher = fewer interruptions.",
+  "cli.config.fields.archive_hint_cooldown_hours.label": "Archive reminder: quiet period after being ignored",
   "cli.config.fields.archive_hint_cooldown_hours.description":
-    "Cooldown (in hours) before the same archive hint can fire again.",
-  "cli.config.fields.archive_edit_threshold.label": "Archive edit threshold",
+    "After you ignore an archive reminder it stays quiet for this many hours, so the same thing is not repeated at you.",
+  "cli.config.fields.archive_edit_threshold.label": "Archive reminder: edits before it fires",
   "cli.config.fields.archive_edit_threshold.description":
-    "Edit-count cutoff that triggers the Signal A archive hint.",
-  "cli.config.fields.underseed_node_threshold.label": "Underseed node threshold",
+    "Remind you after this many file edits (OR the hour window above — whichever comes first). Lower = reminded sooner.",
+  "cli.config.fields.underseed_node_threshold.label": "\"Knowledge base is still empty\" threshold",
   "cli.config.fields.underseed_node_threshold.description":
-    "Minimum knowledge-node count below which Fabric flags the workspace as underseeded.",
-  "cli.config.fields.review_hint_pending_count.label": "Review pending count",
+    "Below this many entries, Fabric treats the knowledge base as not yet established and suggests seeding it. A property of the base itself — it lives in the team store and is shared.",
+  "cli.config.fields.review_hint_pending_count.label": "Review reminder: backlog size",
   "cli.config.fields.review_hint_pending_count.description":
-    "Pending-review count above which the review hint fires.",
-  "cli.config.fields.review_hint_pending_age_days.label": "Review pending age (days)",
+    "Drafts the AI archives need your approval. Remind you to review once this many have piled up.",
+  "cli.config.fields.review_hint_pending_age_days.label": "Review reminder: draft age (days)",
   "cli.config.fields.review_hint_pending_age_days.description":
-    "Pending-review age (in days) above which the review hint fires.",
-  "cli.config.fields.maintenance_hint_days.label": "Maintenance hint window (days)",
+    "Remind you when a draft has sat unreviewed for this many days, so a small backlog is not simply forgotten.",
+  "cli.config.fields.review_stale_pending_days.label": "\"Draft has sat too long\" (days)",
+  "cli.config.fields.review_stale_pending_days.description":
+    "During review, drafts older than this are singled out for an explicit resolve-or-drop decision so the long tail does not accumulate.",
+  "cli.config.fields.maintenance_hint_days.label": "Checkup reminder: how often (days)",
   "cli.config.fields.maintenance_hint_days.description":
-    "Day window for Fabric to surface a knowledge-maintenance hint.",
-  "cli.config.fields.maintenance_hint_cooldown_days.label": "Maintenance hint cooldown (days)",
+    "Remind you to run `fabric doctor` once this many days have passed since the last one.",
+  "cli.config.fields.maintenance_hint_cooldown_days.label": "Checkup reminder: quiet period after being ignored (days)",
   "cli.config.fields.maintenance_hint_cooldown_days.description":
-    "Cooldown (in days) before the maintenance hint can fire again.",
-  "cli.config.fields.audit_mode.label": "Audit mode",
+    "After you ignore a checkup reminder it stays quiet for this many days.",
+  "cli.config.fields.audit_mode.label": "Change-audit strictness",
   "cli.config.fields.audit_mode.description":
-    "Audit verbosity for human-lock + drift detection (strict / warn / off).",
-  "cli.config.fields.nudge_mode.label": "Nudge level",
+    "How strict the check for edits to human-locked content is: strict = block / warn = warn only (recommended) / off = do not check.",
+  "cli.config.fields.nudge_mode.label": "Notification volume",
   "cli.config.fields.nudge_mode.description":
-    "Preset for human-visible nudges (silent / minimal / normal / verbose). Governs only the human channel — never the knowledge injected to the AI.",
-  "cli.config.fields.embed_enabled.label": "Vector semantic search",
+    "How much you see: silent / minimal / normal / verbose. Affects only what YOU see — the AI receives the same knowledge either way, so muting does not make it dumber.",
+  "cli.config.fields.cite_policy_enabled.label": "Check the knowledge base before editing",
+  "cli.config.fields.cite_policy_enabled.description":
+    "When on, the AI is reminded to look up relevant knowledge before editing a file (a nudge, never a block). Off = never mentioned.",
+  "cli.config.fields.self_archive_policy_enabled.label": "Let the AI propose archiving",
+  "cli.config.fields.self_archive_policy_enabled.description":
+    "When on, the AI starts an archive itself once it notices a decision worth keeping (still needs your approval to land). Off = it only archives when you ask.",
+  "cli.config.fields.cite_recall_nudge.label": "Nudge when the knowledge base was skipped",
+  "cli.config.fields.cite_recall_nudge.description":
+    "A soft reminder when the AI edits a file without looking anything up. Turn it off if it feels chatty — archiving and retrieval are unaffected.",
+  "cli.config.fields.fabric_event_retention_days.label": "Activity log retention (days)",
+  "cli.config.fields.fabric_event_retention_days.description":
+    "How long this machine's activity log is kept (7 lean / 30 balanced / 90 good for tracing back). Older lines are moved to an archive file, not deleted.",
+  "cli.config.fields.embed_enabled.label": "Semantic search (by meaning, not just words)",
   "cli.config.fields.embed_enabled.description":
-    "Enable vector semantic recall (true / false). Note: true is just intent — it only takes effect when the running server can resolve the fastembed package AND the model is downloaded (auto-fetched to ~/.fabric/cache/embed on first recall). Check actual state with `fabric info recall`.",
-  "cli.config.fields.fusion.label": "Recall fusion strategy",
+    "When on, a question worded differently from the entry still finds it (especially noticeable in Chinese). This is intent only: it takes effect when the running server can load fastembed AND the model is downloaded (auto-fetched to ~/.fabric/cache/embed on first search). Check the real state with `fabric info recall`.",
+  "cli.config.fields.fusion.label": "Result ranking",
   "cli.config.fields.fusion.description":
-    "How the signals combine into one score: additive = weighted sum (BM25-led, small vector weight) / rrf = Reciprocal Rank Fusion (BM25 and vector on equal footing, so semantics actually count) / auto = adaptive (default: rrf when the vector channel is scoring, else additive — avoids degenerate single-channel rrf being worse).",
+    "How keyword hits and semantic similarity combine into one ranking: auto (default, recommended) / rrf treats them equally (semantics count more) / additive is keyword-led. Leave it on auto — it only switches to rrf when the semantic channel is actually scoring.",
 
   "cli.doctor.description":
     "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift)",

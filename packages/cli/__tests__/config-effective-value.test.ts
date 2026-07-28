@@ -163,6 +163,90 @@ describe("config-single-home W6: --get resolves through the cascade", () => {
   });
 });
 
+describe("config-single-home W8: cadence profiles", () => {
+  it("applying a profile writes its four keys into the preference home", async () => {
+    const repo = makeRepo({ project_id: "p-1" });
+    writeGlobal({});
+
+    const lines = await runConfig({ target: repo, profile: "coach" });
+
+    expect(lines[0]).toContain("applied profile coach");
+    const listed = await runConfig({ target: repo, list: true });
+    expect(listed).toContain("profile=coach");
+    expect(listed).toContain('nudge_mode="verbose" (defaults)');
+    expect(listed).toContain("archive_edit_threshold=10 (defaults)");
+    expect(listed).toContain("archive_hint_hours=8 (defaults)");
+    expect(listed).toContain("review_hint_pending_count=5 (defaults)");
+  });
+
+  it("`standard` reproduces the shipped cadence — applying it equals never configuring", async () => {
+    const repo = makeRepo({ project_id: "p-1" });
+    writeGlobal({});
+    await runConfig({ target: repo, profile: "standard" });
+
+    const listed = await runConfig({ target: repo, list: true });
+    // Same numbers a fresh install ships (GLOBAL_POLICY_DEFAULTS + schema defaults).
+    expect(listed).toContain('nudge_mode="minimal" (defaults)');
+    expect(listed).toContain("archive_edit_threshold=20 (defaults)");
+    expect(listed).toContain("archive_hint_hours=24 (defaults)");
+    expect(listed).toContain("review_hint_pending_count=10 (defaults)");
+  });
+
+  it("a later single-key edit wins and the profile reads back as custom", async () => {
+    const repo = makeRepo({ project_id: "p-1" });
+    writeGlobal({});
+    await runConfig({ target: repo, profile: "quiet" });
+    expect(await runConfig({ target: repo, list: true })).toContain("profile=quiet");
+
+    await runConfig({ target: repo, set: "archive_hint_hours", value: "3" });
+
+    const listed = await runConfig({ target: repo, list: true });
+    // No precedence to reason about: the profile wrote keys, the key edit wins.
+    expect(listed).toContain("profile=custom");
+    expect(listed).toContain("archive_hint_hours=3 (defaults)");
+    expect(listed).toContain('nudge_mode="silent" (defaults)');
+  });
+
+  it("applying a profile leaves keys outside the preset untouched", async () => {
+    const repo = makeRepo({ project_id: "p-1" });
+    writeGlobal({ defaults: { audit_mode: "strict", maintenance_hint_days: 30 } });
+
+    await runConfig({ target: repo, profile: "coach" });
+
+    const listed = await runConfig({ target: repo, list: true });
+    expect(listed).toContain('audit_mode="strict" (defaults)');
+    expect(listed).toContain("maintenance_hint_days=30 (defaults)");
+  });
+
+  it("--scope project scopes the whole preset to this repo", async () => {
+    const repo = makeRepo({ project_id: "p-1" });
+    writeGlobal({ defaults: { nudge_mode: "normal" } });
+
+    await runConfig({ target: repo, profile: "quiet", scope: "project" });
+
+    expect(await runConfig({ target: repo, list: true })).toContain(
+      'nudge_mode="silent" (project)',
+    );
+  });
+
+  it("rejects an unknown profile name and a store scope", async () => {
+    const repo = makeRepo({ project_id: "p-1" });
+    writeGlobal({});
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await runConfig({ target: repo, profile: "loud" });
+    expect(process.exitCode).toBe(1);
+
+    process.exitCode = 0;
+    await runConfig({ target: repo, profile: "quiet", scope: "store" });
+    expect(process.exitCode).toBe(1);
+
+    const err = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(err).toContain("invalid --profile: loud");
+    expect(err).toContain("--scope must be defaults or project");
+  });
+});
+
 describe("config-single-home W6: --set validates and routes by the field's home", () => {
   it("a preference knob lands in global defaults and reads back", async () => {
     const repo = makeRepo({ project_id: "p-1" });

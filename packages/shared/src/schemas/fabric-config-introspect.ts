@@ -205,6 +205,44 @@ function makeBooleanField(key: keyof FabricConfigSchemaShape, defaultValue: bool
   };
 }
 
+/**
+ * A numeric field whose allowed values are a small fixed set (currently only
+ * `fabric_event_retention_days`, locked to 7/30/90). Rendered as a picker like
+ * an enum, but stored — and reported by `--get`/`--list` — as a real number, so
+ * the config file never grows a `"30"` string a numeric reader would reject.
+ */
+function makeNumericEnumField(
+  key: keyof FabricConfigSchemaShape,
+  group: PanelFieldGroup,
+  allowed: readonly number[],
+  defaultValue: number,
+): PanelFieldMeta {
+  const labels = allowed.map(String);
+  return {
+    key,
+    group,
+    home: "preference",
+    type: "number",
+    widget: "select",
+    label_i18n_key: `cli.config.fields.${key}.label`,
+    description_i18n_key: `cli.config.fields.${key}.description`,
+    default: defaultValue,
+    enum_values: labels,
+    validate(raw: string): ValidateResult {
+      const n = Number(raw.trim());
+      if (!allowed.includes(n)) {
+        return { ok: false, error: `Must be one of: ${labels.join(", ")}.` };
+      }
+      return { ok: true, value: n };
+    },
+    format_for_display(value: unknown): string {
+      return typeof value === "number" && allowed.includes(value)
+        ? String(value)
+        : String(defaultValue);
+    },
+  };
+}
+
 // Defaults are read from the Zod schema's parse output to guarantee parity:
 // any future change to fabric-config.ts `.default(...)` flows through here
 // without a manual edit. We parse `{}` once at module load — Zod fills in
@@ -238,7 +276,7 @@ const AUDIT_MODE_PANEL_DEFAULT = "warn";
 
 /**
  * Returns the per-field metadata array driving the `fabric config` clack panel.
- * Group A (2) + Group B (8) + Group C (1) + Group D (2) = 13 entries.
+ * Group A (2) + Group B (9) + Group C (1) + Group D (7) = 19 entries.
  */
 export function getPanelFields(): readonly PanelFieldMeta[] {
   return PANEL_FIELDS;
@@ -324,6 +362,20 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
   // config-loader.ts so the panel never shows a default that contradicts behavior.
   makeEnumField("nudge_mode", "D_behavior", nudgeModeSchema.options, "normal"),
   makeBooleanField("embed_enabled", true),
+  // config-single-home W8: five knobs that a person genuinely decides but that
+  // were JSON-only until now — the two behavior policies, the recall nudge, how
+  // long the activity ledger is kept, and when review calls a pending entry
+  // stale. They are added here (not left to "power users edit JSON") because
+  // each answers a question a user actually has; the retrieval-tuning and
+  // plumbing keys stay out, since a panel entry you cannot judge is noise.
+  makeBooleanField("cite_policy_enabled", true),
+  makeBooleanField("self_archive_policy_enabled", true),
+  makeBooleanField("cite_recall_nudge", true),
+  makeNumericEnumField("fabric_event_retention_days", "D_behavior", [7, 30, 90], 30),
+  makePositiveIntField(
+    "review_stale_pending_days",
+    pickNumberDefault("review_stale_pending_days"),
+  ),
   // P1 recall-engine-refactor (follow-up): the content-channel fusion strategy,
   // panel-editable so it sits next to embed_enabled (the two go together — rrf
   // only pays off when embeddings are on). 'auto' is the safe adaptive default.

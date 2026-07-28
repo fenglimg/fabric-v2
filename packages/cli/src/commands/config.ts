@@ -6,13 +6,18 @@ import { fileURLToPath } from "node:url";
 import { cancel, isCancel, log, select, text } from "@clack/prompts";
 import type { FabricConfig } from "@fenglimg/fabric-shared";
 import {
+  CONFIG_PROFILE_KEYS,
+  CONFIG_PROFILE_NAMES,
+  CONFIG_PROFILES,
   STORE_LAYOUT,
   buildStoreResolveInput,
   createStoreResolver,
+  detectProfile,
   getPanelFields,
   ONBOARD_SLOT_NAMES,
   storeConfigSchema,
   storeRelativePathForMount,
+  type ConfigProfileName,
   type PanelFieldMeta,
 } from "@fenglimg/fabric-shared";
 import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
@@ -62,6 +67,8 @@ type ConfigArgs = {
   json?: boolean;
   // config-single-home W5: which home `--set` writes to.
   scope?: string;
+  // config-single-home W8: apply a whole cadence preset instead of single keys.
+  profile?: string;
 };
 
 /**
@@ -242,6 +249,45 @@ async function writeFieldValue(
   return useProject ? `global projects.${ctx.projectId as string}` : "global defaults";
 }
 
+/**
+ * Apply a cadence profile: write its four keys into one preference segment.
+ * Returns the human-readable target, matching writeFieldValue's contract.
+ */
+async function applyProfile(
+  name: ConfigProfileName,
+  ctx: PanelContext,
+  preferProjectScope: boolean,
+): Promise<string> {
+  const preset = CONFIG_PROFILES[name];
+  const useProject = preferProjectScope && ctx.projectId !== null;
+  if (preferProjectScope && ctx.projectId === null) {
+    throw new Error(t("cli.config.errors.no-project-id"));
+  }
+  await mutateGlobalConfig((current) => {
+    const base = current ?? { uid: "local", stores: [] };
+    if (!useProject) {
+      return { ...base, defaults: { ...(base.defaults ?? {}), ...preset } };
+    }
+    const projects = { ...(base.projects ?? {}) };
+    projects[ctx.projectId as string] = { ...(projects[ctx.projectId as string] ?? {}), ...preset };
+    return { ...base, projects };
+  });
+  return useProject ? `global projects.${ctx.projectId as string}` : "global defaults";
+}
+
+/** The profile currently in force, resolved through the cascade (null = mixed). */
+function activeProfile(ctx: PanelContext): ConfigProfileName | null {
+  const fields = getPanelFields();
+  const effective: Record<string, unknown> = {};
+  for (const key of CONFIG_PROFILE_KEYS) {
+    const field = fields.find((f) => (f.key as string) === key);
+    if (field === undefined) continue;
+    const { value } = resolveEffective(field, ctx);
+    effective[key] = value ?? field.default;
+  }
+  return detectProfile(effective);
+}
+
 export type InstallMcpClientsOptions = {
   clients?: ClientKind[];
   dryRun?: boolean;
@@ -300,6 +346,8 @@ function resolveServerPath(override?: string): string {
 const PANEL_CONFIG_RELATIVE_PATH = [".fabric", "fabric-config.json"] as const;
 
 const EXIT_CHOICE = "__exit__" as const;
+// W8: the cadence-profile entry that heads the panel menu.
+const PROFILE_CHOICE = "__profile__" as const;
 
 type PanelConfig = Record<string, unknown>;
 
@@ -503,6 +551,12 @@ export const configCmd = defineCommand({
         "Where --set writes: defaults (machine-wide, default) | project (this repo's exception) | store (corpus knob, shared via the store repo)",
       valueHint: "defaults|project|store",
     },
+    profile: {
+      type: "string",
+      description:
+        "Apply a cadence profile in one step: quiet | standard | coach (honors --scope defaults|project)",
+      valueHint: CONFIG_PROFILE_NAMES.join("|"),
+    },
   },
   subCommands: {
     "dismiss-slot": dismissSlotCmd,
@@ -546,6 +600,43 @@ export const configCmd = defineCommand({
     const wantsList = args.list === true;
     const getKey = typeof args.get === "string" && args.get.length > 0 ? args.get : null;
     const setKey = typeof args.set === "string" && args.set.length > 0 ? args.set : null;
+    const profileArg =
+      typeof args.profile === "string" && args.profile.length > 0 ? args.profile : null;
+
+    // W8: applying a profile is its own action — it writes several keys at once,
+    // so it never combines with a single-key --set in the same invocation.
+    if (profileArg !== null) {
+      if (!(CONFIG_PROFILE_NAMES as readonly string[]).includes(profileArg)) {
+        console.error(
+          `invalid --profile: ${profileArg} (allowed: ${CONFIG_PROFILE_NAMES.join(", ")})`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const scope = args.scope ?? "defaults";
+      if (scope !== "defaults" && scope !== "project") {
+        console.error(`--profile writes a preference preset; --scope must be defaults or project`);
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        const name = profileArg as ConfigProfileName;
+        const where = await applyProfile(
+          name,
+          loadPanelContext(workspaceRoot),
+          scope === "project",
+        );
+        console.log(`applied profile ${name} (${where})`);
+        for (const key of CONFIG_PROFILE_KEYS) {
+          console.log(`  ${key}=${JSON.stringify(CONFIG_PROFILES[name][key])}`);
+        }
+      } catch (err: unknown) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exitCode = 1;
+      }
+      return;
+    }
+
     if (wantsList || getKey !== null || setKey !== null) {
       try {
         const panel = getPanelFields();
@@ -567,15 +658,25 @@ export const configCmd = defineCommand({
               source,
             };
           });
+          // W8: name the cadence profile in force, or `null` when the four
+          // profile keys hold a mix. This is the line the fabric-config skill
+          // reads first — "which profile am I on" before "which key is off".
+          const profile = activeProfile(ctx);
           if (args.json === true) {
             console.log(
               JSON.stringify(
-                { global_config: globalConfigPath(resolveGlobalRoot()), fields: rows },
+                {
+                  global_config: globalConfigPath(resolveGlobalRoot()),
+                  profile,
+                  profiles: CONFIG_PROFILES,
+                  fields: rows,
+                },
                 null,
                 2,
               ),
             );
           } else {
+            console.log(`profile=${profile ?? "custom"}`);
             for (const r of rows) {
               console.log(`${r.key}=${JSON.stringify(r.value)} (${r.source})`);
             }
@@ -733,9 +834,20 @@ export const configCmd = defineCommand({
         [...effective].map(([key, r]) => [key, r.value]),
       );
 
+      // W8: the profile sits ABOVE the individual keys. Most people want to say
+      // "quieter" once, not tune four numbers, so the first thing the panel
+      // offers is the cadence dial; the key list stays below for anyone who
+      // does want a specific number.
+      const profile = activeProfile(ctx);
       const fieldChoice = await select<string>({
         message: t("cli.config.menu.field-select"),
         options: [
+          {
+            value: PROFILE_CHOICE,
+            label: `${t("cli.config.profile.label")} — ${t("cli.config.value.current", {
+              value: profile === null ? t("cli.config.profile.custom") : t(`cli.config.profile.${profile}`),
+            })}`,
+          },
           ...fields.map((field) => ({
             value: field.key as string,
             label: formatFieldMenuLabel(
@@ -765,6 +877,33 @@ export const configCmd = defineCommand({
             : paint.muted(t("cli.config.outro-no-changes")),
         );
         return;
+      }
+
+      if (fieldChoice === PROFILE_CHOICE) {
+        lastFieldKey = PROFILE_CHOICE;
+        const picked = await select<string>({
+          message: t("cli.config.profile.prompt"),
+          options: CONFIG_PROFILE_NAMES.map((name) => ({
+            value: name as string,
+            label: `${t(`cli.config.profile.${name}`)} — ${t(`cli.config.profile.${name}.description`)}`,
+          })),
+          initialValue: profile ?? "standard",
+        });
+        if (isCancel(picked)) {
+          cancel(t("cli.config.cancel"));
+          return;
+        }
+        try {
+          await applyProfile(picked as ConfigProfileName, loadPanelContext(workspaceRoot), false);
+          for (const key of CONFIG_PROFILE_KEYS) {
+            if (!editedKeys.includes(key)) editedKeys.push(key);
+          }
+        } catch (err: unknown) {
+          pendingError = t("cli.config.write.failure", {
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+        continue;
       }
 
       const field = fields.find((f) => (f.key as string) === fieldChoice);

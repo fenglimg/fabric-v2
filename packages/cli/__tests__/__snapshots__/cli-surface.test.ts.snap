@@ -36,6 +36,15 @@ exports[`CLI surface drift gate (docs/test-seed/cli.md §1) > command 'config' s
     {
       "alias": undefined,
       "default": undefined,
+      "description": "Apply a cadence profile in one step: quiet | standard | coach (honors --scope defaults|project)",
+      "name": "profile",
+      "negativeDescription": undefined,
+      "required": undefined,
+      "type": "string",
+    },
+    {
+      "alias": undefined,
+      "default": undefined,
       "description": "Where --set writes: defaults (machine-wide, default) | project (this repo's exception) | store (corpus knob, shared via the store repo)",
       "name": "scope",
       "negativeDescription": undefined,
