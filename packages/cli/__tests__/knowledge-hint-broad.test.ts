@@ -736,8 +736,16 @@ describe("knowledge-hint-broad.cjs — main", () => {
     expect(captureStderr({ payload: null })).toEqual([]);
   });
 
-  it("writes nothing when narrow is empty", () => {
-    expect(captureStderr({ payload: makePayload([]) })).toEqual([]);
+  // G2 supersedes the old expectation here. This used to assert `[]` — which is
+  // exactly the bug G2 fixed: an empty census made renderHumanCensus return
+  // early and a brand-new user got a completely silent SessionStart. An empty
+  // payload is an empty KB, so the first-run guidance is now the correct output.
+  // The `payload: null` case above stays silent: that is CLI-unavailable, not an
+  // empty KB, and we have nothing truthful to say about the KB then.
+  it("renders the empty-KB first-run guidance when the census is empty", () => {
+    const stderr = captureStderr({ payload: makePayload([]) }).join("");
+    expect(stderr).toMatch(/▸ \[fabric\]/);
+    expect(stderr).toMatch(/fabric store bind/);
   });
 
   it("writes the SessionStart census to stderr when entries exist (unknown client → stderr fallback)", () => {
