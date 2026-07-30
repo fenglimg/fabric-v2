@@ -265,9 +265,11 @@ const CONTRACTS: Record<string, KeyContract> = {
     enHints: ["this session", "KB pulls"],
   },
   // observability grill (Q4): nudge_mode tier-guidance line. The lever names +
-  // config path are protected tokens kept verbatim across all variants.
+  // the command that changes them are protected tokens kept verbatim across all
+  // variants. config-single-home W5: the guidance now names the COMMAND rather
+  // than `.fabric/fabric-config.json` — that file no longer holds the knob.
   statusTier: {
-    protectedTokens: ["nudge_mode", "verbose", "silent", ".fabric/fabric-config.json"],
+    protectedTokens: ["nudge_mode", "verbose", "silent", "fabric config --set"],
     zhCNContract: ["音量"],
     enHints: ["volume"],
   },

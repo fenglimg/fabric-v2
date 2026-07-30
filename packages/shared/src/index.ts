@@ -8,6 +8,7 @@ export * from "./schemas/ledger-entry.js";
 export * from "./schemas/human-lock.js";
 export * from "./schemas/fabric-config.js";
 export * from "./schemas/fabric-config-introspect.js";
+export * from "./schemas/config-profiles.js";
 // v2.1.0-rc.1 P0 — multi-store global refactor contracts (pure definition layer)
 export * from "./schemas/store.js";
 export * from "./schemas/scope.js";

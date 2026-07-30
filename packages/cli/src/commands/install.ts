@@ -20,7 +20,8 @@ import { t } from "../i18n.js";
 import * as configCommand from "./config.js";
 import { installHooks } from "../install/hooks-orchestrator.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
-import { loadGlobalConfig } from "../store/global-config-io.js";
+import { ensurePolicyDefaults } from "../install/install-global.js";
+import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
 import { unboundAvailableStores } from "../store/store-ops.js";
 import { writeFabricAgentsSnapshot } from "../install/write-bootstrap-snapshot.js";
 import { buildForensicReport } from "../scanner/forensic.js";
@@ -78,6 +79,7 @@ import {
   installFabricArchiveSkill,
   installFabricReviewSkill,
   installFabricStoreSkill,
+  installFabricConfigSkill,
   installFabricRecallPlaybookSkill,
   installFabricSyncSkill,
   installHookLibs,
@@ -336,6 +338,12 @@ export async function runInitCommand(args: InitArgs): Promise<InitExecutionResul
   if (loadGlobalConfig() === null) {
     logger("no global Fabric config found — minting ~/.fabric (uid + personal store)");
     await runGlobalInstall({});
+  } else {
+    // W9: an existing global config may predate the `defaults` segment. Seed the
+    // shipped policy defaults so this path matches the freshly-minted one — the
+    // install summary tells the user which nudge_mode is in force, and it was
+    // naming the shipped value while the runtime resolved the library one.
+    await ensurePolicyDefaults(resolveGlobalRoot());
   }
 
   const supports = detectClientSupports(intent.target);
@@ -894,6 +902,7 @@ async function executeInitStagePlan(
         installResults.push(...await runBestEffort("skill-sync-install", () => installFabricSyncSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-store-install", () => installFabricStoreSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-recall-playbook-install", () => installFabricRecallPlaybookSkill(plan.target)));
+        installResults.push(...await runBestEffort("skill-config-install", () => installFabricConfigSkill(plan.target)));
         installResults.push(...await runBestEffort("skill-shared-lib", () => installSharedSkillLib(plan.target)));
         installResults.push(...await runBestEffort("hook-script", () => installArchiveHintHook(plan.target)));
         // rc.6 TASK-019 (E1): SessionStart broad-injection hook script.

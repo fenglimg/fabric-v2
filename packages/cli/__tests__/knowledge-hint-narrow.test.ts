@@ -11,6 +11,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { routePolicyConfig } from "./helpers/policy-fixture.js";
 import {
   existsSync,
   mkdirSync,
@@ -1847,12 +1849,7 @@ describe("knowledge-hint-narrow.cjs — dual-sink PreToolUse (Goal A)", () => {
     process.env.FABRIC_HINT_CLIENT = "cc";
     delete process.env.CLAUDE_PROJECT_DIR;
     const root = mkRoot("narrow-dualsink-silent");
-    mkdirSync(join(root, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(root, ".fabric", "fabric-config.json"),
-      JSON.stringify({ nudge_mode: "silent" }),
-      "utf8",
-    );
+    routePolicyConfig(root, { nudge_mode: "silent" });
     const { out } = captureBoth(hitEnv(root));
     expect(out.length).toBe(1);
     const env = JSON.parse(out[0]);

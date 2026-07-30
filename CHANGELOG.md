@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - feat(config): nudge_mode 新装默认 silent (AI-only channel)；老用户零迁移；恢复可见 3 路径（project / global / env FABRIC_NUDGE_MODE）+ `fabric doctor` backlog 行 + `.fabric/metrics.jsonl` 4 周 baseline。详见 `docs/RELEASE-NOTES.md`（GRL-STOPHOOK-AIONLY-20260709）。
 
+## [2.5.0-rc.4] - 2026-07-28
+
+配置层的一次收口：每个配置项只有一个家，`fabric config` 展示的就是真正生效的值。
+
+### Fixed
+
+- **交互式 `fabric config` 面板的编辑此前全部无效。** W5 把策略配置搬到 `~/.fabric/fabric-global.json` 后，面板仍写 `.fabric/fabric-config.json`——而那个文件已改为 identity-only，没有任何 reader 读它。
+- **`fabric config --list` / `--get` 每一项都显示 `null`。** 同一原因：从 identity-only 的仓库配置读取，与 hook 和 server 实际解析出的值互相矛盾。现在显示生效值并标出来自哪一层（本项目 / 全机器 / 团队 store / 内置默认）。
+- **shipped 默认值只对新机器生效。** `defaults` 段的补种原本只挂在首次创建 global config 的分支上，普通 `fabric install` 在 config 已存在时根本不调它，所以既有用户永远拿不到。提成独立步骤 `ensurePolicyDefaults`，三条安装路径都调；仅在整段缺失时补种，不合并、不覆盖已有值。
+- 修复 global config 的 read-modify-write 竞态（`withFileLock` 此前只包住写、没包住读）。
+- 修复 `FABRIC_HOME` 在两个同目录 hook lib 间的解析分歧（差一个 `.fabric` 段，生产不设该变量所以可潜伏任意久）。
+- MCP server 的两处配置缓存改为 mtime-keyed——长驻进程原本要重启才能看到配置变更。
+
+### Added
+
+- **节奏档位 `quiet` / `standard` / `coach`**：音量、归档催促频率、待审积压阈值本来就是一起动的。`fabric config --profile <name>`，交互面板里排在所有键之前。档位只是把那几个键写进同一个 home，不引入新层级、不留标记，之后单独改某个键直接生效。
+- **`fabric-config` skill**：配置体检 + 对话式调整，把「太吵了」「催得太勤」翻译成具体配置项和它该写的那一层。
+- 面板新增 5 项此前只能手改 JSON 的配置：改文件前先查知识库 / AI 自动提议归档 / 未查知识库时提醒 / 活动日志保留天数 / 待审草稿放太久的天数。
+- `fabric config --set` 新增 `--scope defaults|project|store`；`--list --json` 输出 `profile`、每项的 `source` / `home` / 本机语言的 `label` / `description` / `allowed` / `default`。
+
+### Changed
+
+- **每个配置键只有一个可写位置。** 59 个键归三类：身份（仓库，机器写）/ 偏好（`~/.fabric/fabric-global.json` 的 `defaults` + `projects[<id>]`）/ 语料（团队 store 的 `store-config.json`）。`STORE_OVERRIDABLE_KNOBS` 白名单删除——它存在的唯一意义是标记「这个键能否写在两处」，而这个问题已经不成立。
+- 所有配置项说明重写：原文用 `Signal A`、`human-lock`、`BM25` 这类内部代号，改成「这个数字管什么、调大调小会怎样」，中英同步。
+- 远程 embedding 传输改为嵌套的 `embed_remote: { endpoint, api_key?, model? }` 作为一个整体；扁平旧键仍可读，向后兼容。
+
+### Removed
+
+- 六个提示微调键：`hint_narrow_top_k`、`hint_narrow_dedup_window_turns`、`hint_narrow_cooldown_hours`、`hint_broad_cooldown_hours`、`hint_summary_max_len`、`hint_reminder_to_context`。它们要求把「安静一点」表达成六个互相独立的数字。现在 `nudge_mode` 推导其中四个；去重窗口是防刷屏的正确性护栏，AI 通道在 flow ⊥ observation 下恒开。**零行为变化**：`normal` 档与退休的逐键默认值逐值相同，由 parity 测试钉住；磁盘上的旧值被 lenient 解析器丢弃，无需迁移。
+- `storeConfigSchema` 从 23 个字段收窄到 15 个纯语料字段。
+
 ## Store-only Errata - 2026-06-09
 
 Store-backed knowledge is the current contract: canonical and pending entries

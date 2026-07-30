@@ -68,12 +68,18 @@ function sessionDismissFileName(sessionId) {
 function readDismissedSignals(projectRoot, sessionId) {
   const dismissed = new Set();
   try {
-    if (configCache && typeof configCache.readConfig === "function") {
-      const cfg = configCache.readConfig(projectRoot);
-      const list = cfg && cfg.hint_dismiss_signals;
-      if (Array.isArray(list)) {
-        for (const s of list) {
-          if (DISMISSABLE_SIGNALS.includes(s)) dismissed.add(s);
+    // config-single-home W3: `hint_dismiss_signals` is a PREFERENCE knob — read
+    // the global policy layer (projects[<project_id>] then defaults), not the
+    // repo file. First layer that declares the list wins; an empty array is a
+    // meaningful "dismiss nothing".
+    if (configCache && typeof configCache.readPolicy === "function") {
+      for (const layer of configCache.readPolicy(projectRoot)) {
+        const list = layer && layer.hint_dismiss_signals;
+        if (Array.isArray(list)) {
+          for (const s of list) {
+            if (DISMISSABLE_SIGNALS.includes(s)) dismissed.add(s);
+          }
+          break;
         }
       }
     }

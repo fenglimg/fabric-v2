@@ -637,6 +637,71 @@ describe("fabric-hint.cjs — countEditsSince", () => {
 });
 
 // rc.6 TASK-022 (E5): readArchiveEditThreshold — fabric-config.json reader.
+// ---------------------------------------------------------------------------
+// config-single-home W3/W4 fixtures.
+//
+// PREFERENCE knobs (archive_* / review_hint_* / maintenance_* / cite_*) resolve
+// from `<FABRIC_HOME>/.fabric/fabric-global.json` → `defaults`.
+// CORPUS knobs (underseed_node_threshold / broad_index_backstop) resolve from the
+// write-target store's `store-config.json`, located via the bindings snapshot.
+// Neither is readable from the repo config any more — that file is identity-only.
+// ---------------------------------------------------------------------------
+
+function restoreHomeFn(prev: string | undefined): () => void {
+  return () => {
+    if (prev === undefined) delete process.env.FABRIC_HOME;
+    else process.env.FABRIC_HOME = prev;
+  };
+}
+
+function withGlobalDefaults(homeRoot: string, defaults: Record<string, unknown>): () => void {
+  const prev = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = homeRoot;
+  const dir = join(homeRoot, ".fabric");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "fabric-global.json"),
+    JSON.stringify({ uid: "test-uid", stores: [], defaults }),
+    "utf8",
+  );
+  return restoreHomeFn(prev);
+}
+
+function withStoreCorpusConfig(
+  homeRoot: string,
+  projectRoot: string,
+  config: Record<string, unknown>,
+): () => void {
+  const prev = process.env.FABRIC_HOME;
+  process.env.FABRIC_HOME = homeRoot;
+  const bindingId = "corpus-fixture-binding";
+  mkdirSync(join(projectRoot, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(projectRoot, ".fabric", "fabric-config.json"),
+    JSON.stringify({ project_id: bindingId }),
+    "utf8",
+  );
+  const storeRoot = join(homeRoot, ".fabric", "stores", "team", "fixture-store");
+  mkdirSync(storeRoot, { recursive: true });
+  writeFileSync(join(storeRoot, "store-config.json"), JSON.stringify(config), "utf8");
+  const snapDir = join(homeRoot, ".fabric", "state", "bindings");
+  mkdirSync(snapDir, { recursive: true });
+  writeFileSync(
+    join(snapDir, `${bindingId}_resolved.json`),
+    JSON.stringify({
+      version: 1,
+      project_id: bindingId,
+      workspace_binding_id: bindingId,
+      generated_at: "2026-01-01T00:00:00.000Z",
+      read_set: { stores: [], warnings: [] },
+      write_target: { store_uuid: "fixture-uuid", alias: "team" },
+      write_target_store_dir: storeRoot,
+    }),
+    "utf8",
+  );
+  return restoreHomeFn(prev);
+}
+
 describe("fabric-hint.cjs — readArchiveEditThreshold", () => {
   let tempRoot: string;
 
@@ -659,34 +724,50 @@ describe("fabric-hint.cjs — readArchiveEditThreshold", () => {
     );
   });
 
-  it("returns config override when present and positive", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ archive_edit_threshold: 50 }),
-      "utf8",
-    );
-    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(50);
+  it("returns global-defaults override when present and positive", () => {
+    const restore = withGlobalDefaults(tempRoot, { archive_edit_threshold: 50 });
+    try {
+      expect(hook.readArchiveEditThreshold(tempRoot)).toBe(50);
+    } finally {
+      restore();
+    }
   });
 
   it("falls back to default on non-positive override", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ archive_edit_threshold: -5 }),
-      "utf8",
-    );
-    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+    const restore = withGlobalDefaults(tempRoot, { archive_edit_threshold: -5 });
+    try {
+      expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+    } finally {
+      restore();
+    }
   });
 
   it("falls back to default on parse failure", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      "{not valid json",
-      "utf8",
-    );
-    expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+    const prev = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = tempRoot;
+    try {
+      mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+      writeFileSync(join(tempRoot, ".fabric", "fabric-global.json"), "{not valid json", "utf8");
+      expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+    } finally {
+      if (prev === undefined) delete process.env.FABRIC_HOME;
+      else process.env.FABRIC_HOME = prev;
+    }
+  });
+
+  it("a value left in the repo config is inert (identity-only)", () => {
+    const restore = withGlobalDefaults(tempRoot, {});
+    try {
+      mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({ archive_edit_threshold: 50 }),
+        "utf8",
+      );
+      expect(hook.readArchiveEditThreshold(tempRoot)).toBe(20);
+    } finally {
+      restore();
+    }
   });
 });
 
@@ -817,11 +898,7 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
       );
     }
     seedSessionLedger(tempRoot, "s1", 5, { base, extra });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ nudge_mode: "silent" }),
-      "utf8",
-    );
+    withGlobalDefaults(tempRoot, { nudge_mode: "silent" });
 
     const writes: string[] = [];
     hook.main(
@@ -907,11 +984,7 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
   it("stays silent when 19 session mutations accumulate (just below default threshold 20)", () => {
     seedSessionLedger(tempRoot, "s1", 19);
     // Mute the orthogonal human activity breadcrumb so we isolate the nudge.
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ nudge_mode: "silent" }),
-      "utf8",
-    );
+    withGlobalDefaults(tempRoot, { nudge_mode: "silent" });
 
     const writes: string[] = [];
     const stdout = { write: (chunk: string) => writes.push(chunk) };
@@ -932,22 +1005,21 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     expect(writes).toEqual([]);
   });
 
-  it("honours custom archive_edit_threshold=10 from fabric-config.json", () => {
+  it("honours custom archive_edit_threshold=10 from the global defaults", () => {
     seedSessionLedger(tempRoot, "s1", 10, { base: NOW_MS - 2 * HOUR_MS });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ archive_edit_threshold: 10 }),
-      "utf8",
-    );
+    const restore = withGlobalDefaults(tempRoot, { archive_edit_threshold: 10 });
+    try {
+      const writes: string[] = [];
+      const stdout = { write: (chunk: string) => writes.push(chunk) };
+      hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
 
-    const writes: string[] = [];
-    const stdout = { write: (chunk: string) => writes.push(chunk) };
-    hook.main({ cwd: tempRoot, now: FIXED_NOW, stdin_payload: { session_id: "s1" } }, { stdout });
-
-    expect(writes).toHaveLength(1);
-    // soft dual-sink envelope carries the archive reason (no decision:block).
-    // W5: AI sink carries it; the human banner is quiet by default.
-    expect(archiveEmit(writes).ai).toMatch(/fabric-archive/);
+      expect(writes).toHaveLength(1);
+      // soft dual-sink envelope carries the archive reason (no decision:block).
+      // W5: AI sink carries it; the human banner is quiet by default.
+      expect(archiveEmit(writes).ai).toMatch(/fabric-archive/);
+    } finally {
+      restore();
+    }
   });
 });
 
@@ -1441,24 +1513,24 @@ describe("fabric-hint.cjs — readUnderseedThreshold", () => {
     );
   });
 
-  it("returns config override when present and positive", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ underseed_node_threshold: 25 }),
-      "utf8",
-    );
-    expect(hook.readUnderseedThreshold(tempRoot)).toBe(25);
+  // CORPUS class: "how few entries is too few" describes the knowledge base, so
+  // the store owns it — there is no repo/global layer for this knob.
+  it("returns the store-config override when present and positive", () => {
+    const restore = withStoreCorpusConfig(tempRoot, tempRoot, { underseed_node_threshold: 25 });
+    try {
+      expect(hook.readUnderseedThreshold(tempRoot)).toBe(25);
+    } finally {
+      restore();
+    }
   });
 
-  it("falls back to default when override is non-positive", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ underseed_node_threshold: 0 }),
-      "utf8",
-    );
-    expect(hook.readUnderseedThreshold(tempRoot)).toBe(10);
+  it("falls back to default when the store override is non-positive", () => {
+    const restore = withStoreCorpusConfig(tempRoot, tempRoot, { underseed_node_threshold: 0 });
+    try {
+      expect(hook.readUnderseedThreshold(tempRoot)).toBe(10);
+    } finally {
+      restore();
+    }
   });
 
   it("falls back to default on parse failure", () => {
@@ -1469,6 +1541,20 @@ describe("fabric-hint.cjs — readUnderseedThreshold", () => {
       "utf8",
     );
     expect(hook.readUnderseedThreshold(tempRoot)).toBe(10);
+  });
+
+  it("a value left in the repo config is inert (corpus knobs live in the store)", () => {
+    const restore = withStoreCorpusConfig(tempRoot, tempRoot, {});
+    try {
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({ project_id: "corpus-fixture-binding", underseed_node_threshold: 25 }),
+        "utf8",
+      );
+      expect(hook.readUnderseedThreshold(tempRoot)).toBe(10);
+    } finally {
+      restore();
+    }
   });
 });
 
@@ -1624,13 +1710,12 @@ describe("fabric-hint.cjs — rc.7 T7 externalized threshold readers", () => {
   });
 
   it("readArchiveHintHours honors archive_hint_hours override", () => {
-    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(tempRoot, ".fabric", "fabric-config.json"),
-      JSON.stringify({ archive_hint_hours: 48 }),
-      "utf8",
-    );
-    expect(hook.readArchiveHintHours(tempRoot)).toBe(48);
+    const restore = withGlobalDefaults(tempRoot, { archive_hint_hours: 48 });
+    try {
+      expect(hook.readArchiveHintHours(tempRoot)).toBe(48);
+    } finally {
+      restore();
+    }
   });
 
   it("readReviewHintPendingCount returns default 10 when config file is missing", () => {
@@ -2613,13 +2698,10 @@ describe("fabric-hint.cjs — session status breadcrumb (observability grill)", 
     writeFileSync(join(root, ".fabric", "events.jsonl"), `${lines.join("\n")}\n`, "utf8");
   }
 
+  // config-single-home W3: nudge_mode is a PREFERENCE knob — it resolves from the
+  // global policy layer, so writing it into the repo file has no effect.
   function writeNudgeMode(root: string, mode: string): void {
-    mkdirSync(join(root, ".fabric"), { recursive: true });
-    writeFileSync(
-      join(root, ".fabric", "fabric-config.json"),
-      JSON.stringify({ nudge_mode: mode }),
-      "utf8",
-    );
+    withGlobalDefaults(root, { nudge_mode: mode });
   }
 
   it("tallySessionActivity counts only session-scoped file_mutated + knowledge_consumed", () => {

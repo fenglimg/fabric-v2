@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   STORE_LAYOUT,
+  loadGlobalConfig,
   resolveGlobalRoot,
   saveGlobalConfig,
   storeRelativePathForMount,
@@ -67,12 +68,26 @@ async function createTempProject(): Promise<string> {
   return root;
 }
 
-/** Register the team store in the global config. */
+/** Register the team store in the global config, preserving policy defaults. */
 function mountStores(): void {
+  const current = loadGlobalConfig() as Record<string, unknown> | null;
   saveGlobalConfig({
     uid: "test-uid",
     stores: [{ store_uuid: TEAM_STORE, alias: "team", remote: "git@e:team.git" }],
-  });
+    ...(current?.defaults !== undefined ? { defaults: current.defaults } : {}),
+  } as Parameters<typeof saveGlobalConfig>[0]);
+}
+
+/**
+ * config-single-home W2: preference knobs (plan_context_top_k …) live in the
+ * GLOBAL policy layer, not the repo config. Merge into `defaults`.
+ */
+function writePolicyDefaults(defaults: Record<string, unknown>): void {
+  const current = (loadGlobalConfig() ?? { uid: "test-uid", stores: [] }) as Record<string, unknown>;
+  saveGlobalConfig({
+    ...current,
+    defaults: { ...((current.defaults as Record<string, unknown>) ?? {}), ...defaults },
+  } as Parameters<typeof saveGlobalConfig>[0]);
 }
 
 /** Write a knowledge .md into the team store under the isolated ~/.fabric. */
@@ -660,10 +675,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
     const projectRoot = await seedRelatedProject();
     // top_k=1 → only the top candidate survives the retrieval-budget cut, its
     // related neighbour would otherwise be retrieval-dropped.
-    await writeFile(
-      join(projectRoot, ".fabric", "fabric-config.json"),
-      `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: 1 }, null, 2)}\n`,
-    );
+    writePolicyDefaults({ plan_context_top_k: 1 });
 
     const result = await recall(projectRoot, {
       paths: ["src/index.ts"],
@@ -690,10 +702,7 @@ describe("recall (lean one-call — KT-DEC-0026: descriptions + read paths, no b
   it("surfaces a structured dropped[]{id,reason} + a next_steps hint when the budget omits candidates", async () => {
     const projectRoot = await seedTwoEntryProject();
     // top_k=1 over two candidates → one omitted by the retrieval budget.
-    await writeFile(
-      join(projectRoot, ".fabric", "fabric-config.json"),
-      `${JSON.stringify({ required_stores: [{ id: "team" }], plan_context_top_k: 1 }, null, 2)}\n`,
-    );
+    writePolicyDefaults({ plan_context_top_k: 1 });
 
     const result = await recall(projectRoot, { paths: ["src/index.ts"] });
 

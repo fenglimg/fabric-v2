@@ -141,6 +141,13 @@ export async function uninstallFabricRecallPlaybookSkill(
   );
 }
 
+/** Inverse of `installFabricConfigSkill` (config-single-home W9). */
+export async function uninstallFabricConfigSkill(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeSkill("skill-config", SKILL_DESTINATIONS.fabricConfig, projectRoot);
+}
+
 /**
  * W3-C legacy cleanup: fabric-audit folded into review `retire` sub-flow. Kept
  * so uninstall sweeps the residual dir from pre-W3-C installs.
@@ -745,6 +752,9 @@ export async function uninstallBootstrapStage(
   // stage (installFabricStoreSkill) but was never swept on uninstall — surfaced
   // by the W4 validate stage as a residual artifact. Install order is sync →
   // store → recall-playbook, so uninstall removes playbook, then store, then sync.
+  await runAndCollect(results, "skill-config", projectRoot, () =>
+    uninstallFabricConfigSkill(projectRoot),
+  );
   await runAndCollect(results, "skill-recall-playbook", projectRoot, () =>
     uninstallFabricRecallPlaybookSkill(projectRoot),
   );

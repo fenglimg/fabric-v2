@@ -1,7 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { STORE_LAYOUT, loadGlobalConfig, storeConfigSchema } from "@fenglimg/fabric-shared";
+import { STORE_LAYOUT, globalConfigPath, loadGlobalConfig, storeConfigSchema } from "@fenglimg/fabric-shared";
 import type { FabricConfig, McpPayloadLimits, StoreConfig } from "@fenglimg/fabric-shared";
 
 import { resolveWriteTargetStoreDir } from "./services/cross-store-write.js";
@@ -42,7 +42,20 @@ export const RECALL_RELEVANCE_RATIO_DEFAULT = 0.25;
 // Per-projectRoot memoized store config. Resolving the write-target store walks
 // the global config + mounted-store registry; do it ONCE per root and reuse the
 // parsed config across every knob read rather than re-resolving per knob.
-const storeConfigCache = new Map<string, StoreConfig>();
+// mtime-keyed for the same reason as globalPolicyCache: a long-lived server must
+// observe a `store-config.json` edit (e.g. after `fabric sync` pulls a teammate's
+// tuning) without a restart. Resolving the store ROOT is the expensive part and
+// stays memoized; only the cheap stat() repeats.
+const storeConfigCache = new Map<string, { mtime: number; value: StoreConfig }>();
+
+function storeConfigMtime(projectRoot: string): number {
+  try {
+    const storeRoot = resolveWriteTargetStoreDir("team", projectRoot);
+    return statSync(join(storeRoot, STORE_LAYOUT.configFile)).mtimeMs;
+  } catch {
+    return 0; // unbound repo / absent file — stable key meaning "nothing there"
+  }
+}
 
 /**
  * Resolve the STORE-layer config (`store-config.json` at the team store root).
@@ -53,12 +66,13 @@ const storeConfigCache = new Map<string, StoreConfig>();
  * never injecting a schema default (the schema carries none). Memoized per root.
  */
 export function resolveStoreConfig(projectRoot: string): StoreConfig {
+  const mtime = storeConfigMtime(projectRoot);
   const cached = storeConfigCache.get(projectRoot);
-  if (cached !== undefined) {
-    return cached;
+  if (cached !== undefined && cached.mtime === mtime) {
+    return cached.value;
   }
   const resolved = loadStoreConfigUncached(projectRoot);
-  storeConfigCache.set(projectRoot, resolved);
+  storeConfigCache.set(projectRoot, { mtime, value: resolved });
   return resolved;
 }
 
@@ -149,22 +163,6 @@ function firstValidLayer<T>(
 }
 
 /**
- * Resolve the first VALID layer value in env > project > store order, else the
- * library default. Every layer runs the SAME single-field `validate` guard, so a
- * corrupt value at one layer falls through to the next (env beats project beats
- * store; project ALWAYS beats store, C-004). Never throws.
- */
-function resolveLayered<T>(
-  envVal: unknown,
-  projectVal: unknown,
-  storeVal: unknown,
-  def: T,
-  validate: (v: unknown) => T | undefined,
-): T {
-  return firstValidLayer([envVal, projectVal, storeVal], validate) ?? def;
-}
-
-/**
  * Reads the project config from `.fabric/fabric-config.json` — the single source
  * of truth for project config (A1; KT-DEC-0003 dual-root `~/.fabric` + `<repo>/.fabric`).
  * Returns an empty config object when the file is absent.
@@ -184,15 +182,117 @@ function readFabricConfig(projectRoot: string): FabricConfig {
   return parsed as FabricConfig;
 }
 
-// Read the project config as a raw key→unknown bag for the cascade's project
-// layer. Best-effort: a missing/corrupt file yields `{}` so the store layer /
-// default still resolves (the individual readers keep their own try/catch too).
+// Read the project config as a raw key→unknown bag. Since config-single-home the
+// repo file carries IDENTITY ONLY (project_id / required_stores / write_routes /
+// active_project / active_write_store / default_write_store) — no policy knobs —
+// so this is used to resolve `project_id`, not to supply cascade values.
+// Best-effort: a missing/corrupt file yields `{}`.
 function projectLayer(projectRoot: string): Record<string, unknown> {
   try {
     return readFabricConfig(projectRoot) as Record<string, unknown>;
   } catch {
     return {};
   }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// ---------------------------------------------------------------------------
+// config-single-home W2 — the GLOBAL policy layer (`~/.fabric/fabric-global.json`).
+//
+// `defaults` = the user's machine-wide defaults; `projects[<project_id>]` = this
+// repo's exceptions, keyed by the project_id that stays in the repo config. Both
+// are read once per projectRoot and memoized — resolving them walks the global
+// config, so it must not repeat per knob on the recall hot path.
+// ---------------------------------------------------------------------------
+interface GlobalPolicy {
+  /** `projects[<project_id>]` — per-project exceptions. Highest non-env layer. */
+  project: Record<string, unknown>;
+  /** `defaults` — machine-wide user defaults. Lowest layer above code default. */
+  defaults: Record<string, unknown>;
+}
+
+const EMPTY_POLICY: GlobalPolicy = { project: {}, defaults: {} };
+
+// mtime-keyed, mirroring the hook-side lib/config-cache.cjs contract. A cache
+// that never expires would be wrong here: the MCP server is a LONG-LIVED
+// process, so an operator editing ~/.fabric/fabric-global.json would not see the
+// change until the server restarted. Keying on mtime keeps the hot path to one
+// stat() while still picking up edits (and lets tests rewrite between asserts).
+const globalPolicyCache = new Map<string, { mtime: number; value: GlobalPolicy }>();
+
+function globalConfigMtime(): number {
+  try {
+    return statSync(globalConfigPath()).mtimeMs;
+  } catch {
+    return 0; // absent / unreadable — a stable key meaning "no config"
+  }
+}
+
+export function resolveGlobalPolicy(projectRoot: string): GlobalPolicy {
+  const mtime = globalConfigMtime();
+  const cached = globalPolicyCache.get(projectRoot);
+  if (cached !== undefined && cached.mtime === mtime) {
+    return cached.value;
+  }
+  const resolved = loadGlobalPolicyUncached(projectRoot);
+  globalPolicyCache.set(projectRoot, { mtime, value: resolved });
+  return resolved;
+}
+
+function loadGlobalPolicyUncached(projectRoot: string): GlobalPolicy {
+  try {
+    const global = loadGlobalConfig() as Record<string, unknown> | null;
+    if (global === null) {
+      return EMPTY_POLICY;
+    }
+    const defaults = isPlainObject(global.defaults) ? global.defaults : {};
+    const projects = isPlainObject(global.projects) ? global.projects : {};
+    const projectId = projectLayer(projectRoot).project_id;
+    const scoped =
+      typeof projectId === "string" && projectId !== "" && isPlainObject(projects[projectId])
+        ? (projects[projectId] as Record<string, unknown>)
+        : {};
+    return { project: scoped, defaults };
+  } catch {
+    // No global config, unreadable home, or the test-runtime resolveGlobalRoot
+    // guard — degrade to code defaults rather than throwing on the hot path.
+    return EMPTY_POLICY;
+  }
+}
+
+/**
+ * PREFERENCE-class knob: `env > projects[project_id] > defaults > code default`.
+ * These describe how the USER wants Fabric to behave; they never live in a store.
+ */
+function resolvePreference<T>(
+  envVal: unknown,
+  key: string,
+  projectRoot: string,
+  def: T,
+  validate: (v: unknown) => T | undefined,
+): T {
+  const policy = resolveGlobalPolicy(projectRoot);
+  return firstValidLayer([envVal, policy.project[key], policy.defaults[key]], validate) ?? def;
+}
+
+/**
+ * CORPUS-class knob: `env > store > code default`.
+ * These describe what a KNOWLEDGE BASE is like (how fast its entries go stale,
+ * how many it holds), so the store that owns the corpus is their only home —
+ * a machine-wide default for them would be meaningless across differing stores.
+ */
+function resolveCorpus<T>(
+  envVal: unknown,
+  key: string,
+  projectRoot: string,
+  def: T,
+  validate: (v: unknown) => T | undefined,
+): T {
+  const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+  return firstValidLayer([envVal, store[key]], validate) ?? def;
 }
 
 /**
@@ -207,7 +307,25 @@ function projectLayer(projectRoot: string): Record<string, unknown> {
  * at the call site. NOT a store-overridable knob — repo/machine scoped only.
  */
 export function readPayloadLimits(projectRoot: string): McpPayloadLimits | undefined {
-  return readFabricConfig(projectRoot).mcpPayloadLimits;
+  // config-single-home W2: preference-class (machine/transport scoped), so it
+  // resolves from the global policy layers, never from a store.
+  return resolvePreference<McpPayloadLimits | undefined>(
+    undefined,
+    "mcpPayloadLimits",
+    projectRoot,
+    undefined,
+    (v) => {
+      if (!isPlainObject(v)) return undefined;
+      const warn = v.warnBytes;
+      const hard = v.hardBytes;
+      const ok = (n: unknown): boolean => n === undefined || (typeof n === "number" && Number.isInteger(n) && n > 0);
+      if (!ok(warn) || !ok(hard)) return undefined;
+      return {
+        ...(typeof warn === "number" ? { warnBytes: warn } : {}),
+        ...(typeof hard === "number" ? { hardBytes: hard } : {}),
+      };
+    },
+  );
 }
 
 /**
@@ -221,10 +339,13 @@ export function readPayloadLimits(projectRoot: string): McpPayloadLimits | undef
  */
 export function readSelectionTokenTtlMs(projectRoot: string): number | undefined {
   try {
-    const proj = projectLayer(projectRoot);
-    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
+    const policy = resolveGlobalPolicy(projectRoot);
     return firstValidLayer(
-      [envNum("FABRIC_SELECTION_TOKEN_TTL_MS"), proj.selection_token_ttl_ms, store.selection_token_ttl_ms],
+      [
+        envNum("FABRIC_SELECTION_TOKEN_TTL_MS"),
+        policy.project.selection_token_ttl_ms,
+        policy.defaults.selection_token_ttl_ms,
+      ],
       intGuard(30_000, 3_600_000),
     );
   } catch {
@@ -274,25 +395,6 @@ export interface EmbedConfig {
   remoteApiKey?: string;
 }
 
-// Resolve a machine-scoped secret: env override first, else the ~/.fabric global
-// config (globalConfigSchema is `.passthrough()`, so embed_endpoint/embed_api_key
-// survive as forward-compat keys). Best-effort: a missing/malformed global config
-// — or the test-runtime resolveGlobalRoot guard — degrades to undefined. The
-// store layer is intentionally NOT a source here (secrets stay machine-local).
-function resolveMachineSecret(envName: string, globalKey: string): string | undefined {
-  const fromEnv = process.env[envName];
-  if (typeof fromEnv === "string" && fromEnv.trim() !== "") {
-    return fromEnv;
-  }
-  try {
-    const global = loadGlobalConfig() as Record<string, unknown> | null;
-    const value = global?.[globalKey];
-    return typeof value === "string" && value.trim() !== "" ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * v2.2 C2-vector (W2-T7): resolve the optional embedding settings.
  *
@@ -302,54 +404,99 @@ function resolveMachineSecret(envName: string, globalKey: string): string | unde
  * read/parse failure returns the safe text-only default so plan_context never
  * crashes on a corrupt config.
  */
+/**
+ * config-single-home W2/D6 — resolve the remote embedding transport as ONE unit.
+ *
+ * `embed_remote: { endpoint, api_key?, model? }` in `~/.fabric/fabric-global.json`
+ * is the canonical shape: presence of `endpoint` IS the remote-mode switch, and
+ * `model` rides along inside it because the remote namespace (`BAAI/bge-m3`) and
+ * the local fastembed enum are mutually unusable — they must move together.
+ *
+ * Also accepts the pre-W2 FLAT keys (`embed_endpoint` / `embed_api_key` /
+ * `embed_model` at the global root) so an existing machine keeps working without
+ * touching its config; the nested object wins when both are present. Env
+ * overrides beat both. Returns undefined when no endpoint resolves (local mode).
+ */
+function resolveRemoteEmbed(): { endpoint: string; apiKey?: string; model?: string } | undefined {
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" && v.trim() !== "" ? v : undefined;
+  let nested: Record<string, unknown> = {};
+  let flat: Record<string, unknown> = {};
+  try {
+    const global = loadGlobalConfig() as Record<string, unknown> | null;
+    if (global !== null) {
+      flat = global;
+      if (global.embed_remote !== null && typeof global.embed_remote === "object" && !Array.isArray(global.embed_remote)) {
+        nested = global.embed_remote as Record<string, unknown>;
+      }
+    }
+  } catch {
+    // no global config / test-runtime guard — local mode
+  }
+  const endpoint =
+    str(process.env.FABRIC_EMBED_ENDPOINT) ?? str(nested.endpoint) ?? str(flat.embed_endpoint);
+  if (endpoint === undefined) {
+    return undefined;
+  }
+  const apiKey =
+    str(process.env.FABRIC_EMBED_API_KEY) ?? str(nested.api_key) ?? str(flat.embed_api_key);
+  const model = str(process.env.FABRIC_EMBED_MODEL) ?? str(nested.model) ?? str(flat.embed_model);
+  return {
+    endpoint,
+    ...(apiKey !== undefined ? { apiKey } : {}),
+    ...(model !== undefined ? { model } : {}),
+  };
+}
+
 export function readEmbedConfig(projectRoot: string): EmbedConfig {
   try {
-    const config = readFabricConfig(projectRoot);
-    const proj = config as Record<string, unknown>;
-    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
-
-    // embed_enabled: default TRUE, PROJECT-only (KT-PIT-0029 out of scope — the
-    // store layer does not toggle a repo's embedding on/off).
-    const enabled = config.embed_enabled !== false;
+    // embed_enabled: default TRUE (KT-PIT-0029 — runtime default is ON and the
+    // shared schema mirrors it). OFF only when a policy layer says exactly false.
+    const enabledOverride = resolvePreference<boolean | undefined>(
+      undefined,
+      "embed_enabled",
+      projectRoot,
+      undefined,
+      (v) => (typeof v === "boolean" ? v : undefined),
+    );
+    const enabled = enabledOverride !== false;
 
     // Cap at 49 (< BM25_WEIGHT 50) — enforces the supplement-not-override
     // invariant; out-of-range / non-integer / non-finite fall through the cascade.
-    const weight = resolveLayered(
+    const weight = resolvePreference(
       envNum("FABRIC_EMBED_WEIGHT"),
-      proj.embed_weight,
-      store.embed_weight,
+      "embed_weight",
+      projectRoot,
       30,
       intGuard(0, 49),
     );
 
-    // Remote transport — MACHINE layer only (env ?? ~/.fabric global). The store
-    // config is NEVER read for endpoint/key (KT-DEC-0063 secrets stay machine-local).
-    // Resolved BEFORE model so remote mode can relax the model guard.
-    const remoteEndpoint = resolveMachineSecret("FABRIC_EMBED_ENDPOINT", "embed_endpoint");
-    const remoteApiKey = resolveMachineSecret("FABRIC_EMBED_API_KEY", "embed_api_key");
+    // D6: remote transport is machine-scoped and moves as a unit (KT-DEC-0063 —
+    // secrets never come from a store). Resolved BEFORE model because the two
+    // modes select DIFFERENT model homes rather than competing for one key.
+    const remote = resolveRemoteEmbed();
 
-    // v2.1 ③: pin the embedding model. Remote APIs have their own model namespace
-    // (e.g. "BAAI/bge-m3"), so when a remote endpoint is configured accept any
-    // non-empty string; without remote, validate against the local fastembed enum.
-    // Machine layer (env ?? global config) is included so a workstation-wide remote
-    // model can be set in ~/.fabric once rather than per-project.
-    const guard = remoteEndpoint !== undefined
-      ? (v: unknown): string | undefined => (typeof v === "string" && v.trim() !== "" ? v : undefined)
-      : modelGuard;
-    const model = resolveLayered(
-      resolveMachineSecret("FABRIC_EMBED_MODEL", "embed_model"),
-      proj.embed_model,
-      store.embed_model,
-      DEFAULT_EMBED_MODEL,
-      guard,
-    );
+    // Remote mode → the model that travels with the endpoint. Local mode → the
+    // preference-class knob, validated against the fastembed enum. No single key
+    // is writable in two places: `embed_remote.model` and `defaults.embed_model`
+    // serve mutually exclusive modes.
+    const model =
+      remote !== undefined
+        ? (remote.model ?? DEFAULT_EMBED_MODEL)
+        : resolvePreference(
+            envRaw("FABRIC_EMBED_MODEL"),
+            "embed_model",
+            projectRoot,
+            DEFAULT_EMBED_MODEL,
+            modelGuard,
+          );
 
     return {
       enabled,
       weight,
       model,
-      ...(remoteEndpoint !== undefined ? { remoteEndpoint } : {}),
-      ...(remoteApiKey !== undefined ? { remoteApiKey } : {}),
+      ...(remote !== undefined ? { remoteEndpoint: remote.endpoint } : {}),
+      ...(remote?.apiKey !== undefined ? { remoteApiKey: remote.apiKey } : {}),
     };
   } catch {
     return { enabled: false, weight: 30, model: DEFAULT_EMBED_MODEL };
@@ -367,12 +514,10 @@ function layerFilterGuard(v: unknown): "team" | "personal" | "both" | undefined 
 
 export function readDefaultLayerFilter(projectRoot: string): "team" | "personal" | "both" {
   try {
-    const proj = projectLayer(projectRoot);
-    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
-    return resolveLayered(
+    return resolvePreference(
       envRaw("FABRIC_DEFAULT_LAYER_FILTER"),
-      proj.default_layer_filter,
-      store.default_layer_filter,
+      "default_layer_filter",
+      projectRoot,
       "both",
       layerFilterGuard,
     );
@@ -390,12 +535,10 @@ export function readDefaultLayerFilter(projectRoot: string): "team" | "personal"
  */
 export function readPlanContextTopK(projectRoot: string): number {
   try {
-    const proj = projectLayer(projectRoot);
-    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
-    return resolveLayered(
+    return resolvePreference(
       envNum("FABRIC_PLAN_CONTEXT_TOP_K"),
-      proj.plan_context_top_k,
-      store.plan_context_top_k,
+      "plan_context_top_k",
+      projectRoot,
       PLAN_CONTEXT_TOP_K_DEFAULT,
       intGuard(1, 200),
     );
@@ -412,12 +555,10 @@ export function readPlanContextTopK(projectRoot: string): number {
  */
 export function readRecallRelevanceRatio(projectRoot: string): number {
   try {
-    const proj = projectLayer(projectRoot);
-    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
-    return resolveLayered(
+    return resolvePreference(
       envNum("FABRIC_RECALL_RELEVANCE_RATIO"),
-      proj.recall_relevance_ratio,
-      store.recall_relevance_ratio,
+      "recall_relevance_ratio",
+      projectRoot,
       RECALL_RELEVANCE_RATIO_DEFAULT,
       floatGuard(0, 1),
     );
@@ -442,12 +583,10 @@ export const BROAD_REVIEW_RECHECK_DAYS_DEFAULT = 180;
  */
 export function readBroadReviewRecheckThresholdDays(projectRoot: string): number {
   try {
-    const proj = projectLayer(projectRoot);
-    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
-    return resolveLayered(
+    return resolveCorpus(
       envNum("FABRIC_BROAD_REVIEW_RECHECK_DAYS"),
-      proj.broad_review_recheck_days,
-      store.broad_review_recheck_days,
+      "broad_review_recheck_days",
+      projectRoot,
       BROAD_REVIEW_RECHECK_DAYS_DEFAULT,
       intGuard(1, 3650),
     );
@@ -470,12 +609,11 @@ export function readOrphanDemoteThresholdDays(
   projectRoot: string,
 ): Partial<Record<"proven" | "verified" | "draft", number>> {
   try {
-    const proj = projectLayer(projectRoot);
     const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
     const guard = intGuard(1, 3650);
     const out: Partial<Record<"proven" | "verified" | "draft", number>> = {};
     for (const [maturity, field, env] of ORPHAN_DEMOTE_KEYS) {
-      const value = firstValidLayer([envNum(env), proj[field], store[field]], guard);
+      const value = firstValidLayer([envNum(env), store[field]], guard);
       if (value !== undefined) {
         out[maturity] = value;
       }
@@ -509,12 +647,11 @@ export function readCredibilityHalfLives(
     processes: 120,
   };
   try {
-    const proj = projectLayer(projectRoot);
     const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
     const guard = intGuard(1, 3650);
     const out = { ...defaults };
     for (const [type, field, env, def] of CREDIBILITY_HALF_LIFE_KEYS) {
-      out[type] = resolveLayered(envNum(env), proj[field], store[field], def, guard);
+      out[type] = firstValidLayer([envNum(env), store[field]], guard) ?? def;
     }
     return out;
   } catch {
@@ -540,12 +677,11 @@ export function readCredibilityFloors(
     proven: 0.7,
   };
   try {
-    const proj = projectLayer(projectRoot);
     const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
     const guard = floatGuard(0, 1);
     const out = { ...defaults };
     for (const [maturity, field, env, def] of CREDIBILITY_FLOOR_KEYS) {
-      out[maturity] = resolveLayered(envNum(env), proj[field], store[field], def, guard);
+      out[maturity] = firstValidLayer([envNum(env), store[field]], guard) ?? def;
     }
     return out;
   } catch {
@@ -568,12 +704,10 @@ function fusionGuard(v: unknown): "additive" | "rrf" | "auto" | undefined {
 
 export function readFusion(projectRoot: string): "additive" | "rrf" | "auto" {
   try {
-    const proj = projectLayer(projectRoot);
-    const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
-    return resolveLayered(
+    return resolvePreference(
       envRaw("FABRIC_FUSION"),
-      proj.fusion,
-      store.fusion,
+      "fusion",
+      projectRoot,
       FUSION_DEFAULT,
       fusionGuard,
     );
@@ -589,14 +723,9 @@ export function readFusion(projectRoot: string): "additive" | "rrf" | "auto" {
 // preserving the undefined-means-fallback contract.
 export function readConflictLintThreshold(projectRoot: string): number | undefined {
   try {
-    const proj = projectLayer(projectRoot);
     const store = resolveStoreConfig(projectRoot) as Record<string, unknown>;
     return firstValidLayer(
-      [
-        envNum("FABRIC_CONFLICT_LINT_SIMILARITY_THRESHOLD"),
-        proj.conflict_lint_similarity_threshold,
-        store.conflict_lint_similarity_threshold,
-      ],
+      [envNum("FABRIC_CONFLICT_LINT_SIMILARITY_THRESHOLD"), store.conflict_lint_similarity_threshold],
       floatGuard(0, 1),
     );
   } catch {

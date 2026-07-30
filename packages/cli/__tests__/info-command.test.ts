@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { loadGlobalConfig, saveGlobalConfig } from "@fenglimg/fabric-shared";
+
 import infoCommand, { gatherRecallStatus } from "../src/commands/info.js";
 
 const originalExitCode = process.exitCode;
@@ -49,11 +51,37 @@ describe("info recall — recall-engine status (gatherRecallStatus)", () => {
   const roots: string[] = [];
   let prevHome: string | undefined;
 
+  // config-single-home W2: the repo config holds IDENTITY only; fusion /
+  // embed_enabled and friends are preference-class knobs that resolve from
+  // `~/.fabric/fabric-global.json` → `defaults`.
+  const IDENTITY_KEYS = new Set([
+    "project_id",
+    "workspace_binding_id",
+    "required_stores",
+    "write_routes",
+    "active_project",
+    "active_write_store",
+    "default_write_store",
+  ]);
+
   function project(config: Record<string, unknown>): string {
     const root = mkdtempSync(join(tmpdir(), "fabric-recall-status-"));
     roots.push(root);
     mkdirSync(join(root, ".fabric"), { recursive: true });
-    writeFileSync(join(root, ".fabric", "fabric-config.json"), JSON.stringify(config));
+    const identity: Record<string, unknown> = {};
+    const policy: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(config)) {
+      if (IDENTITY_KEYS.has(key)) identity[key] = value;
+      else policy[key] = value;
+    }
+    writeFileSync(join(root, ".fabric", "fabric-config.json"), JSON.stringify(identity));
+    if (Object.keys(policy).length > 0) {
+      const current = (loadGlobalConfig() ?? { uid: "test-uid", stores: [] }) as Record<string, unknown>;
+      saveGlobalConfig({
+        ...current,
+        defaults: { ...((current.defaults as Record<string, unknown>) ?? {}), ...policy },
+      } as Parameters<typeof saveGlobalConfig>[0]);
+    }
     return root;
   }
 

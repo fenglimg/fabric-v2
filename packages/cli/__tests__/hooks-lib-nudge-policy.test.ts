@@ -16,6 +16,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { routePolicyConfig } from "./helpers/policy-fixture.js";
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
 const configCache = require("../templates/hooks/lib/config-cache.cjs") as {
   clearConfigCache: () => void;
@@ -68,13 +70,9 @@ function makeRoot(config?: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), "fabric-nudge-"));
   tempDirs.push(dir);
   mkdirSync(join(dir, ".fabric"), { recursive: true });
-  if (config !== undefined) {
-    writeFileSync(
-      join(dir, ".fabric", "fabric-config.json"),
-      JSON.stringify(config),
-      "utf8",
-    );
-  }
+  // config-single-home W3: nudge_mode / observe are PREFERENCE knobs and resolve
+  // from the global policy layer; the repo file is identity-only.
+  routePolicyConfig(dir, config ?? {});
   return dir;
 }
 

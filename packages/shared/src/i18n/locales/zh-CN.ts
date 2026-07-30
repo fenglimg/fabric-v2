@@ -145,6 +145,24 @@ export const zhCNMessages: Messages = {
   "cli.config.menu.exit": "退出",
   "cli.config.value.current": "当前：{value}",
   "cli.config.value.default-marker": "（默认）",
+  // config-single-home W6：值来自哪一层。同一个键可以在机器级、本项目级或团队
+  // store 里被设置，标出来源才解释得清"为什么这个仓库读到的不一样"。
+  "cli.config.source.project": "本项目",
+  "cli.config.source.defaults": "全机器",
+  "cli.config.source.store": "团队 store",
+  "cli.config.source.global": "全局",
+  "cli.config.source.default": "内置默认",
+  // config-single-home W8：节奏档位——一次定好"多吵 + 多久催一次归档 + 待审积压
+  // 到多少提醒"，这四件事本来就是一起动的。
+  "cli.config.profile.label": "节奏档位",
+  "cli.config.profile.prompt": "选一个节奏档位（会同时改 4 项设置）",
+  "cli.config.profile.custom": "自定义",
+  "cli.config.profile.quiet": "安静",
+  "cli.config.profile.quiet.description": "几乎不打扰你，归档由你自己决定时机",
+  "cli.config.profile.standard": "标准",
+  "cli.config.profile.standard.description": "出厂节奏：每次会话一行状态，攒够一批再提醒归档",
+  "cli.config.profile.coach": "教练",
+  "cli.config.profile.coach.description": "催得勤，适合知识库刚起步、怕漏掉经验的阶段",
   "cli.config.prompt.select": "为 {key} 选择新值（当前：{current}）：",
   "cli.config.prompt.text": "为 {key} 输入新值（当前：{current}）：",
   "cli.config.write.success": "{key} = {value}",
@@ -162,50 +180,69 @@ export const zhCNMessages: Messages = {
     "工作区尚未初始化。请先运行 `fabric install`。",
   "cli.config.errors.invalid-int": "必须是正整数。",
   "cli.config.errors.unknown-field": "未知字段选择 — 已跳过。",
+  "cli.config.errors.no-store-target":
+    "本仓库没有绑定可写的团队 store — 先跑 `fabric store bind <alias>` 再设置这个知识库级配置。",
+  "cli.config.errors.no-project-id":
+    "本仓库还没有 project_id — 先跑 `fabric install`，或改用 --scope defaults 写到全机器默认。",
   "cli.config.errors.no-enum-options": "该字段没有可选枚举值 — 已跳过。",
   // 11 个面板字段标签（A 组 2 个 + B 组 8 个 + C 组 1 个）。
   "cli.config.fields.fabric_language.label": "语言",
   "cli.config.fields.fabric_language.description":
     "Fabric 的全局语言基调（界面与知识统一），保存到 ~/.fabric/fabric-global.json。",
-  "cli.config.fields.default_layer_filter.label": "默认知识层",
+  "cli.config.fields.default_layer_filter.label": "默认检索范围",
   "cli.config.fields.default_layer_filter.description":
-    "知识列表的默认层级范围（team / personal / both）。",
-  "cli.config.fields.archive_hint_hours.label": "归档提示窗口（小时）",
+    "AI 找知识时默认翻哪一层：team 只翻团队库 / personal 只翻个人库 / both 两个都翻（默认）。",
+  "cli.config.fields.archive_hint_hours.label": "归档提醒：隔多久提一次",
   "cli.config.fields.archive_hint_hours.description":
-    "Signal A 用于检测频繁编辑的时间窗口（小时）。",
-  "cli.config.fields.archive_hint_cooldown_hours.label": "归档提示冷却（小时）",
+    "距离上次归档超过这么多小时，就提醒你「有东西该记下来了」。调大＝更少打扰，调小＝催得更勤。",
+  "cli.config.fields.archive_hint_cooldown_hours.label": "归档提醒：被忽略后静默多久",
   "cli.config.fields.archive_hint_cooldown_hours.description":
-    "同一归档提示再次触发前的冷却时间（小时）。",
-  "cli.config.fields.archive_edit_threshold.label": "归档编辑阈值",
+    "你没理会归档提醒后，它闭嘴这么多小时再说第二次。防止同一件事反复念。",
+  "cli.config.fields.archive_edit_threshold.label": "归档提醒：改多少次文件后触发",
   "cli.config.fields.archive_edit_threshold.description":
-    "触发 Signal A 归档提示所需的编辑次数阈值。",
-  "cli.config.fields.underseed_node_threshold.label": "知识节点不足阈值",
+    "累计改了这么多次文件就提醒归档（和上面的小时数是「或」的关系，谁先到算谁）。调小＝更早提醒。",
+  "cli.config.fields.underseed_node_threshold.label": "知识库「太空」的门槛",
   "cli.config.fields.underseed_node_threshold.description":
-    "知识节点数低于该阈值时，Fabric 视为知识库尚未充实。",
-  "cli.config.fields.review_hint_pending_count.label": "待审条目数阈值",
+    "知识条目少于这个数，Fabric 认为知识库还没建起来，会建议你先补一批。属于知识库自身属性，写在团队 store 里、全团队共享。",
+  "cli.config.fields.review_hint_pending_count.label": "待审提醒：积压多少条时提",
   "cli.config.fields.review_hint_pending_count.description":
-    "待审条目数超过该阈值时触发审核提示。",
-  "cli.config.fields.review_hint_pending_age_days.label": "待审条目年龄（天）",
+    "AI 归档的草稿要你过目才进库。攒到这么多条就提醒你去审一批。",
+  "cli.config.fields.review_hint_pending_age_days.label": "待审提醒：放多少天时提",
   "cli.config.fields.review_hint_pending_age_days.description":
-    "待审条目存留天数超过该阈值时触发审核提示。",
-  "cli.config.fields.maintenance_hint_days.label": "维护提示窗口（天）",
+    "有草稿放了这么多天还没审，就提醒你。防止少量草稿一直被遗忘。",
+  "cli.config.fields.review_stale_pending_days.label": "待审草稿「放太久」的天数",
+  "cli.config.fields.review_stale_pending_days.description":
+    "审核时，超过这个天数的草稿会被单独拎出来让你「要么处理、要么丢掉」，不让长尾堆积。",
+  "cli.config.fields.maintenance_hint_days.label": "体检提醒：隔多少天提一次",
   "cli.config.fields.maintenance_hint_days.description":
-    "Fabric 触发知识维护提示的时间窗口（天）。",
-  "cli.config.fields.maintenance_hint_cooldown_days.label": "维护提示冷却（天）",
+    "距离上次跑 `fabric doctor` 超过这么多天，提醒你做一次知识库体检。",
+  "cli.config.fields.maintenance_hint_cooldown_days.label": "体检提醒：被忽略后静默多少天",
   "cli.config.fields.maintenance_hint_cooldown_days.description":
-    "维护提示再次触发前的冷却时间（天）。",
-  "cli.config.fields.audit_mode.label": "审计模式",
+    "你没理会体检提醒后，它闭嘴这么多天再说第二次。",
+  "cli.config.fields.audit_mode.label": "改动审计严格度",
   "cli.config.fields.audit_mode.description":
-    "human-lock 与漂移检测的审计粒度（strict / warn / off）。",
-  "cli.config.fields.nudge_mode.label": "提示档位",
+    "检查「人工锁定的内容被改动」时有多严：strict 严格拦 / warn 只警告（推荐）/ off 不检查。",
+  "cli.config.fields.nudge_mode.label": "提示音量",
   "cli.config.fields.nudge_mode.description":
-    "人类可见 nudge 的总档位（silent 静默 / minimal 精简 / normal 正常 / verbose 详尽）；仅控人类提示通道，不影响注入给 AI 的知识。",
-  "cli.config.fields.embed_enabled.label": "向量语义检索",
+    "你能看到多少提示：silent 全静音 / minimal 只留关键 / normal 正常 / verbose 什么都说。只影响你看到的，不影响 AI 拿到的知识——静音也不会让 AI 变笨。",
+  "cli.config.fields.cite_policy_enabled.label": "改文件前先查知识库",
+  "cli.config.fields.cite_policy_enabled.description":
+    "开启后，AI 改文件前会被提醒先查一下相关知识（不阻塞，只提醒）。关掉＝完全不提。",
+  "cli.config.fields.self_archive_policy_enabled.label": "AI 自动提议归档",
+  "cli.config.fields.self_archive_policy_enabled.description":
+    "开启后，AI 察觉到「这个决定值得记下来」时会自己发起归档（仍需你审核才进库）。关掉＝只有你主动叫它才归档。",
+  "cli.config.fields.cite_recall_nudge.label": "未查知识库时提醒",
+  "cli.config.fields.cite_recall_nudge.description":
+    "AI 没查知识库就动手改文件时，给一句软提醒。嫌啰嗦可以关掉，不影响归档和检索。",
+  "cli.config.fields.fabric_event_retention_days.label": "活动日志保留天数",
+  "cli.config.fields.fabric_event_retention_days.description":
+    "本机活动流水保留多久（7 精简 / 30 均衡 / 90 便于回溯）。超期的会归档到旁边的文件，不会直接删掉。",
+  "cli.config.fields.embed_enabled.label": "语义检索（按意思找，不只按词）",
   "cli.config.fields.embed_enabled.description":
-    "是否启用向量语义检索（true / false）。注意：true 只是意图开关——真正生效还需运行中的 server 能解析到 fastembed 包、且模型已下载（首次召回时自动下到 ~/.fabric/cache/embed）。用 `fabric info recall` 查实际状态。",
-  "cli.config.fields.fusion.label": "召回融合策略",
+    "开启后，问法和原文用词不一样也能找到（中文尤其明显）。注意这只是意图开关：真正生效还要 server 能加载 fastembed、模型已下载（首次检索时自动下到 ~/.fabric/cache/embed）。用 `fabric info recall` 看实际状态。",
+  "cli.config.fields.fusion.label": "检索排序方式",
   "cli.config.fields.fusion.description":
-    "多信号合成总分的算法：additive 加权求和（BM25 主导，向量权重小）/ rrf 倒数排名融合（BM25 与向量平起平坐，语义才真正生效）/ auto 自适应（默认：向量在出分时用 rrf，否则回落 additive——避免无向量时 rrf 退化反而更差）。",
+    "关键词命中和语义相似怎么合成排名：auto 自动挑（默认，推荐）/ rrf 两者平权（语义更管用）/ additive 关键词主导。没把握就留 auto——它会在语义通道真的出分时才启用 rrf。",
 
   "cli.doctor.description":
     "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）",
@@ -243,6 +280,7 @@ export const zhCNMessages: Messages = {
   "doctor.store.active-personal-unset": "已挂载 {count} 个 personal store 但无活动指针;运行 `fabric store switch-personal <alias>` 选一个(或 `fabric doctor --fix` 默认取第一个)",
   "doctor.store.related-broken": "{count} 条 `related` 链接指向语料中不存在的 id:{samples}{overflow} —— 通过 `fab_review` (modify) 修复 related 边,或编辑条目 frontmatter",
   "doctor.store.related-hub": "related 图谱枢纽(前 {shown} / 共 {total} 个被引用):{top}",
+  "doctor.store.config-key-relocated": "本仓配置仍留有已搬迁的键 '{key}' —— 策略已归 ~/.fabric/fabric-global.json(偏好类) 或 store 的 store-config.json(语料类);此处的值不再生效,可删除",
   "doctor.store.knob-repo-override": "本仓覆盖了 store 层旋钮 '{key}' —— project 层按设计优先(C-004 D2 用户在控);如非有意请对齐",
   "doctor.store.unreachable": "store '{alias}' 在 read-set 中但磁盘上不可达({reason});运行 `fabric store mount` / 重新 clone,再跑 `fabric doctor`",
   "doctor.store.unreachable-bound": "已绑定 store 的磁盘目录缺失：{stores} — 请 re-clone 或 remount，再跑 fabric doctor",
@@ -543,7 +581,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.events_jsonl_health.message.rotation_overdue":
     ".fabric/events.jsonl 已 {days} 天未 rotate；6h rotation tick 可能未运行。",
   "doctor.check.events_jsonl_health.remediation":
-    "运行 `fabric doctor --fix` —— 会按 .fabric/fabric-config.json 的 fabric_event_retention_days(7|30|90) 轮转 events.jsonl，并 flush metrics.jsonl。若告警仍持续，再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中，检查最近代码是否绕过 bumpCounter 直接写了 metric-managed event_type。",
+    "运行 `fabric doctor --fix` —— 会按 ~/.fabric/fabric-global.json 中 defaults.fabric_event_retention_days(7|30|90) 轮转 events.jsonl，并 flush metrics.jsonl。若告警仍持续，再重启 MCP server 让 startMetricsFlush + startRotationTick 重新调度。若 metric_leak 命中，检查最近代码是否绕过 bumpCounter 直接写了 metric-managed event_type。",
   "doctor.check.event_ledger_partial_write.name": "事件账本半截写入",
   "doctor.check.event_ledger_partial_write.ok.skipped":
     "无需执行 partial-write 检查（ledger 缺失或不可写）。",
@@ -1135,7 +1173,7 @@ export const zhCNMessages: Messages = {
   // flat-design (G6): 装完最该做的事是重启客户端让 MCP 生效 —— 这才是默认锚点动作;
   // --reapply 维护提示退到 --verbose。
   "cli.install.next-step.restart": "重启已开的 Claude Code / Codex 会话以加载 Fabric(新会话自动生效)。",
-  "cli.install.next-step.nudge-mode": "人可见提示默认 minimal（每会话一条状态）。可在 .fabric/fabric-config.json 设 nudge_mode: \"silent\" 静音，或 FABRIC_NUDGE_MODE=silent；要更吵用 normal/verbose。",
+  "cli.install.next-step.nudge-mode": "人可见提示默认 minimal(每会话一条状态)。改它在 ~/.fabric/fabric-global.json 的 defaults.nudge_mode(silent | minimal | normal | verbose),或跑 fabric config --set nudge_mode --value silent,或 FABRIC_NUDGE_MODE=silent。",
   "cli.install.reason-message": "{label} {message}",
   "cli.install.language.prompt": "选择 Fabric 语言（界面与知识统一使用，之后可用 fabric config 修改）：",
   "cli.install.language.option.zh-CN": "简体中文 (zh-CN)",

@@ -42,38 +42,36 @@ export function writeDefaultFabricConfig(fabricDir: string, _targetRoot: string)
   const target = join(fabricDir, "fabric-config.json");
   if (existsSync(target)) return;
 
-  // grill-6fixes (D1): language is no longer a per-project field — it lives in
-  // `~/.fabric/fabric-global.json` and is picked once by the install language
-  // selector. The README/docs detection + fixation that used to run here was
-  // removed.
-  const FABRIC_CONFIG_DEFAULTS = {
-    // ux-w1-9: nudge_mode is the master switch for the human-visible nudge
-    // experience (silent | minimal | normal | verbose). Scaffolded up-front so
-    // the one volume dial is discoverable in the shipped config.
-    // ISS-20260713-058: new installs default to `minimal` — one human trust-anchor
-    // status line per session (not AI-only mute). AI sink is unaffected either way.
-    // Prior G1 chose `silent` (AI-only) but post-install gave no disclosure, so
-    // users concluded "Fabric does nothing". Existing configs are never overwritten
-    // (scaffold is idempotent). Override via this field or env FABRIC_NUDGE_MODE.
-    nudge_mode: "minimal",
-    archive_hint_hours: 24,
-    archive_hint_cooldown_hours: 12,
-    review_hint_pending_count: 10,
-    review_hint_pending_age_days: 7,
-    maintenance_hint_days: 14,
-    maintenance_hint_cooldown_days: 7,
-    archive_edit_threshold: 20,
-    underseed_node_threshold: 10,
-    // ux-w2-3: import_*/archive_max_*/review_topic_result_cap skill thresholds
-    // are no longer scaffolded — they were hardcoded (✂ census Table 1). The
-    // fabric-import/archive/review skills read a built-in default when the key
-    // is absent, so the shipped config stays lean (panel knobs only).
-    review_stale_pending_days: 14,
-    // ISS-20260713-056/070: events.jsonl retention (days). Server rotateEventLedgerIfNeeded
-    // honors this (7|30|90). Doctor G7/G10 warn when ledger is large/stale; run doctor --fix.
-    fabric_event_retention_days: 30,
-  };
-
+  // config-single-home W5: the repo config carries IDENTITY only, and identity is
+  // written by the store-binding stage (project_id / required_stores /
+  // write_routes / active_*). Scaffolding policy knobs here would plant keys that
+  // have no effect and that doctor then reports as relocated leftovers.
+  //
+  // The file is still created (empty) because its EXISTENCE is the upward marker
+  // ProjectRootResolver searches for — see resolver/project-context-resolver.ts.
+  // The shipped policy defaults live in the global config instead; see
+  // GLOBAL_POLICY_DEFAULTS below.
   mkdirSync(fabricDir, { recursive: true });
-  writeFileSync(target, JSON.stringify(FABRIC_CONFIG_DEFAULTS, null, 2) + "\n", "utf8");
+  writeFileSync(target, `${JSON.stringify({}, null, 2)}\n`, "utf8");
 }
+
+/**
+ * The policy defaults a fresh install seeds into
+ * `~/.fabric/fabric-global.json` → `defaults` (config-single-home W5).
+ *
+ * Only keys whose SHIPPED default deliberately differs from the library default
+ * belong here — anything matching the built-in would just be noise in the file
+ * (the repo config used to carry nine such no-op keys).
+ */
+export const GLOBAL_POLICY_DEFAULTS: Readonly<Record<string, unknown>> = {
+  // ux-w1-9 / ISS-20260713-058: the human-visible volume dial. New installs get
+  // `minimal` — one trust-anchor status line per session — because the earlier
+  // AI-only `silent` default gave no post-install disclosure and users concluded
+  // "Fabric does nothing". The library default stays `normal` for old installs
+  // that never had the key (G2 boundary). AI sink is unaffected either way.
+  nudge_mode: "minimal",
+  // ISS-20260713-056/070: events.jsonl retention (days). The server's
+  // rotateEventLedgerIfNeeded honors 7|30|90; doctor G7/G10 warn when the ledger
+  // grows/stales. 30 is the balanced window (the library leaves it unset).
+  fabric_event_retention_days: 30,
+};

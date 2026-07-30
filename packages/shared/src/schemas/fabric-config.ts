@@ -61,36 +61,15 @@ export function migrateRequiredStores(config: {
   return { ...config, required_stores: [...personal, kept] };
 }
 
-// config-layering W1 (TASK-001): the registry of corpus-shaping knobs the STORE
-// layer (store-config.json, STORE_LAYOUT.configFile) is allowed to default.
-// Two consumers share this ONE source of truth:
-//   - `fabric doctor` uses it to detect repo-level overrides of store defaults.
-//   - the cascade resolver uses it as the store-layer ALLOW-LIST — only these
-//     keys are honored from store-config.json (env > project > store > builtin).
-// Grouped families are named ONCE (credibility_half_life / credibility_floor /
-// orphan_demote), so this tuple has EXACTLY 15 entries even though the concrete
-// storeConfigSchema fields expand to 23 (5 half-life + 3 floor + 3 orphan_demote).
+// config-single-home W4: the `STORE_OVERRIDABLE_KNOBS` allow-list is GONE.
 //
-// It MUST NOT include machine-scoped keys — a store may not dictate a repo's
-// human-output presets or remote transport: `nudge_mode`, `observe`,
-// `hint_summary_max_len`, and any remote endpoint/key are intentionally ABSENT.
-export const STORE_OVERRIDABLE_KNOBS = [
-  "plan_context_top_k",
-  "recall_relevance_ratio",
-  "embed_weight",
-  "embed_model",
-  "fusion",
-  "default_layer_filter",
-  "broad_index_backstop",
-  "conflict_lint_similarity_threshold",
-  "broad_review_recheck_days",
-  "underseed_node_threshold",
-  "selection_token_ttl_ms",
-  "credibility_half_life",
-  "credibility_floor",
-  "orphan_demote",
-  "embed_enabled",
-] as const;
+// It existed to answer one question — "may this key be written in BOTH a repo
+// config and a store-config?" — and that question no longer arises: every knob
+// now has exactly one home. `storeConfigSchema` (schemas/store.ts) enumerates the
+// corpus knobs the store owns, and it is the only list needed; a preference knob
+// written into a store-config is simply not in that shape and is ignored, with no
+// second list to keep in sync (the previous split is what let the declared 15 and
+// the effective 12 drift apart unnoticed).
 
 export const auditModeSchema = z.enum(["strict", "warn", "off"]);
 
@@ -441,41 +420,20 @@ export const fabricConfigSchema = z.object({
   // so corpus recovery stays non-blocking. Env FABRIC_ALTITUDE_PROPOSE_GATE=1
   // overrides this to true for CI/dogfood. Power-user JSON only (not on config TUI).
   altitude_propose_gate: z.boolean().optional().default(false),
-  // v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound for the narrow PreToolUse hint
-  // emitted by knowledge-hint-narrow.cjs. After filtering to entries whose
-  // `relevance_scope === "narrow"` (rc.27 TASK-005 audit §2.5 fix), the hook
-  // slices to this many before the E3 emit-gate / renderSummary pipeline.
-  // Default 5 keeps each per-Edit hint terse — five lines max so the agent's
-  // working memory is not displaced by an unwieldy banner. Range 1..20.
-  hint_narrow_top_k: z.number().int().min(1).max(20).optional().default(5),
-  // v2.0.0-rc.33 W2-1 (P0-9): per-file dedup window (in PreToolUse turns) for
-  // the narrow hint. Same (file_path, stable_id) tuple stays silent for this
-  // many turns even when the E3 cross-session cache would otherwise re-emit.
-  // Closes the rc.32 eval finding that a single hot file (e.g. werewolf
-  // GameRoom.tsx edited 30 times in a row) re-fired the same narrow hint
-  // each time, training the agent to ignore it. Default 5; range 1..50.
-  // Storage: .fabric/.cache/narrow-dedup-window.json — distinct from session-
-  // hints cache so a window-only suppression does not poison cross-session
-  // dedupe semantics.
-  hint_narrow_dedup_window_turns: z.number().int().min(1).max(50).optional().default(5),
-  // v2.0.0-rc.33 W2-5 (P1-8): cooldown between broad SessionStart hint emits,
-  // in hours. Distinct from the archive_hint_cooldown_hours that gates the
-  // fabric-hint Stop hook — knowledge-hint-broad re-fires on every
-  // SessionStart by default (compact / clear / new-window), which on long
-  // sessions becomes redundant noise. Setting to 1 means "emit the broad
-  // menu at most once per hour"; 0 means "no cooldown, re-fire every open."
-  // ISS-20260713-033 shipped a non-zero quiet DEFAULT of 24 (at most once per
-  // day) so repeat session-opens stay quiet; set 0 for verbose/debug.
-  // Range 0..168 (one week). Stored alongside fabric-hint's cooldown cache
-  // under a distinct knowledge-hint-broad key.
-  hint_broad_cooldown_hours: z.number().int().min(0).max(168).optional().default(24), // ISS-20260713-033
-  // v2.0.0-rc.33 W2-5 (P1-8): cooldown for the narrow PreToolUse hint.
-  // Same shape as hint_broad_cooldown_hours but applies to per-Edit hint
-  // re-emission across the cooldown window — independent of E3 session-
-  // hints dedupe. Default 0 preserves rc.32 behavior; set to e.g. 1 to
-  // throttle hint frequency during rapid-fire editing sprints. Range
-  // 0..168 (one week).
-  hint_narrow_cooldown_hours: z.number().int().min(0).max(168).optional().default(0),
+  // config-single-home W7: SIX presentation knobs were deleted here —
+  // `hint_narrow_top_k`, `hint_narrow_dedup_window_turns`,
+  // `hint_broad_cooldown_hours`, `hint_narrow_cooldown_hours`,
+  // `hint_summary_max_len`, `hint_reminder_to_context`.
+  //
+  // They asked the user to express "be quieter" as six independent numbers, and
+  // in practice nobody ever tuned them. The volume dial (`nudge_mode`) now
+  // derives all four presentation numbers via NUDGE_PRESETS in
+  // lib/nudge-policy.cjs, with the `normal` row value-identical to the retired
+  // defaults (so a workspace that never touched them is unaffected). The dedup
+  // window is a fixed correctness guard, and the AI sink is unconditional under
+  // D5 (flow ⊥ observation) — neither was ever a matter of taste.
+  //
+  // The lenient root parser drops any stale on-disk value: zero migration.
   // v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity inactivity thresholds (days)
   // driving orphan_demote. Hardcoded at proven=90/verified=30/draft=14 in
   // rc.32; chatty workspaces want them tighter, slow ones want them looser.
@@ -519,23 +477,8 @@ export const fabricConfigSchema = z.object({
   // non-blocking INFO nudge ("re-confirm"), NEVER an auto-demote. Absent → the
   // config-loader default (180d) applies. Range 1..3650 mirrors orphan_demote.
   broad_review_recheck_days: z.number().int().min(1).max(3650).optional(),
-  // v2.0.0-rc.33 W4-A3 (T4 P2): per-entry summary truncation length used by
-  // knowledge-hint-{broad,narrow}.cjs. Hard-coded at 80 chars in rc.32 — too
-  // short for entries with parameterized summaries (e.g. "Use bcrypt with
-  // cost=12 for password hashing"), too long for terse pitfalls. Range 40..240;
-  // default 80 preserves rc.32 behavior. Both hooks read the same key so the
-  // banner styling stays consistent across SessionStart + PreToolUse.
-  hint_summary_max_len: z.number().int().min(40).max(240).optional().default(80),
-  // v2.0.0-rc.33 W2-6 (P0-7 + P0-8): when true, knowledge-hint hooks emit
-  // their banners as `hookSpecificOutput.additionalContext` JSON on stdout
-  // (per Claude Code PreToolUse hook contract — see
-  // https://docs.claude.com/en/docs/claude-code/hooks#preToolUse), so the
-  // agent receives them in-context instead of as stderr breadcrumbs the
-  // user may not surface to the model. Default true reflects the rc.33 cite-
-  // coverage focus (rc.32 baseline 3.1% → primary cause: reminders never
-  // entered model context). Set false to revert to legacy stderr-only mode
-  // for hosts that don't honor the JSON contract.
-  hint_reminder_to_context: z.boolean().optional().default(true),
+  // (W7 removed `hint_summary_max_len` + `hint_reminder_to_context` here — see
+  // the block above for why the six presentation knobs collapsed into nudge_mode.)
   // v2.0.0-rc.29 TASK-008 (BUG-F3): selection-token TTL override. The
   // `fab_plan_context` MCP tool hands clients a `selection_token` whose default
   // 5-minute lifetime (`SELECTION_TOKEN_TTL_MS` at

@@ -18,8 +18,8 @@ import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 
 import {
   loadGlobalConfig,
+  mutateGlobalConfig,
   resolveGlobalRoot,
-  saveGlobalConfigAsync,
 } from "../store/global-config-io.js";
 import { deriveUid } from "../store/uid.js";
 import { syncStoreAliasLinks } from "../store/store-ops.js";
@@ -151,8 +151,14 @@ export async function mountStoreFromRemote(url: string, globalRoot: string): Pro
         },
       );
     }
-    await saveGlobalConfigAsync(
-      addMountedStore(config, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
+    // config-single-home W1: register against the config as it is NOW, not the
+    // snapshot read before the (multi-second) clone — otherwise a concurrent
+    // mount that landed during the clone is silently discarded.
+    await mutateGlobalConfig(
+      (current) =>
+        current === null
+          ? null
+          : addMountedStore(current, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
       globalRoot,
     );
     syncStoreAliasLinks(globalRoot);
@@ -164,8 +170,13 @@ export async function mountStoreFromRemote(url: string, globalRoot: string): Pro
   renameSync(cloneDest, finalDir);
   rmSync(tmp, { recursive: true, force: true }); // tmp parent is now empty — clean it up
 
-  await saveGlobalConfigAsync(
-    addMountedStore(config, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
+  // config-single-home W1: register against the config as it is NOW, not the
+  // snapshot read before the (multi-second) clone.
+  await mutateGlobalConfig(
+    (current) =>
+      current === null
+        ? null
+        : addMountedStore(current, { store_uuid: identity.store_uuid, alias, mount_name, remote: url }),
     globalRoot,
   );
   syncStoreAliasLinks(globalRoot);
@@ -220,7 +231,21 @@ export async function cloneGlobalPersonalFromRemote(
   mkdirSync(join(finalDir, ".."), { recursive: true }); // ensure the `stores/personal/` bucket exists
   renameSync(cloneDest, finalDir);
 
-  await saveGlobalConfigAsync(globalConfigSchema.parse({ uid, stores: [personalStore] }), globalRoot);
+  // config-single-home W1: the guard at the top of this function runs BEFORE a
+  // multi-second clone, so re-assert it inside the lock — otherwise a config
+  // created during the clone would be silently overwritten here.
+  await mutateGlobalConfig((current) => {
+    if (current !== null) {
+      throw new GenericIOError(
+        "global config already exists; refusing to clone a personal store over it",
+        {
+          actionHint:
+            "this machine already has a personal store; to adopt a remote one, use `fabric store` after install rather than re-running first-touch install",
+        },
+      );
+    }
+    return globalConfigSchema.parse({ uid, stores: [personalStore] });
+  }, globalRoot);
   syncStoreAliasLinks(globalRoot);
   console.log(`cloned personal store '${identity.store_uuid}' from ${url}`);
   return { store_uuid: identity.store_uuid };

@@ -48,6 +48,22 @@ export type PanelFieldKey = keyof FabricConfigSchemaShape | "fabric_language";
 
 export type PanelFieldGroup = "A_locale" | "B_hint_threshold" | "C_audit" | "D_behavior";
 
+/**
+ * config-single-home W6 — WHERE this field's value actually lives.
+ *
+ * The panel used to write every field into `.fabric/fabric-config.json`. Since
+ * W5 made the repo config identity-only, nothing reads a policy key from there:
+ * a panel edit was persisted and then silently ignored. Carrying the home in the
+ * field metadata is what lets one read/write router send each key to the single
+ * place its readers look at.
+ *
+ *   global_root — a top-level key of `~/.fabric/fabric-global.json` (language).
+ *   preference  — `projects[<project_id>]` ?? `defaults` in the global config.
+ *   corpus      — `store-config.json` at the bound team store root; the key must
+ *                 also be declared in `storeConfigSchema` (schemas/store.ts).
+ */
+export type PanelFieldHome = "global_root" | "preference" | "corpus";
+
 export type ValidateResult =
   | { ok: true; value: unknown }
   | { ok: false; error: string };
@@ -57,6 +73,8 @@ export interface PanelFieldMeta {
   readonly key: PanelFieldKey;
   /** Logical grouping for panel section headers. */
   readonly group: PanelFieldGroup;
+  /** The single config home this field is read from and written to (W6). */
+  readonly home: PanelFieldHome;
   /**
    * JSON value type of the stored config value. Drives non-interactive
    * `fabric config --get/--set/--list` coercion + display; orthogonal to
@@ -69,8 +87,13 @@ export interface PanelFieldMeta {
   readonly label_i18n_key: string;
   /** i18n key for the field's description / help text. */
   readonly description_i18n_key: string;
-  /** Default value pulled from the Zod schema's `.default(...)`. */
-  readonly default: string | number;
+  /**
+   * Default value pulled from the Zod schema's `.default(...)`, in the field's
+   * OWN JSON type. W6 widened this to include `boolean`: `--list` / `--get` fall
+   * back to it when no layer set the key, and a stringified `"true"` there reads
+   * as a string value rather than the boolean the config actually holds.
+   */
+  readonly default: string | number | boolean;
   /** Enum options for `select` widgets, derived from the Zod enum schema. */
   readonly enum_values?: readonly string[];
   /** Validates raw user input from the TUI prompt. */
@@ -86,10 +109,12 @@ const positiveIntSchema = z.coerce.number().int().positive();
 function makePositiveIntField(
   key: keyof FabricConfigSchemaShape,
   defaultValue: number,
+  home: PanelFieldHome = "preference",
 ): PanelFieldMeta {
   return {
     key,
     group: "B_hint_threshold",
+    home,
     type: "number",
     widget: "text",
     label_i18n_key: `cli.config.fields.${key}.label`,
@@ -122,10 +147,12 @@ function makeEnumField(
   group: PanelFieldGroup,
   enumValues: readonly string[],
   defaultValue: string,
+  home: PanelFieldHome = "preference",
 ): PanelFieldMeta {
   return {
     key,
     group,
+    home,
     type: "string",
     widget: "select",
     label_i18n_key: `cli.config.fields.${key}.label`,
@@ -157,11 +184,12 @@ function makeBooleanField(key: keyof FabricConfigSchemaShape, defaultValue: bool
   return {
     key,
     group: "D_behavior",
+    home: "preference",
     type: "boolean",
     widget: "select",
     label_i18n_key: `cli.config.fields.${key}.label`,
     description_i18n_key: `cli.config.fields.${key}.description`,
-    default: String(defaultValue),
+    default: defaultValue,
     enum_values: ["true", "false"],
     validate(raw: string): ValidateResult {
       const trimmed = raw.trim();
@@ -173,6 +201,44 @@ function makeBooleanField(key: keyof FabricConfigSchemaShape, defaultValue: bool
       if (typeof value === "boolean") return String(value);
       if (value === undefined || value === null) return String(defaultValue);
       return String(value);
+    },
+  };
+}
+
+/**
+ * A numeric field whose allowed values are a small fixed set (currently only
+ * `fabric_event_retention_days`, locked to 7/30/90). Rendered as a picker like
+ * an enum, but stored — and reported by `--get`/`--list` — as a real number, so
+ * the config file never grows a `"30"` string a numeric reader would reject.
+ */
+function makeNumericEnumField(
+  key: keyof FabricConfigSchemaShape,
+  group: PanelFieldGroup,
+  allowed: readonly number[],
+  defaultValue: number,
+): PanelFieldMeta {
+  const labels = allowed.map(String);
+  return {
+    key,
+    group,
+    home: "preference",
+    type: "number",
+    widget: "select",
+    label_i18n_key: `cli.config.fields.${key}.label`,
+    description_i18n_key: `cli.config.fields.${key}.description`,
+    default: defaultValue,
+    enum_values: labels,
+    validate(raw: string): ValidateResult {
+      const n = Number(raw.trim());
+      if (!allowed.includes(n)) {
+        return { ok: false, error: `Must be one of: ${labels.join(", ")}.` };
+      }
+      return { ok: true, value: n };
+    },
+    format_for_display(value: unknown): string {
+      return typeof value === "number" && allowed.includes(value)
+        ? String(value)
+        : String(defaultValue);
     },
   };
 }
@@ -210,7 +276,7 @@ const AUDIT_MODE_PANEL_DEFAULT = "warn";
 
 /**
  * Returns the per-field metadata array driving the `fabric config` clack panel.
- * Group A (2) + Group B (8) + Group C (1) + Group D (2) = 13 entries.
+ * Group A (2) + Group B (9) + Group C (1) + Group D (7) = 19 entries.
  */
 export function getPanelFields(): readonly PanelFieldMeta[] {
   return PANEL_FIELDS;
@@ -234,7 +300,7 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
   // special-cases this key to read/write the GLOBAL config instead of the
   // project file. Default is a literal "en" since there is no project-schema
   // default to derive from.
-  makeEnumField("fabric_language", "A_locale", fabricLanguageSchema.options, "en"),
+  makeEnumField("fabric_language", "A_locale", fabricLanguageSchema.options, "en", "global_root"),
   makeEnumField(
     "default_layer_filter",
     "A_locale",
@@ -253,9 +319,14 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
     "archive_edit_threshold",
     pickNumberDefault("archive_edit_threshold"),
   ),
+  // W6: a CORPUS knob — `storeConfigSchema` owns it, so it is read from (and
+  // written to) the bound team store's store-config.json, never the global
+  // policy segments. "how many entries make a seeded KB" is a property of the
+  // knowledge base, not of the person using it.
   makePositiveIntField(
     "underseed_node_threshold",
     pickNumberDefault("underseed_node_threshold"),
+    "corpus",
   ),
   makePositiveIntField(
     "review_hint_pending_count",
@@ -291,6 +362,20 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
   // config-loader.ts so the panel never shows a default that contradicts behavior.
   makeEnumField("nudge_mode", "D_behavior", nudgeModeSchema.options, "normal"),
   makeBooleanField("embed_enabled", true),
+  // config-single-home W8: five knobs that a person genuinely decides but that
+  // were JSON-only until now — the two behavior policies, the recall nudge, how
+  // long the activity ledger is kept, and when review calls a pending entry
+  // stale. They are added here (not left to "power users edit JSON") because
+  // each answers a question a user actually has; the retrieval-tuning and
+  // plumbing keys stay out, since a panel entry you cannot judge is noise.
+  makeBooleanField("cite_policy_enabled", true),
+  makeBooleanField("self_archive_policy_enabled", true),
+  makeBooleanField("cite_recall_nudge", true),
+  makeNumericEnumField("fabric_event_retention_days", "D_behavior", [7, 30, 90], 30),
+  makePositiveIntField(
+    "review_stale_pending_days",
+    pickNumberDefault("review_stale_pending_days"),
+  ),
   // P1 recall-engine-refactor (follow-up): the content-channel fusion strategy,
   // panel-editable so it sits next to embed_enabled (the two go together — rrf
   // only pays off when embeddings are on). 'auto' is the safe adaptive default.

@@ -4145,33 +4145,48 @@ external_exports.object({
   // effect everywhere. Set by `fabric store switch-personal <alias>` and the
   // install personal slot. Absent ⇒ the resolver falls back to the first
   // mounted personal, so legacy single-personal configs are unchanged.
-  active_personal_store: external_exports.string().min(1).optional()
+  active_personal_store: external_exports.string().min(1).optional(),
+  // config-single-home W2 — the remote embedding transport as ONE object.
+  //
+  // Presence of this object IS the mode switch: set ⇒ remote embedding, absent
+  // ⇒ local fastembed. `model` lives INSIDE it because the two modes have
+  // incompatible model namespaces (remote `BAAI/bge-m3` vs local fastembed enum
+  // `fast-bge-small-zh-v1.5`), and endpoint/key/model must move as a unit — a
+  // remote endpoint paired with a local model name is an unusable combination.
+  // The local-mode model is a policy knob and lives in `defaults` instead, so
+  // no single key is writable in two places (KT-MOD "one key, one home").
+  embed_remote: external_exports.object({
+    endpoint: external_exports.string().min(1),
+    api_key: external_exports.string().min(1).optional(),
+    model: external_exports.string().min(1).optional()
+  }).optional(),
+  // config-single-home W2 — POLICY HOME. `defaults` holds the user's own
+  // machine-wide defaults for the preference-class knobs; `projects[<project_id>]`
+  // holds per-project exceptions, keyed by the `project_id` that stays in the
+  // repo's `.fabric/fabric-config.json`.
+  //
+  // Deliberately typed as an open bag rather than a field-by-field mirror of
+  // `fabricConfigSchema`:
+  //   1. store.ts must not import fabric-config.ts (that module already imports
+  //      this one — the same cycle that forced storeConfigSchema to inline its
+  //      field constraints).
+  //   2. A field-by-field mirror would carry `.default()`s, and a parse would
+  //      then materialise every default into `defaults` — which would shadow the
+  //      store layer for every knob and recreate the very "written but never
+  //      effective" failure this redesign removes.
+  // Per-knob range/enum validation happens at READ time in the config-loader's
+  // single-field guards (already the hot-path contract) and at WRITE time in
+  // `fabric config set` against the exported single-field schemas.
+  defaults: external_exports.record(external_exports.unknown()).optional(),
+  projects: external_exports.record(external_exports.record(external_exports.unknown())).optional()
 }).passthrough();
 external_exports.object({
-  // Retrieval knobs (mirror fabricConfigSchema).
-  plan_context_top_k: external_exports.number().int().min(1).max(200).optional(),
-  recall_relevance_ratio: external_exports.number().min(0).max(1).optional(),
-  // Embedding channel.
-  embed_enabled: external_exports.boolean().optional(),
-  embed_weight: external_exports.number().int().min(0).max(49).optional(),
-  embed_model: external_exports.enum([
-    "fast-bge-small-zh-v1.5",
-    "fast-multilingual-e5-large",
-    "fast-bge-small-en-v1.5",
-    "fast-bge-small-en",
-    "fast-bge-base-en-v1.5",
-    "fast-bge-base-en",
-    "fast-all-MiniLM-L6-v2"
-  ]).optional(),
-  fusion: external_exports.enum(["additive", "rrf", "auto"]).optional(),
-  // Recall layer / scale.
-  default_layer_filter: external_exports.enum(["team", "personal", "both"]).optional(),
+  // Corpus scale / shape.
   broad_index_backstop: external_exports.number().int().min(20).max(500).optional(),
+  underseed_node_threshold: external_exports.number().int().positive().optional(),
   // Knowledge hygiene / conflict lint.
   conflict_lint_similarity_threshold: external_exports.number().min(0).max(1).optional(),
   broad_review_recheck_days: external_exports.number().int().min(1).max(3650).optional(),
-  underseed_node_threshold: external_exports.number().int().positive().optional(),
-  selection_token_ttl_ms: external_exports.number().int().min(3e4).max(36e5).optional(),
   // Credibility content-age decay half-lives (per knowledge type).
   credibility_half_life_decisions_days: external_exports.number().int().min(1).max(3650).optional(),
   credibility_half_life_guidelines_days: external_exports.number().int().min(1).max(3650).optional(),
@@ -4494,42 +4509,20 @@ var fabricConfigSchema = external_exports.object({
   // so corpus recovery stays non-blocking. Env FABRIC_ALTITUDE_PROPOSE_GATE=1
   // overrides this to true for CI/dogfood. Power-user JSON only (not on config TUI).
   altitude_propose_gate: external_exports.boolean().optional().default(false),
-  // v2.0.0-rc.33 W2-1 (P0-9): TopK upper bound for the narrow PreToolUse hint
-  // emitted by knowledge-hint-narrow.cjs. After filtering to entries whose
-  // `relevance_scope === "narrow"` (rc.27 TASK-005 audit §2.5 fix), the hook
-  // slices to this many before the E3 emit-gate / renderSummary pipeline.
-  // Default 5 keeps each per-Edit hint terse — five lines max so the agent's
-  // working memory is not displaced by an unwieldy banner. Range 1..20.
-  hint_narrow_top_k: external_exports.number().int().min(1).max(20).optional().default(5),
-  // v2.0.0-rc.33 W2-1 (P0-9): per-file dedup window (in PreToolUse turns) for
-  // the narrow hint. Same (file_path, stable_id) tuple stays silent for this
-  // many turns even when the E3 cross-session cache would otherwise re-emit.
-  // Closes the rc.32 eval finding that a single hot file (e.g. werewolf
-  // GameRoom.tsx edited 30 times in a row) re-fired the same narrow hint
-  // each time, training the agent to ignore it. Default 5; range 1..50.
-  // Storage: .fabric/.cache/narrow-dedup-window.json — distinct from session-
-  // hints cache so a window-only suppression does not poison cross-session
-  // dedupe semantics.
-  hint_narrow_dedup_window_turns: external_exports.number().int().min(1).max(50).optional().default(5),
-  // v2.0.0-rc.33 W2-5 (P1-8): cooldown between broad SessionStart hint emits,
-  // in hours. Distinct from the archive_hint_cooldown_hours that gates the
-  // fabric-hint Stop hook — knowledge-hint-broad re-fires on every
-  // SessionStart by default (compact / clear / new-window), which on long
-  // sessions becomes redundant noise. Setting to 1 means "emit the broad
-  // menu at most once per hour"; 0 means "no cooldown, re-fire every open."
-  // ISS-20260713-033 shipped a non-zero quiet DEFAULT of 24 (at most once per
-  // day) so repeat session-opens stay quiet; set 0 for verbose/debug.
-  // Range 0..168 (one week). Stored alongside fabric-hint's cooldown cache
-  // under a distinct knowledge-hint-broad key.
-  hint_broad_cooldown_hours: external_exports.number().int().min(0).max(168).optional().default(24),
-  // ISS-20260713-033
-  // v2.0.0-rc.33 W2-5 (P1-8): cooldown for the narrow PreToolUse hint.
-  // Same shape as hint_broad_cooldown_hours but applies to per-Edit hint
-  // re-emission across the cooldown window — independent of E3 session-
-  // hints dedupe. Default 0 preserves rc.32 behavior; set to e.g. 1 to
-  // throttle hint frequency during rapid-fire editing sprints. Range
-  // 0..168 (one week).
-  hint_narrow_cooldown_hours: external_exports.number().int().min(0).max(168).optional().default(0),
+  // config-single-home W7: SIX presentation knobs were deleted here —
+  // `hint_narrow_top_k`, `hint_narrow_dedup_window_turns`,
+  // `hint_broad_cooldown_hours`, `hint_narrow_cooldown_hours`,
+  // `hint_summary_max_len`, `hint_reminder_to_context`.
+  //
+  // They asked the user to express "be quieter" as six independent numbers, and
+  // in practice nobody ever tuned them. The volume dial (`nudge_mode`) now
+  // derives all four presentation numbers via NUDGE_PRESETS in
+  // lib/nudge-policy.cjs, with the `normal` row value-identical to the retired
+  // defaults (so a workspace that never touched them is unaffected). The dedup
+  // window is a fixed correctness guard, and the AI sink is unconditional under
+  // D5 (flow ⊥ observation) — neither was ever a matter of taste.
+  //
+  // The lenient root parser drops any stale on-disk value: zero migration.
   // v2.0.0-rc.33 W4-B3 (T5 P2): per-maturity inactivity thresholds (days)
   // driving orphan_demote. Hardcoded at proven=90/verified=30/draft=14 in
   // rc.32; chatty workspaces want them tighter, slow ones want them looser.
@@ -4573,23 +4566,8 @@ var fabricConfigSchema = external_exports.object({
   // non-blocking INFO nudge ("re-confirm"), NEVER an auto-demote. Absent → the
   // config-loader default (180d) applies. Range 1..3650 mirrors orphan_demote.
   broad_review_recheck_days: external_exports.number().int().min(1).max(3650).optional(),
-  // v2.0.0-rc.33 W4-A3 (T4 P2): per-entry summary truncation length used by
-  // knowledge-hint-{broad,narrow}.cjs. Hard-coded at 80 chars in rc.32 — too
-  // short for entries with parameterized summaries (e.g. "Use bcrypt with
-  // cost=12 for password hashing"), too long for terse pitfalls. Range 40..240;
-  // default 80 preserves rc.32 behavior. Both hooks read the same key so the
-  // banner styling stays consistent across SessionStart + PreToolUse.
-  hint_summary_max_len: external_exports.number().int().min(40).max(240).optional().default(80),
-  // v2.0.0-rc.33 W2-6 (P0-7 + P0-8): when true, knowledge-hint hooks emit
-  // their banners as `hookSpecificOutput.additionalContext` JSON on stdout
-  // (per Claude Code PreToolUse hook contract — see
-  // https://docs.claude.com/en/docs/claude-code/hooks#preToolUse), so the
-  // agent receives them in-context instead of as stderr breadcrumbs the
-  // user may not surface to the model. Default true reflects the rc.33 cite-
-  // coverage focus (rc.32 baseline 3.1% → primary cause: reminders never
-  // entered model context). Set false to revert to legacy stderr-only mode
-  // for hosts that don't honor the JSON contract.
-  hint_reminder_to_context: external_exports.boolean().optional().default(true),
+  // (W7 removed `hint_summary_max_len` + `hint_reminder_to_context` here — see
+  // the block above for why the six presentation knobs collapsed into nudge_mode.)
   // v2.0.0-rc.29 TASK-008 (BUG-F3): selection-token TTL override. The
   // `fab_plan_context` MCP tool hands clients a `selection_token` whose default
   // 5-minute lifetime (`SELECTION_TOKEN_TTL_MS` at
@@ -4876,7 +4854,17 @@ external_exports.object({
   // `<dir>/knowledge/pending` LIVE off these roots so nudge counts are always
   // fresh regardless of how store content changed (the underseed / review-
   // backlog false-positive root cure; pairs with knowledge_stats above).
-  knowledge_store_dirs: external_exports.array(external_exports.string().min(1)).optional()
+  knowledge_store_dirs: external_exports.array(external_exports.string().min(1)).optional(),
+  // config-single-home W3: resolved absolute ROOT dir of the WRITE-TARGET store
+  // — the single home of every CORPUS-class config knob (`store-config.json`
+  // sits directly under it). Hooks need this to resolve corpus knobs without
+  // re-implementing store path resolution.
+  //
+  // Deliberately its OWN field rather than an index into `knowledge_store_dirs`:
+  // that array is read-set-ordered and carries no uuid, so pairing it with
+  // `write_target` would rely on an implicit positional contract that nothing
+  // enforces. Absent when no write target resolves (personal-only / unbound).
+  write_target_store_dir: external_exports.string().min(1).optional()
 }).strict();
 
 // ../shared/src/store/bindings.ts
