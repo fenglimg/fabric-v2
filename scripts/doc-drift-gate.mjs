@@ -26,6 +26,9 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { BOLD_VERSION_RE } from "./lib/version-claim.mjs";
 
 const ROOT = process.cwd();
 
@@ -41,13 +44,10 @@ const QUARANTINED_COMMANDS = new Set(["serve"]);
 
 /** Only these prefixes count as event tokens; other snake_case is config keys. */
 const EVENT_TOKEN_RE = /`((?:knowledge|edit|cite|store|session)_[a-z_]+)`/gu;
-// F06 (review fix): was `/^\*\*v(\d+\.\d+\.\d+(?:-rc\.\d+)?)\*\*/` — anchored at
-// column 0 and aware of `-rc.N` only, so turning README's version line into a
-// list item / blockquote, or moving to a `-beta.N` prerelease, silently removed
-// the ONLY claim this gate exists to check. Now: optional list/quote markers, and
-// any prerelease tag. Still line-LEADING (an inline version is prose recounting
-// history, not a claim about the present).
-const BOLD_VERSION_RE = /^(?:[-*>]\s+)*\*\*v(\d+\.\d+\.\d+(?:-[0-9a-z.]+)?)\*\*/u;
+// BOLD_VERSION_RE lives in ./lib/version-claim.mjs because the release bump
+// (scripts/apply-tag-version.mjs) rewrites exactly the claims this gate checks.
+// Two copies of the pattern would drift apart and put the version line back in
+// the blind spot this gate was built to cover.
 const COMMAND_MENTION_RE = /`fabric ([a-z][a-z0-9-]*)/gu;
 
 function relativePath(filePath) {
@@ -331,4 +331,11 @@ async function main() {
   process.exitCode = 1;
 }
 
-await main();
+// `checkLines` / `checkCoverage` are exported for tests, but a bare top-level
+// `await main()` made importing them impossible: the import would run the whole
+// gate against the importer's cwd. Guard on being the entry module so the CLI
+// behaviour (`node scripts/doc-drift-gate.mjs [--self-test]`) is unchanged while
+// the checker stays importable.
+if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}
