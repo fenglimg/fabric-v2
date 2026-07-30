@@ -1655,11 +1655,10 @@ describe("planContext delivery observability (G1)", () => {
   });
 
   it("records retrieval_budget_dropped in the ledger diagnostics when top_k cuts the corpus", async () => {
-    const projectRoot = await createProject({
-      required_stores: [{ id: "team" }],
-      plan_context_top_k: 1,
-    });
-    tempDirs.push(projectRoot);
+    // config-single-home W2: `plan_context_top_k` is a PREFERENCE knob, so it
+    // only bites from the global policy layer — written into the repo config it
+    // is inert and the cap silently never fires. createTeamProject routes it.
+    const projectRoot = await createTeamProject({ plan_context_top_k: 1 });
     for (const [id, summary] of [
       ["KT-DEC-6201", "Vector embedding semantic retrieval over the knowledge base"],
       ["KT-DEC-6202", "Git lifecycle archive cadence deprecation nudge"],
@@ -1728,11 +1727,7 @@ describe("planContext delivery observability (G1)", () => {
   // concurrent unlocked appender (the fabric skills' `echo >>`) can interleave
   // bytes into a half-written event and corrupt the ledger.
   it("keeps every emitted ledger line under the 4KB PIPE_BUF budget on a large corpus", async () => {
-    const projectRoot = await createProject({
-      required_stores: [{ id: "team" }],
-      plan_context_top_k: 12,
-    });
-    tempDirs.push(projectRoot);
+    const projectRoot = await createTeamProject({ plan_context_top_k: 12 });
     for (let i = 0; i < 140; i += 1) {
       await writeStoreEntry(TEAM_STORE, "decisions", {
         id: `KT-DEC-7${String(i).padStart(3, "0")}`,
