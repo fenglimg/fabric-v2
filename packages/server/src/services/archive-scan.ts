@@ -64,6 +64,15 @@ export async function collectArchiveScan(
 
   const rangeSet =
     Array.isArray(input.range) && input.range.length > 0 ? new Set(input.range) : null;
+  // The `all` sentinel widens the window PAST the anchor. Without it a session
+  // whose events all predate the last `knowledge_proposed` is unreachable here —
+  // yet the Stop hook's countBacklogSessions carries no anchor and keeps counting
+  // it, so the nudge ("N sessions in backlog") points at a scan that can never
+  // return them and N never moves. Opt-in only: the default path keeps the anchor
+  // cutoff, and `all` widens the WINDOW only — the outcome-ledger filter below
+  // (user_dismissed / cooldown / no_new_signal) still applies, so a re-scan never
+  // resurrects a session the user dismissed.
+  const ignoreAnchor = input.range === "all";
 
   let anchorTs: number | null = null;
   const sessionOrder: string[] = [];
@@ -101,7 +110,7 @@ export async function collectArchiveScan(
   // Session discovery uses the anchor found above (still O(N), no re-parse).
   for (const e of events) {
     if (typeof e.ts !== "number") continue;
-    if (anchorTs !== null && e.ts <= anchorTs) continue;
+    if (!ignoreAnchor && anchorTs !== null && e.ts <= anchorTs) continue;
     if (maxExaminedTs === null || e.ts > maxExaminedTs) maxExaminedTs = e.ts;
     const sid = e.session_id;
     if (typeof sid !== "string" || sid.length === 0) continue;

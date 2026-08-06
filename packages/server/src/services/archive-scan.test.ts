@@ -178,4 +178,44 @@ describe("collectArchiveScan (rc.37 NEW-9)", () => {
     const r = await collectArchiveScan(root, { now_ms: 1_000_000_000, range: ["A"] });
     expect(r.session_ids).toEqual(["A"]);
   });
+
+  // The default anchor cutoff makes a session whose events ALL predate the last
+  // knowledge_proposed permanently unreachable — while the Stop hook's
+  // countBacklogSessions carries no anchor and keeps counting it. That pair is a
+  // loop the user cannot close: the nudge says "N in backlog", the archive scan
+  // it points at returns none, N never moves. The 'all' sentinel is the declared
+  // escape hatch, so it must actually ignore the anchor.
+  it("range='all' reaches sessions whose events all predate the anchor", async () => {
+    const events = [
+      { event_type: "assistant_turn_observed", ts: 2000, session_id: "old" },
+      { event_type: "knowledge_proposed", ts: 9000, session_id: "anchor" },
+    ];
+    const root = seed(events);
+
+    const defaultScan = await collectArchiveScan(root, { now_ms: 1_000_000_000 });
+    expect(defaultScan.session_ids).not.toContain("old");
+
+    const allScan = await collectArchiveScan(root, { now_ms: 1_000_000_000, range: "all" });
+    expect(allScan.session_ids).toContain("old");
+  });
+
+  // 'all' widens the window; it must NOT also waive the outcome-ledger filter,
+  // or re-scanning would resurrect sessions the user explicitly dismissed.
+  it("range='all' still respects user_dismissed", async () => {
+    const root = seed([
+      { event_type: "assistant_turn_observed", ts: 2000, session_id: "old" },
+      {
+        event_type: "session_archive_attempted",
+        ts: 3000,
+        session_id: "old",
+        outcome: "user_dismissed",
+        covered_through_ts: 0,
+        knowledge_proposed_ids: [],
+      },
+      { event_type: "knowledge_proposed", ts: 9000, session_id: "anchor" },
+    ]);
+    const r = await collectArchiveScan(root, { now_ms: 1_000_000_000, range: "all" });
+    expect(r.session_ids).not.toContain("old");
+    expect(r.dropped).toContainEqual({ session_id: "old", reason: "user_dismissed" });
+  });
 });
