@@ -92,3 +92,23 @@ scripts/i18n-audit.mjs
 # Registry/state and issues/*.jsonl stay tracked; only per-run session dirs & discovery blobs.
 .workflow/.maestro/
 .workflow/issues/discoveries/
+
+# repo-hygiene (2026-08-06): the rest of the maestro/fabric per-run artifact
+# tree. A clean checkout is ~922 files; these grow it past 13k, which also
+# poisons `.fabric/forensic.json` (its scan counted 15071 files and picked up
+# .csv/.db/.gz extensions that exist nowhere in the source contract). None of
+# these paths has ever been tracked — verified with `git ls-files` before
+# ignoring. NOTE: `.workflow/scratch/` is deliberately NOT here — it mixes
+# tracked grill/plan reports with transients, same trap as `.scratchpad/` above.
+.workflow/kg/
+.workflow/sessions/
+.workflow/.backups/
+.workflow/.csv-wave/
+.workflow/knowhow/
+.workflow/run-evidence/
+.workflow/embedding.zvec.meta.json
+# `fabric install` quarantines a pre-existing runtime dir by renaming it with a
+# timestamp suffix; the `packages/*/.fabric/` rule above does not match those.
+packages/*/.fabric.stale-*
+# Claude Code preview/dev-server config — per-machine, not a source contract.
+.claude/launch.json
