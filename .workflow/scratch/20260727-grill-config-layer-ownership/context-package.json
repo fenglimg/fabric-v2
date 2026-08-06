@@ -1,0 +1,87 @@
+{
+  "$schema": "context-package/1.0",
+  "source": {
+    "type": "grill",
+    "artifact_id": "GRL-20260727-001",
+    "session_path": "scratch/20260727-grill-config-layer-ownership",
+    "generated_at": "2026-07-27T00:00:00.000Z"
+  },
+  "requirements": [
+    {
+      "id": "R-001",
+      "title": "策略配置收敛到单一 global 文件",
+      "description": "51 个策略字段 + workspace_binding_id 从各 repo 的 .fabric/fabric-config.json 收敛到 ~/.fabric/fabric-global.json，含 per-project 差异（不再回写 repo）。",
+      "priority": "must",
+      "ref": "grill-report.md#Branch-1"
+    },
+    {
+      "id": "R-002",
+      "title": "repo 侧只保留身份字段",
+      "description": ".fabric/fabric-config.json 仅剩 project_id / required_stores / write_routes / active_project / active_write_store 共 5 个自动生成字段。",
+      "priority": "must",
+      "ref": "grill-report.md#Q1.3"
+    },
+    {
+      "id": "R-003",
+      "title": "store 层承载 corpus 属性并真正生效",
+      "description": "19 个 corpus 字段从 store-config.json 读取，server 与 hook 两侧级联语义一致。",
+      "priority": "must",
+      "ref": "grill-report.md#Q5.2"
+    },
+    {
+      "id": "R-004",
+      "title": "非交互配置写入",
+      "description": "fabric config set <key> <value> --scope defaults|project，与 TUI 共用加锁写入引擎。",
+      "priority": "must",
+      "ref": "grill-report.md#Q4.2"
+    }
+  ],
+  "constraints": [
+    { "id": "C-001", "area": "config-layering", "constraint": "分层判据 MUST 是配置面收敛度，NOT 属性语义归属", "rationale": "用户以运维集中为判据；archive_edit_threshold 虽属项目节奏仍归 global", "status": "locked", "ref": "grill-report.md#Q1.1" },
+    { "id": "C-002", "area": "config-layering", "constraint": "51 个策略字段 + workspace_binding_id MUST 收敛到 ~/.fabric/fabric-global.json", "rationale": "repo 侧 25 字段中 18 个等于默认值、1 个恒失效，实际信息量近零", "status": "locked", "ref": "grill-report.md#Q1.2" },
+    { "id": "C-003", "area": "identity", "constraint": "身份 6 字段（project_id / required_stores / write_routes / active_project / active_write_store / default_write_store）MUST 留在 git-tracked 的 .fabric/fabric-config.json", "rationale": "团队契约 + project root 锚点 + schema 自陈 committed project identity；收 global 后任何索引键都比随身 UUID 脆弱。default_write_store 与 active_write_store 由 storeSwitchWrite 成对双写，resolve-input.ts:52 消费为 defaultWriteAlias，不可拆", "status": "locked", "ref": "grill-report.md#对抗修订" },
+    { "id": "C-004", "area": "data-model", "constraint": "global 策略 MUST 分段存于 defaults / projects.<project_id>，顶层仅机器身份与密钥", "rationale": "顶层含 embed_api_key，51 旋钮扁平铺入会淹没密钥", "status": "locked", "ref": "grill-report.md#Q2.1" },
+    { "id": "C-005", "area": "data-model", "constraint": "级联 MUST 按 key 类别分支，且任一 key MUST NOT 有两个可写位置：偏好类(38+2) = env > projects[id] > defaults > code default；知识性质类(15) = env > store > code default；身份类(6) = repo 无级联", "rationale": "对抗修订推翻原统一 5 层方案 —— defaults 与 projects 同处 global 文件却被外部 store 层夹在中间，导致同文件两段对同一外部文件一输一赢，「看得见的值不是生效的值」，与 embed_model 死配置同病。根源是允许 23 个字段两处可写；砍掉竞争后陷阱消失", "status": "locked", "ref": "grill-report.md#对抗修订" },
+    { "id": "C-006", "area": "embedding", "constraint": "embed_model MUST 与 embed_endpoint 同层绑定；remote 模式归顶层，local 模式走 store > defaults > code default", "rationale": "两套模型命名空间互不兼容且必须配对", "status": "locked", "ref": "grill-report.md#Q3.1" },
+    { "id": "C-007", "area": "concurrency", "constraint": "收敛实施前 MUST 先提供锁内 mutateGlobalConfig(fn) 并迁移全部调用点", "rationale": "既有 RMW 竞态：withFileLock 只包 write，read 在锁外；收敛会放大暴露面", "status": "locked", "ref": "grill-report.md#Q3.2" },
+    { "id": "C-008", "area": "migration", "constraint": "旧 project 策略字段 MUST 直接失效不做自动迁移；doctor MUST 新增搬迁提示 lint", "rationale": "clean-slate 偏好 + lenient 根解析器本就静默丢弃；自动迁移会把刚清掉的噪声搬回", "status": "locked", "ref": "grill-report.md#Q4.1" },
+    { "id": "C-009", "area": "migration", "constraint": "所有已安装 repo MUST 重跑 fabric install 才能拿到新 hook", "rationale": "KT-PIT-0004 三镜像仅 init/reapply 同步；本 repo 副本落后源模板 55 行即实证", "status": "locked", "ref": "grill-report.md#Q4.1" },
+    { "id": "C-010", "area": "cli", "constraint": "MUST 提供非交互写入子命令；手写 JSON MUST NOT 成为 AI 修改配置的唯一途径", "rationale": "Fabric 使用者含 AI，interactive-only 使其绕过 schema 校验与文件锁", "status": "locked", "ref": "grill-report.md#Q4.2" },
+    { "id": "C-011", "area": "scale", "constraint": "MUST NOT 为 projects 段引入自动清理或活跃度回写", "rationale": "无 project_id→path 反向映射故无法判孤儿；20KB/100 项目痛未观测；回写会撞 RMW 面", "status": "locked", "ref": "grill-report.md#Q5.1" },
+    { "id": "C-012", "area": "hooks", "constraint": "hook 侧 MUST 按 key 类别分支解析：知识性质 key 走 store（store root 经 binding 快照获取），其余走 global；MUST NOT 引入文件系统 walk", "rationale": "快照已持久化 knowledge_store_dirs 且 hook 本就在读；按类别分支比原 5 层合并实现更简单（无优先级归并逻辑）", "status": "locked", "ref": "grill-report.md#对抗修订" },
+    { "id": "C-013", "area": "config-layering", "constraint": "STORE_OVERRIDABLE_KNOBS 白名单 MUST 整体删除", "rationale": "该白名单存在的唯一理由是标记「哪些 key 允许两处写」。方案 G 下每个 key 只有一个家，无竞争即无需白名单，本会话发现的三处声明/实现漂移随之失去滋生土壤", "status": "locked", "ref": "grill-report.md#对抗修订" }
+  ],
+  "domain": {
+    "problem_statement": "Fabric 配置散落在 project / store / global / env 四处，职责边界模糊：repo 侧 fabric-config.json 承载了大量本质属于人的偏好或知识库特性的策略旋钮，导致每个项目各配一份、互不一致且大多等于默认值。同时声明与实现存在三处漂移（STORE_OVERRIDABLE_KNOBS 声明 15 组仅 12 组生效、hook 只读 project 层、embed_model 被机器层恒覆盖）。需重划各层职责：repo 只承身份，策略收敛 global，corpus 归 store。",
+    "terminology": [
+      { "term": "身份字段", "definition": "留在 git-tracked repo 侧的 5 个自动生成字段", "code_ref": "packages/shared/src/schemas/fabric-config.ts:191-230", "status": "locked" },
+      { "term": "defaults", "definition": "global 内用户可改的默认值段（51 个策略）", "code_ref": "new", "status": "locked" },
+      { "term": "projects.<project_id>", "definition": "global 内按 project_id 索引的项目例外段", "code_ref": "new", "status": "locked" },
+      { "term": "store-config.json", "definition": "store 根下的 corpus 属性配置，随 store 仓库分发", "code_ref": "packages/shared/src/schemas/store.ts:399-445", "status": "locked" },
+      { "term": "级联", "definition": "env > projects[id] > store > defaults > code default，逐层静默穿透永不抛错", "code_ref": "packages/server/src/config-loader.ts:23-40", "status": "locked" },
+      { "term": "RMW 竞态", "definition": "read 在锁外的 read-modify-write 并发覆盖", "code_ref": "packages/shared/src/store/global-config-io.ts:62-71", "status": "locked" },
+      { "term": "hook 三镜像", "definition": "templates/.claude/.codex 三份副本仅 init/reapply 同步", "code_ref": "KT-PIT-0004", "status": "locked" },
+      { "term": "binding 快照", "definition": "已解析的 read_set/write_target/store dirs，不含 repo path", "code_ref": ".claude/hooks/lib/bindings-snapshot-reader.cjs:118-128", "status": "locked" }
+    ],
+    "audience": "Fabric 维护者（当前唯一用户即作者）",
+    "industry": "AI 开发者工具 / 跨客户端知识层"
+  },
+  "non_goals": [
+    { "title": "身份字段收入 global", "rationale": "任何索引键（路径/remote）都比随身 UUID 脆弱，且违反 remote 变更不改身份的既有决策；收益仅 5 个自动生成字段", "ref": "grill-report.md#Q1.3" },
+    { "title": "旧配置自动迁移", "rationale": "clean-slate 偏好；会把刚清理的默认值噪声搬回 global", "ref": "grill-report.md#Q4.1" },
+    { "title": "projects 段自动清理 / last_seen_at 活跃度", "rationale": "反向映射不存在；20KB 规模痛未观测；回写撞 RMW 面", "ref": "grill-report.md#Q5.1" },
+    { "title": "取消 .fabric/fabric-config.json", "rationale": "用户曾提出的更激进变体，经 git-tracked 团队契约与锚点两项约束后否决", "ref": "grill-report.md#Q1.3" }
+  ],
+  "insights": [
+    { "area": "config-layering", "summary": "canonical 早已定为 env>project>global>default（KT-MOD-0002, 2026-07-09），但实现仅 7/19 hook key 开启 globalFallback —— 现状是对自身 canonical 的漂移而非设计", "evidence": "packages/cli/templates/hooks/lib/config-cache.cjs 普查：已开 7 全为人的偏好类，未开 12 全为节奏阈值类", "ref": "grill-report.md#Discovery" },
+    { "area": "delivery-gap", "summary": "hook global 层功能早已写入源模板却从未在本 repo 生效，因安装副本落后 55 行 —— 实现与生效之间存在制度性鸿沟", "evidence": "templates/hooks/lib/config-cache.cjs 162 行 vs .claude/hooks/lib/config-cache.cjs 107 行", "ref": "grill-report.md#Q4.1" },
+    { "area": "concurrency", "summary": "global-config-io.ts:22-23 注释声称 withFileLock 可防并发 RMW 互相覆盖，该声明不成立 —— 锁只包 write，read 在锁外", "evidence": "store.stage.ts:780 / install-global.ts:89 / config.ts:426 均为锁外 load + 展开修改 + save", "ref": "grill-report.md#Q3.2" },
+    { "area": "data-model", "summary": "binding 快照不含 repo path，project_id→repo 反向映射在系统中不存在，直接否决了基于路径的孤儿检测方案", "evidence": "7 个 _resolved.json 实测字段：version/project_id/workspace_binding_id/generated_at/read_set/write_target/knowledge_stats", "ref": "grill-report.md#Q5.1" },
+    { "area": "config-hygiene", "summary": "repo 侧策略配置的实际信息量近零：25 字段中 18 个等于代码默认值、1 个（embed_model）被机器层恒覆盖，仅 1 个真旋钮", "evidence": "同会话清理实证，清理后 fabric doctor 48 项通过不变、readEmbedConfig 输出逐字节一致", "ref": "grill-report.md#Discovery" }
+  ],
+  "open_questions": [],
+  "references": [
+    { "type": "grill-report", "path": "grill-report.md" },
+    { "type": "terminology", "path": "terminology.md" }
+  ]
+}
