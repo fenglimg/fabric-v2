@@ -16,10 +16,10 @@
  *   function so the counts always agree.
  *
  * DEPENDENCIES:
- *   Zero — pure function of the passed events array. Both the TS canonical here
- *   and the hand-authored .cjs twin at packages/cli/templates/hooks/lib/
- *   high-value-predicate.cjs MUST stay behavior-identical. Parity is asserted
- *   by packages/server/src/services/high-value-sst.test.ts (round-trip oracle).
+ *   Zero — pure function of the passed events array. That is what lets this
+ *   module be COMPILED wholesale into the hook runtime as
+ *   packages/cli/templates/hooks/lib/high-value-predicate.cjs (B8). The hook and
+ *   the server therefore run the same bytes; there is no twin to keep in step.
  *
  * SEMANTICS:
  *   - Session-scoped: only events matching sessionId contribute (SST fix for
@@ -36,10 +36,9 @@
  *           carries a NORMATIVE_KEYWORDS keyword in its stringified payload
  *
  * INVARIANT:
- *   The literal event-type set and normative keyword list are duplicated in the
- *   .cjs twin. Any change here MUST be reflected in the twin — the round-trip
- *   test at packages/server/src/services/high-value-sst.test.ts will fail
- *   otherwise (blocks the commit).
+ *   This file is the ONLY definition of the event-type set and the normative
+ *   keyword list. Editing it updates both consumers on the next generator run;
+ *   hooks-runtime-generated.test.ts fails if the checked-in .cjs is stale.
  */
 
 // Event types that unambiguously indicate archive-worthy activity. Mirrors the

@@ -44,8 +44,8 @@ export * from "./schemas/event-ledger.js";
 export * from "./templates/index.js";
 export { parseCiteLine, normalizeCiteTag } from "./cite-line-parser.js";
 // G3 (GRL-STOPHOOK-AIONLY-20260709): archive high-value predicate canonical
-// SST — server imports this; hook has a byte-parity .cjs twin at
-// packages/cli/templates/hooks/lib/high-value-predicate.cjs.
+// SST — the server imports this; the hook runs lib/high-value-predicate.cjs,
+// which is compiled from the same source (B8).
 // Only the predicate is public API; the underlying event-type set and
 // keyword list remain internal (avoid semver commitment on SST details).
 export { isHighValueArchiveCandidate } from "./high-value-predicate.js";

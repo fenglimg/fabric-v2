@@ -16,11 +16,10 @@ import type {
   ArchiveScanInput,
   ArchiveScanOutput,
 } from "@fenglimg/fabric-shared/schemas/api-contracts";
-// G3 (GRL-STOPHOOK-AIONLY-20260709): shared high-value predicate SST. Hook has
-// a byte-parity .cjs twin at packages/cli/templates/hooks/lib/
-// high-value-predicate.cjs; round-trip parity locked by
-// packages/server/src/services/high-value-sst.test.ts. Fixes crack-2 26→1
-// virtual-alarm drift where hook and this file each ran independent copies.
+// G3 (GRL-STOPHOOK-AIONLY-20260709): shared high-value predicate SST. The hook
+// runs lib/high-value-predicate.cjs, COMPILED from the same shared source (B8),
+// so hook and server execute identical bytes. Fixes the crack-2 26→1
+// virtual-alarm drift, where the two ran independent hand-written copies.
 import { isHighValueArchiveCandidate } from "@fenglimg/fabric-shared";
 import { readEventLedger } from "./event-ledger.js";
 
@@ -159,5 +158,4 @@ export async function collectArchiveScan(
 
 // G3 (GRL-STOPHOOK-AIONLY-20260709): local hasHighValueSignal removed —
 // replaced by isHighValueArchiveCandidate imported from @fenglimg/fabric-shared
-// (single source of truth). Hook has a byte-parity .cjs twin. Round-trip
-// parity verified by packages/server/src/services/high-value-sst.test.ts.
+// (single source of truth), which the hook lib is also compiled from.

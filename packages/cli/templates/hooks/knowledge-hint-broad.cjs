@@ -46,7 +46,7 @@ const { join } = require("node:path");
 // the parity-trivial shared structural primitives — sectionBar (title row) +
 // scopeBadge ([team]/[project]/[personal]) — from the .cjs theme mirror. This is
 // the ONLY shared-theme dependency the hook may take: lib/theme.cjs is byte-locked
-// to packages/shared/src/theme.ts by theme-parity.test.ts (G-THEME). The hook MUST
+// to packages/shared/src/theme.ts, which lib/theme.cjs is compiled from. The hook MUST
 // NEVER reach for the CLI-only ESM/TS structure layer (the tree / grid primitives
 // under packages/cli/src/tui) — it is unrequireable from a .cjs runtime; the HUD
 // deliberately uses plain two-space indent instead of the complex tree() primitive.
@@ -1093,7 +1093,7 @@ function renderAiSink(opts) {
   // flat `ALWAYS-ACTIVE RULES (...)` header. The store label is preserved on the
   // human sink (renderScopeStoreLabel); the AI sink leads with the count title.
   // sectionBar degrades to `# <title>` when color is off (NO_COLOR / non-TTY),
-  // byte-locked to the TS source by theme-parity.
+  // compiled from the TS source (packages/shared/src/theme.ts).
   lines.push(
     headerRule(
       zh

@@ -12,10 +12,27 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
-const generatedRuntime = join(
-  repoRoot,
-  "packages/cli/templates/hooks/lib/project-context-runtime.cjs",
-);
+const hookLibDir = join(repoRoot, "packages/cli/templates/hooks/lib");
+
+/**
+ * Every hook lib compiled from shared TS. Must stay in step with MANIFEST in
+ * scripts/build-hook-project-context.mjs.
+ *
+ * B8: theme / cite-line-parser / high-value-predicate joined the list when
+ * their hand-authored CJS twins were retired. This byte-identity check REPLACES
+ * the three parity tests those twins needed (theme-parity, cite-line-parser-
+ * parity, high-value-sst) and is strictly stronger: a parity test could only
+ * say "the two implementations agree today", while this says "the artifact we
+ * ship is what the current source compiles to" — which also catches a stale
+ * checked-in .cjs that no one remembered to regenerate.
+ */
+const GENERATED_HOOK_LIBS = [
+  "project-context-runtime.cjs",
+  "theme.cjs",
+  "cite-line-parser.cjs",
+  "high-value-predicate.cjs",
+];
+
 const tempDirs: string[] = [];
 
 function collectFiles(root: string, matches: (name: string) => boolean): string[] {
@@ -37,8 +54,8 @@ afterEach(() => {
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-describe("generated hook ProjectContext runtime", () => {
-  it("regenerates byte-identically into an isolated output directory", () => {
+describe("generated hook libs", () => {
+  it("every checked-in artifact regenerates byte-identically", () => {
     const outDir = mkdtempSync(join(tmpdir(), "fabric-hook-runtime-"));
     tempDirs.push(outDir);
     execFileSync(
@@ -47,9 +64,20 @@ describe("generated hook ProjectContext runtime", () => {
       { cwd: repoRoot, stdio: "pipe" },
     );
 
-    expect(readFileSync(join(outDir, "project-context-runtime.cjs"))).toEqual(
-      readFileSync(generatedRuntime),
-    );
+    for (const lib of GENERATED_HOOK_LIBS) {
+      expect(readFileSync(join(outDir, lib)), `${lib} is stale — re-run the generator`).toEqual(
+        readFileSync(join(hookLibDir, lib)),
+      );
+    }
+  });
+
+  it("no generated lib is hand-editable without tripping its DO NOT EDIT banner", () => {
+    for (const lib of GENERATED_HOOK_LIBS) {
+      const firstLine = readFileSync(join(hookLibDir, lib), "utf8").split("\n", 1)[0];
+      expect(firstLine).toMatch(
+        /^\/\/ @generated from packages\/shared\/src\/.+\.ts by scripts\/build-hook-project-context\.mjs; DO NOT EDIT$/,
+      );
+    }
   });
 
   it("has one package-script generator and one tsup runtime declaration", () => {

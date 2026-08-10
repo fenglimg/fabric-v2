@@ -914,17 +914,16 @@ export async function installPostTooluseMutationHook(
  * `Cannot find module './lib/banner-i18n.cjs'` on the first Stop /
  * SessionStart event after install.
  *
- * rc.24 TASK-04: also ships `cite-line-parser.cjs` — a hand-authored CJS
- * twin of `packages/shared/src/cite-line-parser.ts` that fabric-hint.cjs
+ * rc.24 TASK-04: also ships `cite-line-parser.cjs`, which fabric-hint.cjs
  * `require()`s to parse `KB:` cite lines (including the rc.24 contract-
  * syntax operators that populate `cite_commitments` on
  * assistant_turn_observed events). The auto-glob pattern (every `.cjs`
- * under templates/hooks/lib/) means the new file is picked up here
- * without further wiring; behavioral parity with the TS source is pinned
- * by packages/cli/__tests__/cite-line-parser-parity.test.ts. The parser
- * uses `parseCiteLine(raw)` as its single entry point — both this comment
- * and the parity test reference that name, so a grep for `parseCiteLine`
- * or `cite-line-parser` finds the install-side wiring.
+ * under templates/hooks/lib/) means it is picked up here without further
+ * wiring. B8: it is COMPILED from `packages/shared/src/cite-line-parser.ts`
+ * by scripts/build-hook-project-context.mjs — it used to be a hand-authored
+ * twin guarded by a parity test. `parseCiteLine(raw)` is its single entry
+ * point, so a grep for `parseCiteLine` or `cite-line-parser` finds this
+ * install-side wiring.
  *
  * Returns one InstallStepResult per (client × lib file) — N libs shipped
  * across 2 clients = 2N rows. Empty lib directory is allowed (returns
