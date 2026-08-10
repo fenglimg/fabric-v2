@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { forensicReportSchema } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { initFabric } from "../src/commands/install.ts";
 import { cleanupFixtureRoot, createWerewolfFixtureRoot, runScaffoldOnly } from "./helpers/init-test-utils.ts";
 
 const tempRoots: string[] = [];
@@ -15,7 +14,7 @@ afterEach(() => {
   }
 });
 
-describe("initFabric forensic report", () => {
+describe("scaffold forensic report", () => {
   it("writes a valid forensic report for the werewolf Cocos fixture", async () => {
     const target = createWerewolfFixtureRoot("fab-init-forensic");
     tempRoots.push(target);

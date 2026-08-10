@@ -29,7 +29,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { resolveBootstrapCanonical } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
 import { installHooks } from "../../src/install/hooks-orchestrator.ts";
-import { buildInitExecutionPlan, executeInitExecutionPlan } from "../../src/commands/install.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
@@ -258,12 +257,13 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-cite");
     tempRoots.push(target);
 
-    const plan = await buildInitExecutionPlan({
-      target,
-      options: { skipMcp: true, skipHooks: true },
-      interactive: false,
-    });
-    await executeInitExecutionPlan(plan);
+    // T-2: this used to run a BOOTSTRAP-ONLY install (skipHooks). The shipping
+    // installer has no bootstrap stage at all — skills and hook scripts are owned
+    // wholly by the hooks stage, and `skipBootstrap` survives only as a display
+    // label in the guidance stage. So the v1 split this test policed cannot occur;
+    // what remains worth guarding is the invariant itself, asserted on a full
+    // install: every config the install writes must reference a script it shipped.
+    await runInit(target);
 
     // ux-w2-6: the Claude config now wires the single PreToolUse orchestrator...
     const settings = readFileSync(join(target, ".claude/settings.json"), "utf8");
@@ -280,12 +280,13 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-skills");
     tempRoots.push(target);
 
-    const plan = await buildInitExecutionPlan({
-      target,
-      options: { skipMcp: true, skipHooks: true },
-      interactive: false,
-    });
-    await executeInitExecutionPlan(plan);
+    // T-2: this used to run a BOOTSTRAP-ONLY install (skipHooks). The shipping
+    // installer has no bootstrap stage at all — skills and hook scripts are owned
+    // wholly by the hooks stage, and `skipBootstrap` survives only as a display
+    // label in the guidance stage. So the v1 split this test policed cannot occur;
+    // what remains worth guarding is the invariant itself, asserted on a full
+    // install: every config the install writes must reference a script it shipped.
+    await runInit(target);
 
     // W3-C + S2 + W9 terminal set: archive/review + store/sync/config shims +
     // recall-playbook.

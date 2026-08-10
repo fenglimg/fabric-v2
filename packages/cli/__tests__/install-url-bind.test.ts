@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { initStore } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { bindCreatedStoreToProject, bindRemoteStoreToProject } from "../src/commands/install.js";
+import { bindCreatedStoreToProject, bindRemoteStoreToProject } from "../src/install/install-onboarding.js";
 import { mountStoreFromRemote } from "../src/install/run-global-install.js";
 import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
