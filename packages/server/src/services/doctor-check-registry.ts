@@ -62,6 +62,10 @@ import {
   createHooksWiredCheck,
 } from "./doctor-hooks-lints.js";
 import {
+  createInstallCopyDriftCheck,
+  type InstallDriftInspection,
+} from "./doctor-install-drift.js";
+import {
   createRetiredReferenceCheck,
 } from "./doctor-retired-references-lint.js";
 import {
@@ -196,6 +200,7 @@ export type DoctorCheckBuildContext = {
   hooksWired: Awaited<ReturnType<typeof inspectHooksWired>>;
   hooksRuntime: Awaited<ReturnType<typeof inspectHooksRuntime>>;
   hooksContentDrift: Awaited<ReturnType<typeof inspectHooksContentDrift>>;
+  installCopyDrift: InstallDriftInspection;
 };
 
 export function materializeDoctorChecks(
@@ -251,6 +256,7 @@ export const DOCTOR_CHECK_BUILDERS: ReadonlyArray<
   (ctx) => createHooksWiredCheck(ctx.t, ctx.hooksWired),
   (ctx) => createHooksRuntimeCheck(ctx.t, ctx.hooksRuntime),
   (ctx) => createHooksContentDriftCheck(ctx.t, ctx.hooksContentDrift),
+  (ctx) => createInstallCopyDriftCheck(ctx.t, ctx.installCopyDrift),
   (ctx) => createGlobalCliVersionCheck(ctx.t, ctx.globalCliVersion),
   (ctx) => createKnowledgeSummaryOpaqueCheck(
       ctx.t,

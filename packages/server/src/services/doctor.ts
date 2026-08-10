@@ -159,6 +159,7 @@ import {
   inspectHooksRuntime,
   inspectHooksWired,
 } from "./doctor-hooks-lints.js";
+import { inspectInstallCopyDrift } from "./doctor-install-drift.js";
 import {
   inspectBootstrapAnchor,
   inspectL1BootstrapSnapshotDrift,
@@ -492,10 +493,16 @@ export async function runDoctorReport(
   // Claude Code) but hook references are missing — install ran but stopped
   // short, or partial-install left dangling artifacts. Skipped (ok) when
   // there is no .claude/ at all (project doesn't use Claude Code).
-  const [hooksWired, hooksRuntime, hooksContentDrift] = await Promise.all([
+  // install_copy_drift joins the same batch: it compares each installed copy
+  // against the sha256 manifest `fabric install` left behind, which is the only
+  // way to catch BOTH clients going equally stale (hooks_content_drift compares
+  // the two clients to each other, so a uniformly old install looks healthy
+  // there). Detection-only — see doctor-install-drift.ts for why.
+  const [hooksWired, hooksRuntime, hooksContentDrift, installCopyDrift] = await Promise.all([
     inspectHooksWired(projectRoot),
     inspectHooksRuntime(projectRoot),
     inspectHooksContentDrift(projectRoot),
+    inspectInstallCopyDrift(projectRoot),
   ]);
   // v2.0.0-rc.37 NEW-20: hooks_runtime closes the gap below hooks_wired —
   // shebang + Node.js syntax validity of each installed .cjs hook file.
@@ -573,6 +580,7 @@ export async function runDoctorReport(
     hooksWired,
     hooksRuntime,
     hooksContentDrift,
+    installCopyDrift,
   });
 
 // Phase 3 — aggregate issues + summary + health.

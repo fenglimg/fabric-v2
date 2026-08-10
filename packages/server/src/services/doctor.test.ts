@@ -175,6 +175,8 @@ describe("runDoctorReport", () => {
       // v2.0.0-rc.37 NEW-27: hooks_content_drift — cross-client sha256
       // parity (same basename in .claude/.codex must hash-match).
       "Hooks cross-client content parity",
+      // W2 #16: installed copies vs the manifest install wrote (detection-only).
+      "Installed copy drift",
       // rc.35 TASK-04 (P0-9.b): global CLI version probe — surfaces rc.30
       // PATH installs against rc.31+ project schemas (P0-9 root cause).
       // Sits next to hooks_wired — both diagnose runtime install state.
@@ -264,7 +266,8 @@ describe("runDoctorReport", () => {
     // unify-fabric-cache-dir: +1 legacy_fabric_cache_dir_detected (rename
     // legacy `.fabric/cache/{bm25,vectors}` → `.fabric/.cache/…`) → 50.
     // v-next grill D5/D7/D8: +1 knowledge_body_dedup → 51.
-    expect(report.checks).toHaveLength(51);
+    // W2 #16: +1 install_copy_drift → 52.
+    expect(report.checks).toHaveLength(52);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {

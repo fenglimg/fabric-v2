@@ -865,6 +865,20 @@ export const enMessages: Messages = {
     "{count} hook basename(s) drift across clients; first: {first_basename} (involves {first_clients}). `fabric install` copies the same template to both clients — drift usually comes from manual edits.",
   "doctor.check.hooks_content_drift.remediation":
     "Run `fabric install` to restore each client's hook copy to the canonical template. If you actually need client-specific behavior, modify a shared lib/ helper or templates/hooks/configs/ wiring instead of editing the installed .cjs in place.",
+  // W2 #16: install_copy_drift — installed copies vs the sha256 manifest
+  // `fabric install` wrote. Detection-only: the server cannot reach the CLI
+  // templates, so it must not promise a --fix (KT-PIT-0016).
+  "doctor.check.install_copy_drift.name": "Installed copy drift",
+  "doctor.check.install_copy_drift.ok.no_manifest":
+    "No install manifest recorded yet; skipping install_copy_drift check. Re-run `fabric install` to start tracking installed copies.",
+  "doctor.check.install_copy_drift.ok.aligned":
+    "All {count} installed files match the manifest written by fabric {version}.",
+  "doctor.check.install_copy_drift.message.unreadable":
+    "{path} exists but is not a readable install manifest (corrupt, or written by an incompatible version), so installed copies cannot be verified.",
+  "doctor.check.install_copy_drift.message.drifted":
+    "{count} of {tracked} installed files no longer match what fabric {version} wrote; first: {first_path} ({first_kind}). Both clients can drift together, so cross-client parity does not catch this.",
+  "doctor.check.install_copy_drift.remediation":
+    "Run `fabric install` to restore the installed copies from the canonical templates (idempotent). If you edited an installed file on purpose, move the change into packages/cli/templates/ instead — install overwrites in-place edits.",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
   "doctor.check.promote_ledger_invariant.ok":

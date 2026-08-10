@@ -837,6 +837,19 @@ export const zhCNMessages: Messages = {
     "{count} 个 hook basename 在 client 之间内容 drift；首例：{first_basename}（涉及 {first_clients}）。`fabric install` 复制同一模板到三 client，drift 通常来自手动编辑。",
   "doctor.check.hooks_content_drift.remediation":
     "运行 `fabric install` 把所有 client 的 hook 副本恢复到 canonical 模板。若你确实需要 client-specific hook 行为，建议改 lib/ 共享脚本或 templates/hooks/configs/ 配置而非直接编辑安装后的 .cjs。",
+  // W2 #16: install_copy_drift — 安装副本 vs `fabric install` 写下的 sha256 清单。
+  // 仅检测不修复:server 够不到 CLI 模板,不能承诺 --fix(KT-PIT-0016)。
+  "doctor.check.install_copy_drift.name": "安装副本漂移",
+  "doctor.check.install_copy_drift.ok.no_manifest":
+    "尚未记录安装清单,跳过 install_copy_drift 检查。重跑 `fabric install` 即可开始跟踪安装副本。",
+  "doctor.check.install_copy_drift.ok.aligned":
+    "{count} 个安装文件与 fabric {version} 写下的清单全部一致。",
+  "doctor.check.install_copy_drift.message.unreadable":
+    "{path} 存在但不是可读的安装清单(损坏,或由不兼容版本写入),无法校验安装副本。",
+  "doctor.check.install_copy_drift.message.drifted":
+    "{tracked} 个安装文件中有 {count} 个已不再等于 fabric {version} 写下的内容;首个:{first_path}({first_kind})。两端 client 可能一起变旧,所以跨端一致性检查抓不到这类漂移。",
+  "doctor.check.install_copy_drift.remediation":
+    "运行 `fabric install` 从 canonical 模板恢复安装副本(幂等)。若你是有意改了某个安装后的文件,请把改动移进 packages/cli/templates/ —— install 会覆盖就地编辑。",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "晋升账本不变量",
   "doctor.check.promote_ledger_invariant.ok":
