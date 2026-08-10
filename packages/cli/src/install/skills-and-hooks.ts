@@ -174,7 +174,6 @@ type FabricSkillInstallSpec = {
   templateRel: string;
   destinations: readonly string[];
   step: string;
-  includeRefFiles?: boolean;
 };
 
 const FABRIC_SKILL_INSTALL_SPECS = {
@@ -183,14 +182,12 @@ const FABRIC_SKILL_INSTALL_SPECS = {
     templateRel: SKILL_TEMPLATE_REL,
     destinations: SKILL_DESTINATIONS.fabricArchive,
     step: "skill",
-    includeRefFiles: true,
   },
   fabricReview: {
     slug: "fabric-review",
     templateRel: SKILL_REVIEW_TEMPLATE_REL,
     destinations: SKILL_DESTINATIONS.fabricReview,
     step: "skill-review",
-    includeRefFiles: true,
   },
   fabricSync: {
     slug: "fabric-sync",
@@ -506,9 +503,15 @@ async function installFabricSkill(
     }
     results.push(result);
   }
-  if (spec.includeRefFiles) {
-    results.push(...(await installSkillRefFiles(projectRoot, spec.slug)));
-  }
+  // Unconditional: whether a skill HAS ref/ companions is a fact about its
+  // template tree, so let the filesystem answer it. `installSkillRefFiles`
+  // returns a `no-ref-dir` skip row for the ref-less skills. The hand-kept
+  // `includeRefFiles: true` flag this replaces was a third source of truth
+  // beside the template dir and uninstall's own copy of the same boolean — it
+  // had already drifted: fabric-recall-playbook's SKILL.md points twice at
+  // `ref/scenarios.md`, but the flag was never set, so install shipped a skill
+  // that told the agent to open a file no install had ever written.
+  results.push(...(await installSkillRefFiles(projectRoot, spec.slug)));
   return results;
 }
 

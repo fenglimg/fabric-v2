@@ -75,9 +75,7 @@ export async function uninstallFabricRouterSkill(
 export async function uninstallFabricArchiveSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill", SKILL_DESTINATIONS.fabricArchive, projectRoot, {
-    includeRefFiles: true,
-  });
+  return removeSkill("skill", SKILL_DESTINATIONS.fabricArchive, projectRoot);
 }
 
 /**
@@ -88,9 +86,7 @@ export async function uninstallFabricArchiveSkill(
 export async function uninstallFabricReviewSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill-review", SKILL_DESTINATIONS.fabricReview, projectRoot, {
-    includeRefFiles: true,
-  });
+  return removeSkill("skill-review", SKILL_DESTINATIONS.fabricReview, projectRoot);
 }
 
 /**
@@ -176,33 +172,23 @@ export async function uninstallFabricConnectSkill(
   );
 }
 
-type RemoveSkillOptions = {
-  /**
-   * Inverse of the install-side `FabricSkillInstallSpec.includeRefFiles`. When
-   * set, the skill ships `ref/*.md` companion files (installed by
-   * `installSkillRefFiles`) into `<skillDir>/ref/`. Without removing them the
-   * `ref/` directory keeps `<skillDir>` non-empty, so `rmDirIfEmpty` below
-   * leaves the whole skill directory (plus its ref files) orphaned after
-   * `fabric uninstall`. Removing the install-written `.md` files first lets the
-   * parent prune succeed.
-   */
-  includeRefFiles?: boolean;
-};
-
+// Ref pruning is unconditional, mirroring the install side. A skill that ships
+// `ref/*.md` keeps `<skillDir>` non-empty, so without this prune `rmDirIfEmpty`
+// leaves the whole skill directory orphaned after `fabric uninstall`; a skill
+// with no ref/ gets an `absent` skip row and nothing else. The pair of
+// hand-kept `includeRefFiles: true` booleans this replaces could disagree with
+// each other and with the template tree — and did.
 async function removeSkill(
   step: string,
   rels: readonly string[],
   projectRoot: string,
-  opts: RemoveSkillOptions = {},
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
   for (const rel of rels) {
     const target = join(projectRoot, rel);
     results.push(await rmIfExists(step, target));
     const skillDir = dirname(target);
-    if (opts.includeRefFiles) {
-      results.push(...(await removeSkillRefFiles(step, skillDir)));
-    }
+    results.push(...(await removeSkillRefFiles(step, skillDir)));
     results.push(await rmDirIfEmpty(`${step}-dir`, skillDir));
   }
   return results;
