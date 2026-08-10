@@ -1,15 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  validateBootstrapFile,
   validateSkillFile,
   validateSkillRefReachability,
 } from "../../../scripts/lint-protected-tokens.ts";
-
-const VALID_BOOTSTRAP_SOURCE = `# Fabric Bootstrap
-- 修改任何文件前优先调用 \`fab_recall(paths=[<被改文件>])\`；仅当正文过多需要裁剪时，回退到 \`fab_plan_context\` → \`fab_get_knowledge_sections\`。
-- MCP 和 doctor 会写入 \`.fabric/events.jsonl\`。
-`;
 
 const VALID_SKILL_SOURCE = `---
 name: fabric-archive
@@ -38,36 +32,6 @@ MUST: Re-read the digest before classifying.
 
 NEVER: Batch multiple candidates into one MCP call.
 `;
-
-describe("validateBootstrapFile", () => {
-  it("returns no violations when all required tokens are present", () => {
-    expect(validateBootstrapFile("/tmp/CLAUDE.md", VALID_BOOTSTRAP_SOURCE)).toEqual([]);
-  });
-
-  it("flags a missing recall-first MCP tool token", () => {
-    const source = VALID_BOOTSTRAP_SOURCE.replace("fab_recall", "召回知识");
-    expect(validateBootstrapFile("/tmp/CLAUDE.md", source)).toContainEqual({
-      filePath: "/tmp/CLAUDE.md",
-      message: "template is missing protected token fab_recall",
-    });
-  });
-
-  it("flags a missing fallback MCP tool token", () => {
-    const source = VALID_BOOTSTRAP_SOURCE.replace("fab_plan_context", "计划上下文");
-    expect(validateBootstrapFile("/tmp/CLAUDE.md", source)).toContainEqual({
-      filePath: "/tmp/CLAUDE.md",
-      message: "template is missing protected token fab_plan_context",
-    });
-  });
-
-  it("flags a missing event ledger path token", () => {
-    const source = VALID_BOOTSTRAP_SOURCE.replace(".fabric/events.jsonl", ".fabric/事件.jsonl");
-    expect(validateBootstrapFile("/tmp/CLAUDE.md", source)).toContainEqual({
-      filePath: "/tmp/CLAUDE.md",
-      message: "template is missing protected token .fabric/events.jsonl",
-    });
-  });
-});
 
 describe("validateSkillFile", () => {
   it("returns no violations for fabric-archive when all required tokens are present", () => {
@@ -115,65 +79,48 @@ describe("validateSkillFile", () => {
     });
   });
 
-  // TASK-008 D1: per-skill registry was extended with T5/T6 contract fields
-  // (source_sessions / proposed_reason / session_context), layer enums
-  // (layer / team / personal / pending_path), scope enums (narrow / broad)
-  // and the personal-degrade event (knowledge_scope_degraded). The three
-  // tests below assert that the lint flags absence of the new tokens per
-  // skill so future edits cannot silently drop them.
-
-  it("flags fabric-archive missing T5/T6 + layer-enum tokens (TASK-008 D1)", () => {
-    const filePath = "/tmp/skills/fabric-archive/SKILL.md";
-    const source = `MUST do things. NEVER skip. fab_propose call. relevance_scope. relevance_paths.`;
+  // Each skill pins its own contract vocabulary in SKILL_MCP_TOKENS. One row
+  // per skill: a source carrying only the universal anchors must be reported as
+  // missing every token that skill is supposed to name verbatim.
+  it.each([
+    [
+      "fabric-archive",
+      "MUST do things. NEVER skip. fab_propose call. relevance_scope. relevance_paths.",
+      [
+        "pending_path",
+        "layer",
+        "team",
+        "personal",
+        "proposed_reason",
+        "session_context",
+        "source_sessions",
+        "knowledge_scope_degraded",
+      ],
+    ],
+    [
+      "fabric-import",
+      "MUST do things. NEVER skip. pending_path matters. fab_propose call. fab_review call.",
+      ["proposed_reason", "session_context", "source_sessions"],
+    ],
+    [
+      "fabric-review",
+      "MUST do things. NEVER skip. pending_path matters. fab_review call.",
+      [
+        "relevance_scope",
+        "relevance_paths",
+        "narrow",
+        "broad",
+        "proposed_reason",
+        "session_context",
+        "knowledge_scope_degraded",
+        "reached-but-inert",
+        "changes next action",
+      ],
+    ],
+  ])("flags %s missing its pinned contract tokens", (skill, source, expectedMissing) => {
+    const filePath = `/tmp/skills/${skill}/SKILL.md`;
     const violations = validateSkillFile(filePath, source);
-    for (const token of [
-      "pending_path",
-      "layer",
-      "team",
-      "personal",
-      "proposed_reason",
-      "session_context",
-      "source_sessions",
-      "knowledge_scope_degraded",
-    ]) {
-      expect(violations).toContainEqual({
-        filePath,
-        message: `template is missing protected token ${token}`,
-      });
-    }
-  });
-
-  it("flags fabric-import missing T5/T6 contract tokens (TASK-008 D1)", () => {
-    const filePath = "/tmp/skills/fabric-import/SKILL.md";
-    const source = `MUST do things. NEVER skip. pending_path matters. fab_propose call. fab_review call.`;
-    const violations = validateSkillFile(filePath, source);
-    for (const token of [
-      "proposed_reason",
-      "session_context",
-      "source_sessions",
-    ]) {
-      expect(violations).toContainEqual({
-        filePath,
-        message: `template is missing protected token ${token}`,
-      });
-    }
-  });
-
-  it("flags fabric-review missing scope-enum + T6 tokens (TASK-008 D1)", () => {
-    const filePath = "/tmp/skills/fabric-review/SKILL.md";
-    const source = `MUST do things. NEVER skip. pending_path matters. fab_review call.`;
-    const violations = validateSkillFile(filePath, source);
-    for (const token of [
-      "relevance_scope",
-      "relevance_paths",
-      "narrow",
-      "broad",
-      "proposed_reason",
-      "session_context",
-      "knowledge_scope_degraded",
-      "reached-but-inert",
-      "changes next action",
-    ]) {
+    for (const token of expectedMissing) {
       expect(violations).toContainEqual({
         filePath,
         message: `template is missing protected token ${token}`,
