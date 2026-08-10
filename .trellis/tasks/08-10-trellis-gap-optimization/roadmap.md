@@ -63,7 +63,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 
 - **#2+#16 → 「客户端配置防御群」(P0)**: doctor 把 settings.json 可解析性 + fabric hooks 注册在位 + 安装副本漂移(新增模板 hash 清单)升为一等检查,区分 broken/missing 两码,全部纳入 `doctor --fix` 自动修复;修复动作复用 install 已有的 deep-merge(核证过:保留第三方 key)。今天的事故做成回归测试用例。
 - **#11 → 「沉淀闸口 + 快速通道」(P0)**: bootstrap 政策把「收口回合走一遍归档判断(结论可以是'无')」写成仪式(prompt 层,非 hook gate);fabric-archive 增设小条目快速通道(单 phase 直达 propose,跳过全程 19-ref 长流程);review nudge 从「>10 条」改成「>10 条 或 最老 pending 超 N 天」——三招合力治 W3。
-- **#9 → 「--fix 扩面」(P1)**: 把挂账的 MCP root-pin repair、settings/hooks 修复、README 版本同步等确定性修复逐个接入 --fix(维持 detection-only 与 fix 的既有分界)。
+- **#9 → 「--fix 扩面」(P1)**: ✅ **已完成**(2026-08-10, commit ea134c91)。挂账的 MCP root-pin repair 接进 `--fix`:`repairManagedRootPin` 原本生产侧零调用方(只有一个测试引用),逻辑从 `packages/cli/src/config/root-pin-migration.ts` 移进 `packages/shared/src/mcp-root-pin.ts` —— 不是为整洁,server 对 cli 零依赖,不移就接不上。新检查 `mcp_root_pin_managed` 只报 `managed`(digest 能证明是 installer 写的),`explicit`/`ambiguous` 不碰(KT-GLD-0016);严重级按钉是否仍指向本项目分叉(指别处 error/fixable,指对了 warning——对今天能工作的钉喊 error 会训练用户忽略检查)。**这条承诺 --fix,与邻居 install_copy_drift 相反:KT-PIT-0016 是双向的**,删 env 键不需要 CLI 模板。settings/hooks 修复已由 #2 群完成(commit 2e4dc057);README 版本同步经核证**树里根本没有对应检测**(全仓无任何 README 版本机制;最接近的 `global_cli_outdated` 管的是全局装的 CLI 版本),给不存在的检测接 --fix = 新建检测而非「扩面」,**本轮不做**。
 - **#6 → 「子代理知识提示」(P2)**: 增设 PreToolUse(Task/Agent)hook,向子代理 dispatch prompt 追加一行「对将改文件先 fab_recall」+ 当前 session 已召回条目索引;守 never-block(纯追加,失败放行)。
 - **#10 → 「pitfall 根因词汇表」(P2)**: fabric-archive 的 pitfall phase ref 增加封闭根因分类(缺规范/跨层契约/传播失败/测试缺口/隐式假设)+「上次修复为什么没修好」提问;纯 skill 文本,零 schema 变更。
 - **#18* → 「多窗口 sidecar 隔离」(P2)**: active-session.json 从单槽改 per-session 文件(或拒猜降级),消除多窗口 last-writer-wins 串台隐患(用户实际是多窗口工作流,见 memory)。
@@ -165,7 +165,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 |---|---|---|---|
 | **W1 埋尸体** | ⚠️ **部分完成 + 部分受阻**(2026-08-10)。已完成: 911MB worktree 清理 + 811 行零引用死代码(commit bc636bcf/6bac073c)。**受阻**: install.ts 死件簇 1,961 行删不掉——测试基础设施钉住(详见 test-architecture-proposal.md §2 病根一),需先做 T-2 解耦 | ✅ 已拍板 | 已开工 |
 | **W0 测试架构** | ⬅️ **新增,应前置于 W1 剩余部分**。见 `test-architecture-proposal.md`: T-1 量化 → T-2 解耦死代码 → T-3 切 AI/代码线 → T-4 提速 → T-5 消重 | 待用户评审提案 | 2-3 个会话 |
-| **W2 配置防御** | ✅ **#2+#16 已完成**(2026-08-10): hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only:server 对 cli 零依赖够不到模板,守 KT-PIT-0016)。**剩 steal #9 的 root-pin repair 未接 --fix** | 无 | 收尾中 |
+| **W2 配置防御** | ✅ **全部完成**(2026-08-10): #2 hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);#16 安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only,守 KT-PIT-0016);#9 MCP root-pin repair 从「造好没人调」接进检查 + `--fix`,逻辑移进 shared 打通 server↔cli 边界(commit ea134c91)。doctor 检查数 51→53 | 无 | ✅ 收口 |
 | **W3 沉淀减负** | steal #11 群: 归档快速通道 + 收口仪式 + review age-nudge + T4 ref 树瘦身;**跑完后**处置 44 会话积压并复评任务轴 | 无 | 1-2 个会话 |
 | **W4 瘦身(代码+文档)** | B5+B6+B7+B8+B9 + 轨T 的 T2/T3/T5 + **轨I 的 I2**(I2 与 B8 同族:都是手写孪生/分发链错位) | B7 已拍板删;需同批 supersede KT-DEC-0016;I3/I4 待裁决后决定是否并入本批 | 2-3 个会话 |
 | **W5 结构化** | B10-B15 择量 + steal P2 三条(#6/#10/#18*) | 无 | 按需分段 |
