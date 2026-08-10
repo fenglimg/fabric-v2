@@ -313,10 +313,9 @@ describe("runDoctorReport", () => {
       id: "event:good",
       ts: 1_000,
       schema_version: 1,
-      event_type: "reapply_completed",
-      preserved_ledger: true,
-      preserved_meta: true,
-      rules_count: 0,
+      event_type: "init_scan_completed",
+      written_stable_ids: [],
+      duration_ms: 0,
     });
     const partialLine = '{"kind":"fabric-event","ts":2000,"partial';
     const ledgerPath = join(target, ".fabric", "events.jsonl");
@@ -351,10 +350,9 @@ describe("runDoctorReport", () => {
       id: "event:ok",
       ts: 1_000,
       schema_version: 1,
-      event_type: "reapply_completed",
-      preserved_ledger: true,
-      preserved_meta: true,
-      rules_count: 0,
+      event_type: "init_scan_completed",
+      written_stable_ids: [],
+      duration_ms: 0,
     });
     const legacyLine = JSON.stringify({
       kind: "fabric-event",
@@ -413,10 +411,9 @@ describe("runDoctorReport", () => {
       id: "event:ok",
       ts: 1_000,
       schema_version: 1,
-      event_type: "reapply_completed",
-      preserved_ledger: true,
-      preserved_meta: true,
-      rules_count: 0,
+      event_type: "init_scan_completed",
+      written_stable_ids: [],
+      duration_ms: 0,
     });
     writeFileSync(
       join(target, ".fabric", "events.jsonl"),

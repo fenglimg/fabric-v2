@@ -885,37 +885,28 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
   };
 }
 
-// rc.4 TASK-003: lint mutation entry point. Behavior summary:
-//   * `lint:orphan_demote` (warning kind code=knowledge_orphan_demote_required):
-//     rewrite frontmatter `maturity:` one tier down (proven -> verified,
-//     verified -> draft) via atomicWriteText; emit knowledge_demoted event.
-//   * `lint:stale_archive` (code=knowledge_stale_archive_required):
-//     rename file to .fabric/.archive/<type>/<filename>; emit knowledge_archived
-//     event. Per task design the archive subtree is a tombstone (not git-tracked
-//     active history) so we use `fs.rename` rather than `git mv`. The events.jsonl
-//     entry IS the audit trail.
-//   * `lint:stable_id_duplicate` / `lint:layer_mismatch` (manual_error kinds):
-//     auto-fix is unsafe (data loss potential). runDoctorApplyLint aborts
-//     BEFORE applying any mutations and surfaces a clear "manual repair
-//     required" message via abort_reason.
-//   * `lint:pending_overdue` (warning kind): informational at 14d — humans
-//     triage via the fabric-review Skill. At 30d the entry crosses the
-//     PENDING_AUTO_ARCHIVE_THRESHOLD_DAYS gate and `--apply-lint` git-mv's
-//     it to `.fabric/.archive/pending/<type>/` (team) or
-//     `~/.fabric/.archive/pending/<type>/` (personal), emitting one
-//     `pending_auto_archived` event per move (rc.5 TASK-009 B2).
+// Knowledge-lint mutation entry point (reached via `fabric doctor --fix`).
+// Behavior summary:
+//   * `knowledge_orphan_demote_required` (warning): rewrite frontmatter
+//     `maturity:` one tier down (proven -> verified, verified -> draft) via
+//     atomicWriteText; emit knowledge_demoted.
+//   * `knowledge_stale_archive_required`: rename the file into
+//     `.fabric/.archive/<type>/`; emit knowledge_archived. The archive subtree
+//     is a tombstone, not git-tracked active history, so plain `fs.rename` is
+//     correct — the events.jsonl entry IS the audit trail.
+//   * `knowledge_layer_mismatch` (manual error): auto-fix would move a file
+//     across layers, which can lose data. Abort BEFORE applying ANY mutation
+//     and surface "manual repair required" via abort_reason. It is the only
+//     member of MANUAL_LINT_ERROR_CODES — the store integrity lints fold what
+//     used to be a separate filename-id duplicate check into the frontmatter-id
+//     `stable_id_collision` warning, since `deriveRuleIdentity` unifies both id
+//     sources.
 //
 // Idempotency: each mutation refreshes lastActiveAt indirectly (demoted /
 // archived events register the entry's stable_id with a fresh ts in the
 // next run's buildLastActiveIndex) and the inspections re-evaluate against
-// the new on-disk state, so a 2nd `--apply-lint` run on a dir with no new
-// findings produces 0 mutations and 0 events.
-// v2.2 Goal B (G-INTEGRITY): the loud-error gate now lists only
-// `knowledge_layer_mismatch` — the rebuilt store integrity lints fold the old
-// filename-id `stable_id_duplicate` into the frontmatter-id `stable_id_collision`
-// (a warning), since `deriveRuleIdentity` unifies the two id sources in the
-// store model. layer_mismatch stays a manual error (rename + move is unsafe to
-// auto-apply).
+// the new on-disk state, so a 2nd run over a dir with no new findings produces
+// 0 mutations and 0 events.
 const MANUAL_LINT_ERROR_CODES = new Set([
   "knowledge_layer_mismatch",
 ]);

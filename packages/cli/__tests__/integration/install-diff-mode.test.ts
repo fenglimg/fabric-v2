@@ -108,25 +108,17 @@ describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
       captured.restore();
     }
 
-    // T-2: the "Workspace already canonical" banner assertion was removed. That
-    // string is emitted only by the RETIRED v1 installer; the shipping installer
-    // replaced the banner with the idempotent-re-install collapse, so the
-    // assertion was green against code no user runs. The no-op contract is fully
-    // covered by the byte-stability assertions below — those are structure, the
-    // banner was wording.
-
-    // Re-run is byte-stable for managed trees (events.jsonl is excepted
-    // because diff-mode appends install_diff_applied per non-reapply run —
-    // ledger growth is the documented contract).
+    // The no-op contract is asserted structurally, not by banner text: the
+    // managed trees must come back byte-identical. events.jsonl is excepted —
+    // an install run may append ledger rows, and that growth is expected.
     const snapshot2Claude = snapshotTree(target, ".claude");
     const snapshot2Codex = snapshotTree(target, ".codex");
     expect(snapshot2Claude).toEqual(snapshot1Claude);
     expect(snapshot2Codex).toEqual(snapshot1Codex);
 
-    // .fabric/forensic.json is a snapshot regenerated every run; events.jsonl
-    // grows by one install_diff_applied line per non-canonical run. The
-    // remaining managed config (fabric-config.json, .gitignore) must be
-    // byte-stable on a canonical re-run.
+    // .fabric/forensic.json is a snapshot regenerated every run and events.jsonl
+    // is append-only, so neither is byte-stable. The remaining managed config
+    // (fabric-config.json, .gitignore) must be byte-stable on a canonical re-run.
     const configKey = Object.keys(snapshot1Fabric).find((key) => key.replaceAll("\\", "/") === ".fabric/fabric-config.json");
     const configBefore = configKey === undefined ? undefined : snapshot1Fabric[configKey];
     expect(configBefore).toBeDefined();

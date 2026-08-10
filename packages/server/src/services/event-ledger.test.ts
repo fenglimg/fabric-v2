@@ -538,10 +538,9 @@ describe("event-ledger", () => {
         id: "event:ok",
         ts: 1_000,
         schema_version: 1,
-        event_type: "reapply_completed",
-        preserved_ledger: true,
-        preserved_meta: true,
-        rules_count: 0,
+        event_type: "init_scan_completed",
+        written_stable_ids: [],
+        duration_ms: 0,
       });
       const legacyLine = JSON.stringify({
         kind: "fabric-event",
@@ -629,7 +628,7 @@ describe("event-ledger", () => {
     it("truncates partial trailing bytes and saves them to a .corrupted file", async () => {
       const dir = await createTempDir();
       const ledgerPath = join(dir, "events.jsonl");
-      const goodLine = '{"kind":"fabric-event","id":"e1","ts":1,"schema_version":1,"event_type":"reapply_completed","preserved_ledger":true,"preserved_meta":true,"rules_count":0}';
+      const goodLine = '{"kind":"fabric-event","id":"e1","ts":1,"schema_version":1,"event_type":"init_scan_completed","written_stable_ids":[],"duration_ms":0}';
       const partialLine = '{"kind":"fabric-event","partial';
 
       await writeFile(ledgerPath, `${goodLine}\n${partialLine}`, "utf8");
@@ -650,7 +649,7 @@ describe("event-ledger", () => {
     it("is a no-op and returns zero when file already ends with a newline", async () => {
       const dir = await createTempDir();
       const ledgerPath = join(dir, "events.jsonl");
-      const content = '{"kind":"fabric-event","id":"e1","ts":1,"schema_version":1,"event_type":"reapply_completed","preserved_ledger":true,"preserved_meta":true,"rules_count":0}\n';
+      const content = '{"kind":"fabric-event","id":"e1","ts":1,"schema_version":1,"event_type":"init_scan_completed","written_stable_ids":[],"duration_ms":0}\n';
 
       await writeFile(ledgerPath, content, "utf8");
 

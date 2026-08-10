@@ -72,15 +72,8 @@ describe("init-atomic: events.jsonl created as a raw file", () => {
     expect(existsSync(eventsPath)).toBe(true);
 
     // Scaffold writes a 0-byte events.jsonl directly (never through
-    // atomicWriteText — asserted by the sibling test). Appenders grow it later.
-    //
-    // T-2: this used to also assert the ledger carried `install_diff_applied`.
-    // That event is emitted ONLY by the retired v1 installer — no shipping code
-    // path writes it, and a repo-wide census found NO consumer either (the
-    // shared event-ledger schema still declares the variant, so it is a
-    // write-nobody/read-nobody type and a retirement candidate). Asserting it
-    // here tested dead code, so the assertion is dropped rather than "fixed" by
-    // re-emitting an event nothing reads.
+    // atomicWriteText — asserted by the sibling test). Appenders grow it later,
+    // so an empty file right after scaffold is the correct expectation.
     expect(readFileSync(eventsPath, "utf8")).toBe("");
   });
 

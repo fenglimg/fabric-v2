@@ -128,8 +128,9 @@ describe("I3: init default-install idempotency", () => {
       stream_id: "s1",
       message: null,
     });
-    // Prepend sentinel WITHOUT clobbering whatever the install pipeline
-    // already wrote during the first runInit (notably install_diff_applied).
+    // Prepend the sentinel WITHOUT clobbering whatever the install pipeline
+    // already wrote during the first runInit — the point of the test is that
+    // re-running install preserves pre-existing ledger bytes.
     const existing = readFileSync(eventsPath, "utf8");
     writeFileSync(eventsPath, sentinel + "\n" + existing, "utf8");
 

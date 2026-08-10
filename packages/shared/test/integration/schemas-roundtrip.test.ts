@@ -300,41 +300,6 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
     })
   })
 
-  it('meta_reconciled event', () => {
-    roundTrip(eventLedgerEventSchema, {
-      ...envelope,
-      event_type: 'meta_reconciled',
-      reconciled_files: ['.fabric/knowledge/decisions/root.md'],
-      duration_ms: 50,
-      trigger: 'doctor',
-      source: 'reconcileKnowledge',
-    })
-  })
-
-  // v2.0 rc.5 TASK-009 (B2): pending_auto_archived event — emitted by
-  // `doctor --apply-lint` when a stale pending entry is moved into the
-  // .archive/pending/ subtree. Mandatory fields: pending_path (source),
-  // archived_to (destination), reason (currently always "auto_archive_30d").
-  it('pending_auto_archived event (team layer)', () => {
-    roundTrip(eventLedgerEventSchema, {
-      ...envelope,
-      event_type: 'pending_auto_archived',
-      pending_path: '.fabric/knowledge/pending/decisions/stale-proposal.md',
-      archived_to: '.fabric/.archive/pending/decisions/stale-proposal.md',
-      reason: 'auto_archive_30d',
-    })
-  })
-
-  it('pending_auto_archived event (personal layer)', () => {
-    roundTrip(eventLedgerEventSchema, {
-      ...envelope,
-      event_type: 'pending_auto_archived',
-      pending_path: '~/.fabric/knowledge/pending/pitfalls/personal-stale.md',
-      archived_to: '~/.fabric/.archive/pending/pitfalls/personal-stale.md',
-      reason: 'auto_archive_30d',
-    })
-  })
-
   // v2.0 rc.5 TASK-012 (C3): knowledge_scope_degraded event — emitted by
   // fab_review.modify when a narrow team→personal layer flip auto-degrades
   // relevance_scope to broad. Mandatory: stable_id, timestamp, from/to scope,
@@ -348,19 +313,6 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
       from_scope: 'narrow',
       to_scope: 'broad',
       reason: 'personal-implies-broad',
-    })
-  })
-
-  // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled event — emitted (in
-  // future rc.7+ apply-lint behavior) when doctor lint #24 prunes a glob
-  // from a canonical entry's relevance_paths because the glob resolves to
-  // zero matches in the workspace. Mandatory: stable_id, removed_glob.
-  it('knowledge_path_dangled event (dangling glob pruned)', () => {
-    roundTrip(eventLedgerEventSchema, {
-      ...envelope,
-      event_type: 'knowledge_path_dangled',
-      stable_id: 'KT-DEC-0042',
-      removed_glob: 'src/deleted-feature/**',
     })
   })
 
@@ -385,32 +337,6 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
       timestamp: '2026-05-13T12:30:00.000Z',
       scanned_count: 5,
       touched_count: 0,
-    })
-  })
-
-  // v2.0.0-rc.22 Scope D T-D1: knowledge_meta_auto_healed event — emitted by
-  // loadActiveMeta when read-path drift triggers an in-place meta rebuild.
-  // Mandatory: previous_revision_hash, revision_hash, trigger:'read'.
-  // Optional: caller (planContext | getKnowledgeSections | getKnowledge |
-  // extractKnowledge) — telemetry tag identifying the read-side service.
-  it('knowledge_meta_auto_healed event (with caller)', () => {
-    roundTrip(eventLedgerEventSchema, {
-      ...envelope,
-      event_type: 'knowledge_meta_auto_healed',
-      previous_revision_hash: 'sha256:before',
-      revision_hash: 'sha256:after',
-      trigger: 'read',
-      caller: 'getKnowledgeSections',
-    })
-  })
-
-  it('knowledge_meta_auto_healed event (no caller field)', () => {
-    roundTrip(eventLedgerEventSchema, {
-      ...envelope,
-      event_type: 'knowledge_meta_auto_healed',
-      previous_revision_hash: 'sha256:before',
-      revision_hash: 'sha256:after',
-      trigger: 'read',
     })
   })
 

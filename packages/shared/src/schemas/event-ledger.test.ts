@@ -171,23 +171,6 @@ describe("eventLedgerEventSchema", () => {
         consumed_at: ts,
         client_hash: "",
       },
-      // v2.0 rc.5 TASK-009 (B2): pending_auto_archived event
-      {
-        ...base,
-        event_type: "pending_auto_archived",
-        pending_path: ".fabric/knowledge/pending/decisions/stale.md",
-        archived_to: ".fabric/.archive/pending/decisions/stale.md",
-        reason: "auto_archive_30d",
-      },
-      // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled event — emitted (in
-      // future rc.7+ apply-lint behavior) when doctor lint #24 prunes a
-      // relevance_paths glob that resolves to zero filesystem matches.
-      {
-        ...base,
-        event_type: "knowledge_path_dangled",
-        stable_id: "KT-DEC-0042",
-        removed_glob: "src/deleted-feature/**",
-      },
     ];
 
     const parsedTypes = events.map((event) => eventLedgerEventSchema.parse(event).event_type);
@@ -205,119 +188,7 @@ describe("eventLedgerEventSchema", () => {
       "knowledge_deferred",
       "knowledge_rejected",
       "knowledge_consumed",
-      "pending_auto_archived",
-      "knowledge_path_dangled",
     ]);
-  });
-
-  // v2.0.0-rc.22 Scope D T-D1: knowledge_meta_auto_healed round-trip parse
-  it("parses knowledge_meta_auto_healed (with and without caller)", () => {
-    const base = {
-      kind: "fabric-event" as const,
-      id: "event:test",
-      ts: 1_000,
-      schema_version: 1 as const,
-    };
-    const withCaller = eventLedgerEventSchema.parse({
-      ...base,
-      event_type: "knowledge_meta_auto_healed",
-      previous_revision_hash: "sha256:old",
-      revision_hash: "sha256:new",
-      trigger: "read",
-      caller: "planContext",
-    });
-    expect(withCaller).toMatchObject({
-      event_type: "knowledge_meta_auto_healed",
-      previous_revision_hash: "sha256:old",
-      revision_hash: "sha256:new",
-      trigger: "read",
-      caller: "planContext",
-    });
-
-    const withoutCaller = eventLedgerEventSchema.parse({
-      ...base,
-      event_type: "knowledge_meta_auto_healed",
-      previous_revision_hash: "sha256:old",
-      revision_hash: "sha256:new",
-      trigger: "read",
-    });
-    expect(withoutCaller).toMatchObject({
-      event_type: "knowledge_meta_auto_healed",
-    });
-    // `caller` is optional — zod strips `undefined` optional fields, so we
-    // assert absence rather than literal-undefined (vitest toMatchObject
-    // requires the key to be present-with-undefined, which fails for
-    // zod-stripped fields).
-    expect("caller" in withoutCaller).toBe(false);
-
-    // trigger literal — only 'read' is currently accepted.
-    expect(() =>
-      eventLedgerEventSchema.parse({
-        ...base,
-        event_type: "knowledge_meta_auto_healed",
-        previous_revision_hash: "sha256:old",
-        revision_hash: "sha256:new",
-        trigger: "write",
-      }),
-    ).toThrow();
-
-    // caller enum is closed — bad values reject.
-    expect(() =>
-      eventLedgerEventSchema.parse({
-        ...base,
-        event_type: "knowledge_meta_auto_healed",
-        previous_revision_hash: "sha256:old",
-        revision_hash: "sha256:new",
-        trigger: "read",
-        caller: "unknownCaller",
-      }),
-    ).toThrow();
-  });
-
-  // v2.0.0-rc.29 TASK-003 (BUG-H4): install_diff_applied round-trip parse.
-  // Mirrors the cli `appendInstallDiffLedgerEvent` payload at
-  // packages/cli/src/commands/install.ts so the server-side schema no longer
-  // emits `event_ledger_schema_compat warn` for install-driven events.
-  it("parses install_diff_applied with applied/canonical/drifted arrays", () => {
-    const base = {
-      kind: "fabric-event" as const,
-      id: "event:install-diff",
-      ts: 1_700_000_000_000,
-      schema_version: 1 as const,
-    };
-    const parsed = eventLedgerEventSchema.parse({
-      ...base,
-      event_type: "install_diff_applied",
-      applied: [".claude/hooks/fabric-hint.cjs"],
-      canonical: [".fabric/AGENTS.md", "AGENTS.md"],
-      drifted: [],
-    });
-    expect(parsed).toMatchObject({
-      event_type: "install_diff_applied",
-      applied: [".claude/hooks/fabric-hint.cjs"],
-      canonical: [".fabric/AGENTS.md", "AGENTS.md"],
-      drifted: [],
-    });
-    // empty arrays still accepted (no-op install run)
-    expect(() =>
-      eventLedgerEventSchema.parse({
-        ...base,
-        event_type: "install_diff_applied",
-        applied: [],
-        canonical: [],
-        drifted: [],
-      }),
-    ).not.toThrow();
-    // applied must be an array, not a string
-    expect(() =>
-      eventLedgerEventSchema.parse({
-        ...base,
-        event_type: "install_diff_applied",
-        applied: "single-string",
-        canonical: [],
-        drifted: [],
-      }),
-    ).toThrow();
   });
 
   // v2.0.0-rc.22 Scope A T3: events_rotated round-trip parse + required-field
