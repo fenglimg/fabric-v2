@@ -828,17 +828,22 @@ export const enMessages: Messages = {
     "[advisory] .fabric/.serve.lock holds dead PID {pid} (acquired {acquiredAgo}). Run `fabric doctor --fix` to remove.",
   "doctor.check.stale_serve_lock.remediation.dead_pid":
     "Run `fabric doctor --fix` to remove the stale .fabric/.serve.lock.",
-  // rc.31 BUG-M3/NEW-4: hooks_wired observability.
-  "doctor.check.hooks_wired.name": "Claude Code hooks wired",
-  "doctor.check.hooks_wired.ok.skipped": "Project does not use Claude Code (no .claude/ directory); hooks_wired check skipped.",
+  // A hook that ships to disk but is not registered in the client config is
+  // completely inert, and nothing outside doctor can notice.
+  "doctor.check.hooks_wired.name": "Client hooks wired",
+  "doctor.check.hooks_wired.ok.skipped": "No client config directory found (.claude/ / .codex/); hooks_wired check skipped.",
   "doctor.check.hooks_wired.ok.wired":
-    ".claude/settings.json has the three fabric hooks wired: Stop:fabric-hint / SessionStart:knowledge-hint-broad / PreToolUse:knowledge-hint-narrow.",
-  "doctor.check.hooks_wired.message.missing_settings":
-    ".claude/ exists but .claude/settings.json is absent or unparseable; fabric install may have never run successfully, or the file was wiped externally.",
+    "Every fabric hook is registered in each installed client\u2019s hook config.",
+  "doctor.check.hooks_wired.message.config_missing":
+    "Client directory exists but its hook config is absent: {configs}. fabric install never completed here, or the file was removed externally \u2014 every fabric hook for that client is inert.",
+  "doctor.check.hooks_wired.message.config_unparseable":
+    "Hook config exists but is not valid JSON: {configs}. The client silently ignores an unparseable config, so ALL hooks in it \u2014 fabric\u2019s and yours \u2014 are dead.",
   "doctor.check.hooks_wired.message.incomplete":
-    ".claude/settings.json is missing fabric hook injections: {missing}. fabric install dry-run report does not match actual state (rc.30 audit BUG-M3 / NEW-4).",
+    "Hook config is missing fabric hook registrations: {missing}. Those hooks are installed on disk but never invoked.",
   "doctor.check.hooks_wired.remediation":
-    "Run `fabric install` to re-inject hooks (idempotent; only fills missing slots). If hooks config was accidentally wiped, back up .claude/settings.json before running.",
+    "Run `fabric doctor --fix` (or `fabric install`) to re-register the missing hooks; both are idempotent and only fill empty slots.",
+  "doctor.check.hooks_wired.remediation.config_unparseable":
+    "`fabric doctor --fix` preserves the unparseable file alongside it and writes a fresh config with fabric\u2019s hooks. Any of your own settings in the broken file must be merged back by hand \u2014 review the preserved copy first.",
   // v2.0.0-rc.37 NEW-20: hooks_runtime — shebang + Node.js syntax validity
   // of installed *.cjs hook files (one layer below hooks_wired).
   "doctor.check.hooks_runtime.name": "Hooks runtime health",

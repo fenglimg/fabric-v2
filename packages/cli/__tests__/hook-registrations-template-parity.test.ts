@@ -6,13 +6,14 @@ import { describe, expect, it } from "vitest";
 import {
   HOOK_CLIENTS,
   HOOK_REGISTRATIONS,
+  fabricHookConfigFor,
   hookCommandFor,
   hookConfigArrayPaths,
+  mergeFabricHookRegistrations,
   type HookClient,
-  type HookRegistration,
 } from "@fenglimg/fabric-shared";
 
-import { HOOK_CONFIG_ARRAY_PATHS } from "../src/install/skills-and-hooks.ts";
+import { HOOK_CONFIG_ARRAY_PATHS, HOOK_CONFIG_TARGETS } from "../src/install/skills-and-hooks.ts";
 
 // `HOOK_REGISTRATIONS` is what doctor checks for; these JSON files are what
 // install actually ships. If they drift, doctor certifies a config it never
@@ -32,29 +33,41 @@ function readConfig(client: HookClient): Record<string, unknown> {
   return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
 }
 
-// Claude Code nests each entry as { matcher, hooks: [{ type, command }] } and
-// always spells the matcher out; Codex puts the command on the entry itself and
-// omits a "*" matcher entirely.
-function expectedEntry(client: HookClient, reg: HookRegistration): Record<string, unknown> {
-  const command = hookCommandFor(client, reg.hookFile);
-  if (client === "claudeCode") {
-    return { matcher: reg.matcher, hooks: [{ type: "command", command }] };
-  }
-  return reg.matcher === "*" ? { command } : { matcher: reg.matcher, command };
-}
-
-function expectedConfig(client: HookClient): Record<string, unknown> {
-  const { configRoot, registrations } = HOOK_REGISTRATIONS[client];
-  const byEvent: Record<string, Array<Record<string, unknown>>> = {};
-  for (const reg of registrations) {
-    (byEvent[reg.event] ??= []).push(expectedEntry(client, reg));
-  }
-  return { [configRoot]: byEvent };
-}
-
 describe("hook registration table vs shipped template configs", () => {
   it.each(HOOK_CLIENTS)("%s config matches HOOK_REGISTRATIONS exactly", (client) => {
-    expect(readConfig(client)).toEqual(expectedConfig(client));
+    expect(readConfig(client)).toEqual(fabricHookConfigFor(client));
+  });
+
+  // `doctor --fix` restores a config with mergeFabricHookRegistrations rather
+  // than by copying the template, so merging into nothing must land exactly
+  // where install would have. Without this the two writers could drift and only
+  // a user with a broken config would ever find out.
+  it.each(HOOK_CLIENTS)("%s: merging into an empty config reproduces the template", (client) => {
+    expect(mergeFabricHookRegistrations({}, client)).toEqual(readConfig(client));
+    expect(mergeFabricHookRegistrations(undefined, client)).toEqual(readConfig(client));
+  });
+
+  it.each(HOOK_CLIENTS)("%s: merge is idempotent and preserves foreign entries", (client) => {
+    const { configRoot, registrations } = HOOK_REGISTRATIONS[client];
+    const userEntry = { command: "./my-own-hook.cjs" };
+    const seeded = { keepMe: 1, [configRoot]: { [registrations[0]!.event]: [userEntry] } };
+
+    const once = mergeFabricHookRegistrations(seeded, client);
+    expect(once).toEqual(mergeFabricHookRegistrations(once, client));
+    expect(once.keepMe).toBe(1);
+
+    const firstEvent = (once[configRoot] as Record<string, unknown[]>)[registrations[0]!.event];
+    // The user's entry stays first and untouched; fabric's is appended after it.
+    expect(firstEvent?.[0]).toEqual(userEntry);
+    const commands = (firstEvent ?? []).flatMap((entry) => {
+      const record = entry as { command?: unknown; hooks?: Array<{ command?: unknown }> };
+      const own = typeof record.command === "string" ? [record.command] : [];
+      const nested = (record.hooks ?? []).map((h) => h.command).filter((c): c is string =>
+        typeof c === "string",
+      );
+      return [...own, ...nested];
+    });
+    expect(commands).toContain(hookCommandFor(client, registrations[0]!.hookFile));
   });
 
   it("registers every hook script the table names, under a real client dir", () => {
@@ -65,6 +78,15 @@ describe("hook registration table vs shipped template configs", () => {
         expect(reg.hookFile).toMatch(/^[a-z0-9-]+\.cjs$/);
         expect(hookCommandFor(client, reg.hookFile)).toContain(`${clientDir}/hooks/${reg.hookFile}`);
       }
+    }
+  });
+
+  // Doctor reads each client's config from the table; install writes it from
+  // HOOK_CONFIG_TARGETS. Different file names would make doctor inspect a path
+  // install never writes — and report a healthy install as unwired.
+  it("points at the same config file install writes", () => {
+    for (const client of HOOK_CLIENTS) {
+      expect(HOOK_REGISTRATIONS[client].configFile).toBe(HOOK_CONFIG_TARGETS[client]);
     }
   });
 

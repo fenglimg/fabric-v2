@@ -1,17 +1,29 @@
 import { constants } from "node:fs";
-import { access, readdir, readFile, stat } from "node:fs/promises";
+import { access, readdir, readFile, rename, stat } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { Script } from "node:vm";
 
-import type { Translator } from "@fenglimg/fabric-shared";
+import {
+  HOOK_CLIENTS,
+  HOOK_REGISTRATIONS,
+  mergeFabricHookRegistrations,
+  type HookClient,
+  type Translator,
+} from "@fenglimg/fabric-shared";
+import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import { sha256 } from "./_shared.js";
 import type { DoctorCheck, DoctorIssueKind, DoctorStatus } from "./doctor-types.js";
 
-type HooksWiredStatus = "ok" | "skipped" | "missing-settings" | "incomplete";
+type HooksWiredStatus = "ok" | "skipped" | "config-missing" | "config-unparseable" | "incomplete";
 type HooksWiredInspection = {
   status: HooksWiredStatus;
+  /** `"<config file> <Event>:<hook>.cjs"` per registration that is not wired. */
   missingHooks: string[];
+  /** Config files that exist but do not parse as JSON. */
+  unparseableConfigs: string[];
+  /** Config files a client dir should have but does not. */
+  missingConfigs: string[];
 };
 
 type HookContentDriftPair = {
@@ -79,23 +91,27 @@ function isNodeMissingPathError(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-function isHookWiredForEvent(hooks: unknown, event: string, hookFile: string): boolean {
-  if (!isRecord(hooks)) return false;
-  const eventEntries = hooks[event];
+// The two clients nest the command differently — Claude Code wraps entries in a
+// matcher block carrying `hooks: [{ command }]`, Codex puts `command` directly
+// on the entry — so accept either rather than assuming one shape.
+function commandsInEntry(entry: unknown): string[] {
+  if (!isRecord(entry)) return [];
+  const own = typeof entry.command === "string" ? [entry.command] : [];
+  const nested = Array.isArray(entry.hooks)
+    ? entry.hooks.flatMap((inner) =>
+        isRecord(inner) && typeof inner.command === "string" ? [inner.command] : [],
+      )
+    : [];
+  return [...own, ...nested];
+}
+
+function isHookWiredForEvent(events: unknown, event: string, hookFile: string): boolean {
+  if (!isRecord(events)) return false;
+  const eventEntries = events[event];
   if (!Array.isArray(eventEntries)) return false;
-  for (const matcherBlock of eventEntries) {
-    if (!isRecord(matcherBlock)) continue;
-    const inner = matcherBlock.hooks;
-    if (!Array.isArray(inner)) continue;
-    for (const hookEntry of inner) {
-      if (!isRecord(hookEntry)) continue;
-      const cmd = hookEntry.command;
-      if (typeof cmd === "string" && cmd.includes(hookFile)) {
-        return true;
-      }
-    }
-  }
-  return false;
+  return eventEntries.some((entry) =>
+    commandsInEntry(entry).some((cmd) => cmd.includes(hookFile)),
+  );
 }
 
 async function readDirectoryFileNames(dir: string): Promise<string[] | null> {
@@ -114,40 +130,133 @@ async function isFile(absPath: string): Promise<boolean> {
   }
 }
 
+/**
+ * Which of Fabric's hooks are actually registered in each installed client's
+ * hook config.
+ *
+ * A hook that is shipped to disk but not registered is completely silent: the
+ * client never invokes it, and nothing else in the system notices. That is what
+ * makes this check load-bearing rather than cosmetic, and why the required set
+ * is derived from HOOK_REGISTRATIONS instead of hand-listed here — the previous
+ * hand-written list had drifted to 3 of Claude Code's 5 hooks and none of
+ * Codex's, so a config missing PostToolUse / SessionEnd reported healthy.
+ *
+ * A client whose directory is absent is not installed, and is skipped rather
+ * than reported missing.
+ */
 export async function inspectHooksWired(projectRoot: string): Promise<HooksWiredInspection> {
-  const claudeEntries = await readDirectoryFileNames(join(projectRoot, ".claude"));
-  if (claudeEntries === null) {
-    return { status: "skipped", missingHooks: [] };
-  }
-  const settingsPath = join(projectRoot, ".claude", "settings.json");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(settingsPath, "utf8")) as unknown;
-  } catch {
-    return { status: "missing-settings", missingHooks: [] };
-  }
-  const required: Array<{ event: string; hookFile: string }> = [
-    { event: "Stop", hookFile: "fabric-hint.cjs" },
-    { event: "SessionStart", hookFile: "knowledge-hint-broad.cjs" },
-    // ux-w2-6 (rc.9): PreToolUse is the SINGLE merged orchestrator
-    // knowledge-pretooluse.cjs which internally requires knowledge-hint-narrow.cjs
-    // (and cite-policy-evict.cjs) so a single edit produces ONE additionalContext
-    // envelope instead of two. The stale reference to narrow.cjs here was the
-    // rc.30 BUG-M3 false-negative source — narrow.cjs still exists on disk as a
-    // lib but is NOT registered as a PreToolUse hook.
-    { event: "PreToolUse", hookFile: "knowledge-pretooluse.cjs" },
-  ];
-  const missing: string[] = [];
-  const hooksSection = isRecord(parsed) ? parsed.hooks : undefined;
-  for (const { event, hookFile } of required) {
-    if (!isHookWiredForEvent(hooksSection, event, hookFile)) {
-      missing.push(`${event}:${hookFile}`);
+  const missingHooks: string[] = [];
+  const unparseableConfigs: string[] = [];
+  const missingConfigs: string[] = [];
+  let inspectedClients = 0;
+
+  for (const client of HOOK_CLIENTS) {
+    const { clientDir, configFile, configRoot, registrations } = HOOK_REGISTRATIONS[client];
+    if ((await readDirectoryFileNames(join(projectRoot, clientDir))) === null) {
+      continue;
+    }
+    inspectedClients += 1;
+
+    let raw: string;
+    try {
+      raw = await readFile(join(projectRoot, ...configFile.split("/")), "utf8");
+    } catch {
+      missingConfigs.push(configFile);
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      // Distinct from absent on purpose: an absent config can be written from
+      // scratch, whereas a corrupt one holds user content that must be
+      // preserved before anything is rewritten over it.
+      unparseableConfigs.push(configFile);
+      continue;
+    }
+
+    const eventsSection = isRecord(parsed) ? parsed[configRoot] : undefined;
+    for (const { event, hookFile } of registrations) {
+      if (!isHookWiredForEvent(eventsSection, event, hookFile)) {
+        missingHooks.push(`${configFile} ${event}:${hookFile}`);
+      }
     }
   }
-  if (missing.length === 0) {
-    return { status: "ok", missingHooks: [] };
+
+  if (inspectedClients === 0) {
+    return { status: "skipped", missingHooks: [], unparseableConfigs: [], missingConfigs: [] };
   }
-  return { status: "incomplete", missingHooks: missing };
+  // Unparseable outranks the rest: until the file is readable, "which hooks are
+  // wired" is unanswerable for that client, so reporting it as merely
+  // incomplete would understate the failure.
+  if (unparseableConfigs.length > 0) {
+    return { status: "config-unparseable", missingHooks, unparseableConfigs, missingConfigs };
+  }
+  if (missingConfigs.length > 0) {
+    return { status: "config-missing", missingHooks, unparseableConfigs, missingConfigs };
+  }
+  if (missingHooks.length > 0) {
+    return { status: "incomplete", missingHooks, unparseableConfigs, missingConfigs };
+  }
+  return { status: "ok", missingHooks: [], unparseableConfigs: [], missingConfigs: [] };
+}
+
+export type HookConfigFixResult = {
+  /** Config files that gained (or regained) fabric's registrations. */
+  rewritten: string[];
+  /** `<config>` → the sidecar its unparseable content was preserved as. */
+  preserved: Array<{ config: string; preservedAs: string }>;
+};
+
+/**
+ * Re-register fabric's hooks in every installed client's hook config.
+ *
+ * Two flavors, per KT-GLD-0016. A config that is absent or already valid JSON
+ * is written straight through — merging is append-with-dedupe, so a re-run is a
+ * no-op and the user's own hooks survive. A config that does NOT parse is a
+ * different problem: it holds user-authored content that no automated merge can
+ * read, so it is RENAMED aside first (never deleted) and a fresh fabric config
+ * takes its place. The caller surfaces the sidecar path so the operator can
+ * merge their settings back by hand.
+ */
+export async function fixHookConfigs(projectRoot: string): Promise<HookConfigFixResult> {
+  const rewritten: string[] = [];
+  const preserved: Array<{ config: string; preservedAs: string }> = [];
+
+  for (const client of HOOK_CLIENTS as readonly HookClient[]) {
+    const { clientDir, configFile } = HOOK_REGISTRATIONS[client];
+    if ((await readDirectoryFileNames(join(projectRoot, clientDir))) === null) {
+      continue;
+    }
+    const absPath = join(projectRoot, ...configFile.split("/"));
+
+    let existing: unknown = {};
+    let raw: string | null = null;
+    try {
+      raw = await readFile(absPath, "utf8");
+    } catch {
+      raw = null; // absent — merge into an empty config below
+    }
+    if (raw !== null) {
+      try {
+        existing = JSON.parse(raw) as unknown;
+      } catch {
+        const preservedAs = `${configFile}.broken-${Date.now()}`;
+        await rename(absPath, join(projectRoot, ...preservedAs.split("/")));
+        preserved.push({ config: configFile, preservedAs });
+        existing = {};
+      }
+    }
+
+    const merged = mergeFabricHookRegistrations(existing, client);
+    if (raw !== null && JSON.stringify(merged) === JSON.stringify(existing)) {
+      continue; // already fully wired — nothing to claim as fixed
+    }
+    await atomicWriteJson(absPath, merged);
+    rewritten.push(configFile);
+  }
+
+  return { rewritten, preserved };
 }
 
 export async function inspectHookCacheWritability(
@@ -305,20 +414,39 @@ export function createHooksWiredCheck(t: Translator, inspection: HooksWiredInspe
   if (inspection.status === "ok") {
     return okCheck(t("doctor.check.hooks_wired.name"), t("doctor.check.hooks_wired.ok.wired"));
   }
-  if (inspection.status === "missing-settings") {
+  // All three are errors, not warnings: every one of them means the client is
+  // running with some or all of Fabric's hooks inert, which produces no other
+  // symptom. `hook_config_unparseable` is the one a machine must not resolve on
+  // its own — the file holds user-authored config that a rewrite would destroy,
+  // so --fix preserves it and the operator decides (KT-GLD-0016).
+  if (inspection.status === "config-unparseable") {
     return issueCheck(
       t("doctor.check.hooks_wired.name"),
-      "warn",
-      "warning",
-      "hooks_wired_missing_settings",
-      t("doctor.check.hooks_wired.message.missing_settings"),
+      "error",
+      "fixable_error",
+      "hook_config_unparseable",
+      t("doctor.check.hooks_wired.message.config_unparseable", {
+        configs: inspection.unparseableConfigs.join(", "),
+      }),
+      t("doctor.check.hooks_wired.remediation.config_unparseable"),
+    );
+  }
+  if (inspection.status === "config-missing") {
+    return issueCheck(
+      t("doctor.check.hooks_wired.name"),
+      "error",
+      "fixable_error",
+      "hook_config_missing",
+      t("doctor.check.hooks_wired.message.config_missing", {
+        configs: inspection.missingConfigs.join(", "),
+      }),
       t("doctor.check.hooks_wired.remediation"),
     );
   }
   return issueCheck(
     t("doctor.check.hooks_wired.name"),
-    "warn",
-    "warning",
+    "error",
+    "fixable_error",
     "hooks_wired_incomplete",
     t("doctor.check.hooks_wired.message.incomplete", {
       missing: inspection.missingHooks.join(", "),

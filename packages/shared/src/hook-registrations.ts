@@ -37,6 +37,8 @@ export type HookRegistration = {
 export type HookClientLayout = {
   /** Client config directory, project-root-relative. */
   clientDir: string;
+  /** Hook config file, project-root-relative. */
+  configFile: string;
   /** Key under which the client nests its event → entries map. */
   configRoot: "hooks" | "events";
   registrations: readonly HookRegistration[];
@@ -45,6 +47,7 @@ export type HookClientLayout = {
 export const HOOK_REGISTRATIONS: Record<HookClient, HookClientLayout> = {
   claudeCode: {
     clientDir: ".claude",
+    configFile: ".claude/settings.json",
     configRoot: "hooks",
     registrations: [
       { event: "Stop", hookFile: "fabric-hint.cjs", matcher: "*" },
@@ -60,6 +63,7 @@ export const HOOK_REGISTRATIONS: Record<HookClient, HookClientLayout> = {
   },
   codex: {
     clientDir: ".codex",
+    configFile: ".codex/hooks.json",
     configRoot: "events",
     registrations: [
       { event: "Stop", hookFile: "fabric-hint.cjs", matcher: "*" },
@@ -103,4 +107,85 @@ export function hookConfigArrayPaths(client: HookClient): string[] {
   const { configRoot, registrations } = HOOK_REGISTRATIONS[client];
   const events = [...new Set(registrations.map((r) => r.event))];
   return events.map((event) => `${configRoot}.${event}`);
+}
+
+// Claude Code wraps each entry in a matcher block carrying `hooks: [{ command }]`
+// and always spells the matcher out; Codex puts `command` on the entry itself
+// and omits a "*" matcher. Both shapes are the client's, not ours.
+function hookConfigEntry(client: HookClient, reg: HookRegistration): Record<string, unknown> {
+  const command = hookCommandFor(client, reg.hookFile);
+  if (client === "claudeCode") {
+    return { matcher: reg.matcher, hooks: [{ type: "command", command }] };
+  }
+  return reg.matcher === "*" ? { command } : { matcher: reg.matcher, command };
+}
+
+/**
+ * Fabric's own hook config for `client`, as a fresh object — byte-equivalent to
+ * the JSON `fabric install` ships (asserted by the template-parity test), so
+ * `doctor --fix` can restore a config without a second copy of the shape.
+ */
+export function fabricHookConfigFor(client: HookClient): Record<string, unknown> {
+  const { configRoot, registrations } = HOOK_REGISTRATIONS[client];
+  const byEvent: Record<string, Array<Record<string, unknown>>> = {};
+  for (const reg of registrations) {
+    (byEvent[reg.event] ??= []).push(hookConfigEntry(client, reg));
+  }
+  return { [configRoot]: byEvent };
+}
+
+function commandsOf(entry: unknown): string[] {
+  if (typeof entry !== "object" || entry === null) return [];
+  const record = entry as Record<string, unknown>;
+  const own = typeof record.command === "string" ? [record.command] : [];
+  const nested = Array.isArray(record.hooks)
+    ? record.hooks.flatMap((inner) =>
+        typeof inner === "object" && inner !== null &&
+        typeof (inner as Record<string, unknown>).command === "string"
+          ? [(inner as Record<string, unknown>).command as string]
+          : [],
+      )
+    : [];
+  return [...own, ...nested];
+}
+
+/**
+ * Append Fabric's registrations into an existing (already-parsed) client hook
+ * config, returning a new object. Entries are appended, never replaced, and a
+ * registration whose command is already present anywhere in that event's array
+ * is skipped — so re-running is a no-op and a user's own hooks in the same slot
+ * survive (KT-GLD-0003).
+ *
+ * `existing` is treated as an empty config when it is not a plain object; that
+ * only happens for a config whose top level is an array or a scalar, which is
+ * not a config any client would honour anyway.
+ */
+export function mergeFabricHookRegistrations(
+  existing: unknown,
+  client: HookClient,
+): Record<string, unknown> {
+  const { configRoot, registrations } = HOOK_REGISTRATIONS[client];
+  const base: Record<string, unknown> =
+    typeof existing === "object" && existing !== null && !Array.isArray(existing)
+      ? { ...(existing as Record<string, unknown>) }
+      : {};
+
+  const rootValue = base[configRoot];
+  const events: Record<string, unknown> =
+    typeof rootValue === "object" && rootValue !== null && !Array.isArray(rootValue)
+      ? { ...(rootValue as Record<string, unknown>) }
+      : {};
+
+  for (const reg of registrations) {
+    const current = events[reg.event];
+    const entries = Array.isArray(current) ? [...current] : [];
+    const command = hookCommandFor(client, reg.hookFile);
+    if (!entries.some((entry) => commandsOf(entry).includes(command))) {
+      entries.push(hookConfigEntry(client, reg));
+    }
+    events[reg.event] = entries;
+  }
+
+  base[configRoot] = events;
+  return base;
 }

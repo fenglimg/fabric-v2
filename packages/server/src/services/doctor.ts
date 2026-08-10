@@ -153,6 +153,7 @@ import {
   inspectRetiredReferences,
 } from "./doctor-retired-references-lint.js";
 import {
+  fixHookConfigs,
   inspectHookCacheWritability,
   inspectHooksContentDrift,
   inspectHooksRuntime,
@@ -710,6 +711,26 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
           "project_registry_drift",
         ),
       );
+    }
+  }
+
+  // Client hook configs: absent, unparseable, or missing registrations. All
+  // three leave hooks that exist on disk permanently uninvoked, and no other
+  // surface reports it — the failure mode is silence. One fix arm covers the
+  // three codes because the repair is the same merge; the unparseable case
+  // additionally preserves the old file as a sidecar (see fixHookConfigs).
+  const hookConfigCodes = [
+    "hook_config_unparseable",
+    "hook_config_missing",
+    "hooks_wired_incomplete",
+  ] as const;
+  const hookConfigIssue = hookConfigCodes.find((code) =>
+    before.fixable_errors.some((issue) => issue.code === code),
+  );
+  if (hookConfigIssue !== undefined) {
+    const result = await fixHookConfigs(projectRoot);
+    if (result.rewritten.length > 0) {
+      fixed.push(findIssue(before.fixable_errors, hookConfigIssue));
     }
   }
 

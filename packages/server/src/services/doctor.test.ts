@@ -167,7 +167,7 @@ describe("runDoctorReport", () => {
       // rc.31 BUG-M3/NEW-4: hooks_wired observability (Claude Code hook
       // injection state). Adjacent to onboard / promote-ledger — all three
       // are install/runtime-state advisories. Warning kind when missing.
-      "Claude Code hooks wired",
+      "Client hooks wired",
       // v2.0.0-rc.37 NEW-20: hooks_runtime — shebang + Node.js syntax
       // validity of installed *.cjs hook files (closes the gap below
       // hooks_wired, which only checks settings.json references).

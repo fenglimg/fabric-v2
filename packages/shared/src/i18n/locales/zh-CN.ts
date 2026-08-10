@@ -802,18 +802,21 @@ export const zhCNMessages: Messages = {
     "[advisory] .fabric/.serve.lock 持有 dead PID {pid}（acquired {acquiredAgo}）。运行 `fabric doctor --fix` 移除。",
   "doctor.check.stale_serve_lock.remediation.dead_pid":
     "运行 `fabric doctor --fix` 移除过期的 .fabric/.serve.lock。",
-  // rc.31 BUG-M3/NEW-4: hooks_wired observability.
-  "doctor.check.hooks_wired.name": "Claude Code hooks 注入",
-  "doctor.check.hooks_wired.ok.skipped": "项目未启用 Claude Code（无 .claude/ 目录）；跳过 hooks_wired 检查。",
+  // 装到磁盘但没在客户端配置里注册的 hook 是完全哑的, doctor 之外没有任何地方能发现。
+  "doctor.check.hooks_wired.name": "客户端 hooks 注册",
+  "doctor.check.hooks_wired.ok.skipped": "未找到任何客户端配置目录（.claude/ / .codex/）；跳过 hooks_wired 检查。",
   "doctor.check.hooks_wired.ok.wired":
-    ".claude/settings.json 已注入 Stop:fabric-hint / SessionStart:knowledge-hint-broad / PreToolUse:knowledge-hint-narrow 三个 fabric hook。",
-  "doctor.check.hooks_wired.message.missing_settings":
-    ".claude/ 目录存在但 .claude/settings.json 缺失或无法解析；fabric install 可能从未跑成功，或文件被外部清空。",
+    "每个已安装客户端的 hook 配置都注册了全部 fabric hook。",
+  "doctor.check.hooks_wired.message.config_missing":
+    "客户端目录存在但 hook 配置缺失：{configs}。fabric install 在这里从未跑完，或文件被外部删除 —— 该客户端的所有 fabric hook 均已失效。",
+  "doctor.check.hooks_wired.message.config_unparseable":
+    "hook 配置存在但不是合法 JSON：{configs}。客户端会静默忽略无法解析的配置，因此里面的所有 hook —— fabric 的和你自己的 —— 全部失效。",
   "doctor.check.hooks_wired.message.incomplete":
-    ".claude/settings.json 缺少 fabric hook 注入：{missing}。fabric install 的 dry-run 报告与实际状态不一致（rc.30 audit BUG-M3 / NEW-4）。",
+    "hook 配置缺少 fabric hook 注册：{missing}。这些 hook 已在磁盘上，但永远不会被调用。",
   "doctor.check.hooks_wired.remediation":
-    "运行 `fabric install` 重新注入 hooks（幂等；只补缺失项）。若意外覆盖了 hooks 配置，先备份 .claude/settings.json 再跑。",
-  // v2.0.0-rc.37 NEW-20: hooks_runtime — shebang + Node.js syntax validity
+    "运行 `fabric doctor --fix`（或 `fabric install`）重新注册缺失的 hook；两者都幂等，只补空槽。",
+  "doctor.check.hooks_wired.remediation.config_unparseable":
+    "`fabric doctor --fix` 会把无法解析的文件原样保留在旁边，另写一份含 fabric hooks 的新配置。坏文件里你自己的设置需要手工合并回去 —— 先看一眼保留的副本。",
   // of installed *.cjs hook files (one layer below hooks_wired).
   "doctor.check.hooks_runtime.name": "Hooks 运行时健康",
   "doctor.check.hooks_runtime.ok.skipped": "未发现已安装的 hook 文件（.claude/hooks/ / .codex/hooks/ 都缺）；跳过 hooks_runtime 检查。",
