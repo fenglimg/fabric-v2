@@ -347,14 +347,16 @@ export const HOOK_CONFIG_TARGETS = {
  * each template's top-level keys, otherwise `arrayAppendWithDedupe` in
  * `deepMerge` silently falls back to array-REPLACE on re-install.
  */
+// This list is a SUPERSET of the events Fabric currently registers
+// (`hookConfigArrayPaths` in @fenglimg/fabric-shared derives that set from the
+// registration table). The extra slots are legacy-only: "hooks.UserPromptSubmit"
+// is where pre-v2.1 installs put cite-policy-evict. It is inert on the install
+// side — deepMerge never touches a slot Fabric's own config lacks — but
+// load-bearing on the uninstall side, which only walks the paths it is handed,
+// so dropping it would strand that entry in an upgraded project's settings.json
+// forever. Covered by "prunes a legacy UserPromptSubmit fabric entry" in
+// __tests__/integration/uninstall-skills-and-hooks.test.ts.
 export const HOOK_CONFIG_ARRAY_PATHS = {
-  // F2: "hooks.UserPromptSubmit" MUST be listed — the Claude Code template
-  // ships a UserPromptSubmit cite-policy hook, so without this path deepMerge
-  // array-REPLACEs (instead of append-with-dedupe) on re-install, silently
-  // clobbering any user-defined UserPromptSubmit hook.
-  // lifecycle-refactor W2-T2/T3: PostToolUse + SessionEnd arrays added so
-  // deepMerge append-with-dedupes them on re-install (omitting them would
-  // array-REPLACE, clobbering any user-defined entries in those slots).
   claudeCode: [
     "hooks.Stop",
     "hooks.SessionStart",
@@ -368,21 +370,23 @@ export const HOOK_CONFIG_ARRAY_PATHS = {
 
 /**
  * Per-client `command` field values that identify a fabric-owned hook entry
- * inside a hook-config array. Source of truth shared with `fabric uninstall`
- * (which prunes entries whose `command` matches one of these literals).
- * Values match the strings shipped in templates/hooks/configs/*.json.
+ * inside a hook-config array. Consumed by `fabric uninstall`, which prunes
+ * entries whose `command` matches one of these literals.
+ *
+ * Like {@link HOOK_CONFIG_ARRAY_PATHS} this is deliberately a SUPERSET of what
+ * the current templates register: `knowledgeHintNarrow` (a lib since the
+ * PreToolUse orchestrator merge) and Claude Code's `citePolicyEvict` (moved off
+ * UserPromptSubmit in v2.1) are commands only an OLDER install can have left
+ * behind. Uninstall must still recognize them, so entries are retired from this
+ * map only once no supported upgrade path can still carry them.
  */
 export const FABRIC_HOOK_COMMAND_PATHS = {
   claudeCode: {
     fabricHint: "${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs",
     knowledgeHintBroad: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-broad.cjs",
     knowledgeHintNarrow: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-narrow.cjs",
-    // ux-w2-6: the single PreToolUse orchestrator command (wired in claude-code.json).
     knowledgePretoolUse: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-pretooluse.cjs",
-    // F3: the UserPromptSubmit cite-policy-evict hook must be a known fabric
-    // command so uninstall prunes it (matches the literal in claude-code.json).
     citePolicyEvict: "${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs",
-    // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hooks.
     sessionEndMarker: "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-end-marker.cjs",
     postTooluseMutation: "${CLAUDE_PROJECT_DIR}/.claude/hooks/post-tooluse-mutation.cjs",
   },

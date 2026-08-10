@@ -229,6 +229,53 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
       }
     }
   });
+
+  // Pre-v2.1 installs wired cite-policy-evict under UserPromptSubmit; the
+  // current template does not ship that slot at all. `hooks.UserPromptSubmit`
+  // therefore looks like a dead entry in HOOK_CONFIG_ARRAY_PATHS — removing it
+  // breaks nothing on the install side, because deepMerge never touches a slot
+  // Fabric's own config lacks. It is load-bearing HERE: unmerge only walks the
+  // paths it is handed, so dropping it would strand the legacy entry forever.
+  it("prunes a legacy UserPromptSubmit fabric entry while keeping the user's", async () => {
+    const target = createWerewolfFixtureRoot("itg-uninstall-legacy-ups");
+    tempRoots.push(target);
+
+    const legacyFabricCommand = "${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs";
+    writeFixtureFile(
+      target,
+      ".claude/settings.json",
+      JSON.stringify(
+        {
+          hooks: {
+            UserPromptSubmit: [
+              { matcher: "*", hooks: [{ type: "command", command: legacyFabricCommand }] },
+              {
+                matcher: "*",
+                hooks: [{ type: "command", command: ".claude/hooks/my-ups-hook.cjs" }],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await runInit(target);
+    await runUninstall(target);
+
+    const settingsPath = join(target, ".claude", "settings.json");
+    expect(existsSync(settingsPath)).toBe(true);
+    const restored = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      hooks?: { UserPromptSubmit?: Array<{ hooks?: Array<{ command?: string }> }> };
+    };
+    const commands = (restored.hooks?.UserPromptSubmit ?? [])
+      .flatMap((entry) => entry.hooks ?? [])
+      .map((h) => h.command);
+
+    expect(commands).toContain(".claude/hooks/my-ups-hook.cjs");
+    expect(commands).not.toContain(legacyFabricCommand);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -49,6 +49,9 @@ export { parseCiteLine, normalizeCiteTag } from "./cite-line-parser.js";
 // Only the predicate is public API; the underlying event-type set and
 // keyword list remain internal (avoid semver commitment on SST details).
 export { isHighValueArchiveCandidate } from "./high-value-predicate.js";
+// The hook registration table both `fabric install` (ships the configs) and
+// `fabric doctor` (checks they are still wired) read from.
+export * from "./hook-registrations.js";
 // v2.2 A-INFRA-2 (W1-T1-CJK): CJK-aware tokenizer for BM25 content scoring.
 export { tokenize } from "./text-tokenize.js";
 export type {
