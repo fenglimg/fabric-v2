@@ -117,3 +117,76 @@
 | 3 | 注释去代号:A 类删前缀、B 类把约束说全、C 类保留 | 4,272 行 / 492 文件 | 中。纯注释改动不影响行为,但量大,建议分包提交、每包跑一次全量测试 |
 | 4 | 24 个复制族收成 `it.each` | ~541 行 | 低,且部分反而扩大覆盖面 |
 | 5 | 删同义反复断言 | 个位数 | 无 |
+
+---
+
+## 轴 4 · 测试有没有效果(变异测试实测)
+
+轴 3 用的是"读代码判断"。但轴 3.1 已经证明:按写法判定测试价值行不通。所以这一轮换成唯一可信的判据 ——
+
+> **如果实现是错的,这个测试会不会红?**
+
+做法是**变异测试**:把源码里的某个判断/常量改成一个错误的版本,跑测试。测试红了 = 这个变异被"杀死",说明测试有判别力;测试仍绿 = 变异"存活",说明这段代码没有任何测试在守。
+
+### 4.1 靶场本身要先被验证
+
+两个坑,都实际踩到了:
+
+**坑一 · 只跑本包测试会误报。** 一个包自己的测试瞎,不代表下游包的测试瞎。第一轮只跑 owning package,得到一堆"存活",跨包复跑后其中一半以上其实被别的包杀掉。所以流程必须是两段:
+
+1. 廉价初筛(`vitest related <src>`)—— 产出的只是**候选**,不是结论;
+2. 复核(改源码 → 重建 shared dist → 重新生成 hook lib → 跑全部三个套件)—— 只有这一步的判决算数。
+
+**坑二 · 等价变异会伪装成"没测试"。** 我给 `git-remote-allowlist.ts` 的测试专用旁路设的靶子是把
+`process.env.VITEST !== undefined` 改成 `=== undefined`,报告"存活"。但后半句 `|| VITEST_WORKER_ID !== undefined` 在 vitest 下恒真 —— 这个变异**根本没改变行为**。改成 `return false` 真正关掉旁路后,CLI 套件立刻红:这条旁路是活的、被依赖的。
+
+**教训:靶场必须带对照组。** 我在复核批次里塞了一个已知应该被杀的变异(`theme.ts` 的 `FORCE_COLOR` 判断),它确实被 CLI 杀掉,才能确认这套靶场不是在无脑报"全存活"。
+
+### 4.2 实测结果
+
+初筛杀死率:shared 68/124(55%)、server 147/265(55%)、cli 抽样 65/120(54%)。7 个候选跨包复核后:
+
+| 候选 | 判决 |
+|---|---|
+| `theme.ts` FORCE_COLOR(对照组) | 被 cli 杀 ✔ 靶场可信 |
+| `git-remote-allowlist` VITEST 旁路 | 等价变异,重做后被 cli 杀 |
+| `resolve-input` mount_name 展开守卫 | 被 server 杀 |
+| `high-value-predicate` session_id 过滤 | 被 server + cli 杀 |
+| `store-counters` EEXIST 守卫 | 被 server 杀 |
+| **`plan-context-score-factors` 排序权重** | **存活** |
+| **`doctor-cite-goodhart` 阈值边界** | **存活** |
+
+### 4.3 两个真存活的含义
+
+这两处是**行覆盖率骗人的教科书案例**:
+
+- `plan-context-score-factors.ts`(463 行,`fab_recall` 排序的全部权重)被 260 个测试传递执行、计入覆盖率,3 次常量变异 0 杀。**排序算错了不会有任何测试变红。**
+- `doctor-cite-goodhart.ts` 的 G1/G2/G5 三条启发式被 280 个测试执行,`doctor.test.ts` 里只在一份检查项名单里出现过它的标签字符串 —— 没有一行验证过它的行为。
+
+结论不是"删测试",而是反过来:**"有 260 个测试覆盖"这句话本身没有信息量**。
+
+### 4.4 已执行
+
+**删**`packages/shared/test/property-based/atomic-write.test.ts`(commit `21ccdec2`)
+
+判据是直接做出来的:把 `atomicWriteText` 换成完全非原子的朴素 `writeFile`,这 3 条属性测试**全绿**。原因是它们生成的是**内容字符串**,而原子性不变量根本不依赖内容取值 —— 属性打在了错误的轴上。真正有意思的轴是**失败空间**(rename 失败、父目录缺失、写到一半崩),那些由 `test/atomic-write.test.ts` 的示例测试覆盖(同一个非原子实现被它抓出 5 条失败)。
+
+代价侧:这个文件 3.95s,是 shared 套件最贵的单文件,~600 个生成用例。删后 shared 套件 **4.27s → 1.99s**。
+
+> 对照:同目录的 `payload-guard.test.ts` 属性测试 3/3 全杀 —— 属性测试本身没问题,问题是**打在哪个轴上**。`zod-roundtrip.test.ts` 便宜(不进耗时榜),留着。
+
+**补**`doctor-cite-goodhart.test.ts`(16 测试,28ms,commit `21ccdec2`)—— 全部钉在阈值边界上(恰好等于阈值不触发 / 超过一格触发),因为阈值代码唯一的错法就是差一。**10 条变异 10 杀**(此前 0/3)。
+
+**补**`plan-context-score-factors.test.ts`(22 测试,7ms,commit `b72ac752`)—— 钉的是注释里明写的**校准意图**而非常量数值(content 压过 locality、locality 压过 recency、salience 最细、RRF 下纯结构候选低于任何 content 命中、credibility 按成熟度兜底),这样重新调参只要意图不变就仍绿,调反了才红。**22 条变异 19 杀**(此前 0/3),余下 4 条经推导为等价变异。
+
+写这个测试的过程里还抓到自己写的一条无判别力断言:credibility floor 那条原本断 `draftScore > 0`,但去掉 floor 后 `2^-100` 仍是正浮点数,断言照绿。改成跨成熟度比较后才咬得住。**——同一个陷阱,写新测试时照样会踩。**
+
+### 4.5 测试流程的成本分布(未动,记录)
+
+CLI 套件 226s 测试时间,前 15 个文件占 81%。最贵的是 install/uninstall 类集成测试(每个 test 1–4s,因为真的跑一次安装)。这类**有效果**(install 是产品本体,`cross-client-parity` 钉的是 .claude/.codex 安装面字节一致,只能真装才能验),成本是固有的,不建议动。
+
+真正的候选是**同一次完整安装被 5+ 个文件各自重跑一遍**(`install-skills-and-hooks` / `uninstall-skills-and-hooks` / `install-cli-surface` / `install-diff-mode` / `init-guard`)。共享一次安装产物再分文件断言可能省掉大半,但这是**测试架构改造**,风险高于本轮的删除动作,单独立项。
+
+### 4.6 未行动的候选(初筛 0 杀文件清单)
+
+初筛报告 shared 12 / server 20 / cli 10(43 个抽样中)个文件 0 杀,存于 `/tmp/mut/stage1-*.json`。**没有据此批量动手** —— 4.1 的坑一已经证明初筛会误报一半以上,每一条都要跨包复核才能定性。留作下一批的输入。
