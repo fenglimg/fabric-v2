@@ -61,12 +61,24 @@ Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--ver
 
 ### Optional (not PR hard)
 
+**什么该进这一档:断言的是「结构/契约」还是「措辞/文案」。**
+
+一条断言只要点名了 code-level 标识符 —— MCP 工具名、config key、marker 字面量、
+枚举值、文件路径 —— 它守的就是 prompt 与代码面之间的契约,**留在门禁**:这类断言
+变红意味着 prompt 在教一个不存在的东西。反之,断言引用的是散文 —— 标题、句子、
+章节先后、字节数下限 —— 它量的是 prompt 写得好不好,**移出门禁**:把散文锁进门禁,
+每次改进 prompt 都会假红(单元测试的输出是布尔,eval 的输出是分数;是分数的不进门禁)。
+
+落地方式:同名 `*.wording.test.ts` 兄弟文件 + `describe.runIf(process.env.PROMPT_WORDING === "1")`,
+断言保留不删,只是改成按需跑。
+
 | 命令 / 脚本 | 何时跑 |
 | --- | --- |
 | `scripts/habit-funnel.mjs` | 看真实 dogfood 习惯漏斗是否「活着」 |
 | `scripts/nofake-audit.mjs` | 真实 cite 是否幻觉 id |
 | `scripts/measure-injection.mjs` | 真 corpus 注入/recall payload |
 | `DOGFOOD_BASELINE=1` + recall dogfood baseline | 调排序质量时 |
+| `PROMPT_WORDING=1` + `*.wording.test.ts` | 有意重写 prompt 正文时(措辞/排序/篇幅断言) |
 | `scripts/red-team-safety.mjs` | 安全对抗（注意脚本路径可复现性） |
 | 人工 dogfood 清单 | 里程碑 / 发版前抽检，不当主 CI |
 
