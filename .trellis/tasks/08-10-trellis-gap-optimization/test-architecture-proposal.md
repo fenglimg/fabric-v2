@@ -84,7 +84,7 @@ parity 家族 10 文件 / 1,368 行,存在的唯一理由是同一逻辑有 TS +
 | **T-2 解耦死代码** ✅已完成 | `runInit`/`runScaffoldOnly` 迁到 install-v2 管线;11 个测试文件解钉,3 个测 v1 独有能力的文件删除 | **已解锁 W1:2,049 行删除,CLI 不可达代码归零** |
 | **T-2b 削安装成本** ✅已完成 | 新增 `createInstalledFixtureRoot`:每 worker 真装一次到模板根, 各用例拿字节相同副本(33ms vs 1000ms);33 处真安装转副本 | **壁钟 46.4s → 26.4s**,三次连跑稳定 |
 | **T-3 切 AI/代码线** ✅已收口 | 判据已写进 `docs/TESTING.md`;bootstrap 6 条措辞锁移到 `PROMPT_WORDING=1`。**档 A 归类经复核大幅收缩(§9),档 B 经抽样复核判定不做(§10)** | 门禁不再锁 prompt 散文 |
-| **T-4 提速** | 唯一路径 + 关串行 + fixture 降频 + CI 去重 | 壁钟目标 < 20s |
+| **T-4 提速** ✅已收口 | 唯一路径/关串行/fixture 降频三项在 T-1+T-2b 已达成(壁钟 26.4s);CI 去重 = 删空转的 NO_COLOR 复跑步骤 + 把其依赖的不变量入闸 | 门禁 10 步 → 9 步 |
 | **T-5 消重** | 随 B8 删 parity 家族;撤覆盖率阈值 | -1,368 行 |
 
 ## 7. 已知不确定性(不要当结论用)
@@ -150,5 +150,29 @@ parity 家族 10 文件 / 1,368 行,存在的唯一理由是同一逻辑有 TS +
 ### 结论
 
 **不做「档 B 拆结构 vs 文案」。** 提案估的 10,768 行人工量,真实标的是 63 条断言(5.9%),其中 19 条快照本就是 `vitest -u` 一条命令的成本、且快照 diff 本身是有价值的 review 产物。投入产出不成立。
+
+## 11. T-4 的实际标的(CI 去重)
+
+validate job 13 步逐一核过, **只有 1 步是真冗余**:第 9 步 `NO_COLOR=1 + scoped reskin/i18n 快照`。
+那 4 个文件自身就 stub 了 NO_COLOR(3 个 `vi.stubEnv`,i18n 直接赋 `process.env.NO_COLOR`),
+实测 NO_COLOR 未设 / `NO_COLOR=1` / `FORCE_COLOR=1` 三种环境结果完全一致 —— 它是第 4 步
+覆盖率跑的纯重复。
+
+**删一层保险就要把它依赖的不变量入闸**:`test-strategy-gate` 原来强制 CI *步骤*字符串存在
+(管不住测试文件本身漂移),现改为强制这 4 个文件各自 forces NO_COLOR,并做过反向验证
+(破坏 `vi.stubEnv` → 门禁红且给可操作提示 → 还原 → PASS)。
+
+**判定不拆并行 job。** 本地逐步耗时 build 8.7s / tsc 5.5s / coverage 41s / store-only-e2e 11.9s /
+lint 0.9s / upgrade-e2e 1.4s / test:strategy 0.13s / lint-protected-tokens 0.06s。拆并行要为每个
+job 重付 install+build,对 0.1~12s 的步骤是净亏。
+
+非冗余核实记录:`lint-protected-tokens.ts`(跑真模板)与同名单测(合成输入测校验器函数)
+测的不是一回事;`windows-smoke` 是另一平台;`pnpm -r build` 后再 `tsc --noEmit` 二者不等价
+(tsup --dts ≠ tsc --noEmit,曾三次复发)。
+
+**顺带发现(未处置)**:`pnpm lint` 在本地对 `tree-sitter-javascript` / `web-tree-sitter` 报
+unused-dependency,但 main 上 CI 是绿的 —— 把 `install.ts` 从 git 临时恢复后报告一字不变,
+证实与本轮删码无关,是本地 knip 与 CI 的解析差异。加进 `ignoreDependencies` 会把将来的真
+信号一并屏蔽,故留原样记录在此。
 
 **方法论副产品**:钉子普查第一版只匹配 `from "` 开头的 import 行,漏掉 4 个文件里的 `await import(...)`,导致删完才在 vitest 里炸出来(`tsc --noEmit` 也没拦住)。删文件前的引用普查必须同时覆盖静态与动态两种形态。
