@@ -85,7 +85,7 @@ parity 家族 10 文件 / 1,368 行,存在的唯一理由是同一逻辑有 TS +
 | **T-2b 削安装成本** ✅已完成 | 新增 `createInstalledFixtureRoot`:每 worker 真装一次到模板根, 各用例拿字节相同副本(33ms vs 1000ms);33 处真安装转副本 | **壁钟 46.4s → 26.4s**,三次连跑稳定 |
 | **T-3 切 AI/代码线** ✅已收口 | 判据已写进 `docs/TESTING.md`;bootstrap 6 条措辞锁移到 `PROMPT_WORDING=1`。**档 A 归类经复核大幅收缩(§9),档 B 经抽样复核判定不做(§10)** | 门禁不再锁 prompt 散文 |
 | **T-4 提速** ✅已收口 | 唯一路径/关串行/fixture 降频三项在 T-1+T-2b 已达成(壁钟 26.4s);CI 去重 = 删空转的 NO_COLOR 复跑步骤 + 把其依赖的不变量入闸 | 门禁 10 步 → 9 步 |
-| **T-5 消重** | 随 B8 删 parity 家族;撤覆盖率阈值 | -1,368 行 |
+| **T-5 消重** ✅已收口 | B8 把 3 个手写 .cjs 孪生改为编译生成, 随之删 4 个 parity 文件(-382 行);**撤覆盖率阈值一项经实测否决(§12)** | -382 行 + 一类漂移失效 |
 
 ## 7. 已知不确定性(不要当结论用)
 
@@ -174,5 +174,56 @@ job 重付 install+build,对 0.1~12s 的步骤是净亏。
 unused-dependency,但 main 上 CI 是绿的 —— 把 `install.ts` 从 git 临时恢复后报告一字不变,
 证实与本轮删码无关,是本地 knip 与 CI 的解析差异。加进 `ignoreDependencies` 会把将来的真
 信号一并屏蔽,故留原样记录在此。
+
+## 12. B8 + T-5 的实际标的与两处更正
+
+### 真正的"手写孪生"只有 4 组, 不是 10 个文件
+
+§2.3(d) 把 10 个文件归成 "parity 家族 1,368 行", 前提是"同一逻辑有两份手写实现"。
+逐个核过, 只有 4 组符合这个前提, 其余各有各的正当理由:
+
+| 文件 | 判定 |
+|---|---|
+| `theme-parity` / `cite-line-parser-parity` / `high-value-sst` | **真孪生**, 已随 B8 删(313 行) |
+| `render-backlog-line-parity` | **测试卫生债**, 已删(69 行), 见下 |
+| `cross-client-parity` / `parity-matrix-e2e` | `.claude` vs `.codex` 两个安装目标, 不是两份实现, **留** |
+| `bootstrap-parity` / `locale-parity` / `i18n-protected-tokens` | ZH vs EN 两种语言, **留** |
+| `store-config-reader-parity` | 真重复但**不划算**, 见下 |
+| `ai-client-policy-drift` / `doctor-project-registry-drift` | 根本不是 parity, 归类错误 |
+
+### B8 的做法: 复用已有的生成通道, 不新造机制
+
+`project-context-runtime.cjs` 一直是从 TS 编译生成的(5,001 行)。B8 只是把
+`tsup.hook-runtime.config.ts` 用 env 参数化, 把生成脚本从单 entry 改成 4 条 MANIFEST,
+每个产物打自己的 provenance banner。`hooks-runtime-generated.test.ts` 覆盖全部 4 个
+产物 —— 这个 gate **比 parity 测试更强**: parity 只说"两份实现今天一致",
+它说"仓里这份产物就是当前源码编译出来的", 顺带抓住"改了 TS 忘了重新生成"。
+
+删码前用手工 round-trip 对拍了旧手写版 vs 新生成版(theme 全表+全函数 / cite-line-parser
+19 条语料 / high-value-predicate 560 例, 并核对语料非空转), **0 行为差异** —— 即孪生
+当时确实没漂, 这次是纯重构。新 gate 做过反向验证(手改生成物一字节 → 红且提示可操作)。
+
+### `store-config-reader-parity` 不做, 理由
+
+hook 侧 `store-config-reader.cjs` 与 server `resolveStoreConfig` 确实是两份实现,
+但它们只在"从 store-config.json 读一个带 range 守卫的数字"这一半重合;另一半
+(团队 store root 解析)hook 走 `bindings-snapshot-reader.cjs`, server 走
+`resolveWriteTargetStoreDir`(依赖一串 server 模块, 按 KT-DEC-0070 不能进 hook bundle)。
+抽公共的那一半要动 `config-loader.ts` 的 7 处调用点, 而 parity 测试还得为剩下那一半
+留着 —— 风险与收益不成比例。留作独立议题。
+
+### `render-backlog-line-parity` 的真问题是测试卫生, 不是重复实现
+
+它守的是**另外两个测试文件里手抄的 stub 字面量**。那两处 stub 的注释写着"导入真实现
+会破坏 vi.doMock 隔离" —— 这个理由不成立: `vi.importActual` 就是为绕过 mock registry
+存在的。改成 `vi.importActual` 拿真 `renderBacklogAgeLine`(3 处 stub 全部替换),
+格式漂移在结构上不可能发生, 这个"为守其他测试的 stub 而写的测试"随之删除。
+
+### 更正: "撤覆盖率阈值 70%"(§5.6)经实测否决
+
+该项的前提是"砍冗余测试时阈值会变成阻力"。删完本轮所有测试后实测:
+cli **76.77%**(阈值 70)/ server **86.1%**(阈值 75)/ shared **93.13%**(阈值 85) ——
+三个包都有 7~11 个百分点余量, 阈值**从未被顶到**。方向恰好相反: W1 删的是 2,049 行
+不可达代码, 覆盖率是被推高的。撤掉等于白丢一道"整片删测试"的回归护栏, 故不撤。
 
 **方法论副产品**:钉子普查第一版只匹配 `from "` 开头的 import 行,漏掉 4 个文件里的 `await import(...)`,导致删完才在 vitest 里炸出来(`tsc --noEmit` 也没拦住)。删文件前的引用普查必须同时覆盖静态与动态两种形态。

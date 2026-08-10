@@ -26,19 +26,15 @@ afterEach(() => {
   process.exitCode = originalExitCode;
 });
 
-// Stub matching the real `renderBacklogAgeLine` semantics from
-// packages/server/src/services/doctor-health.ts. Real function is trivial
-// (count === 0 → "  backlog: 0 high-value"; else "  backlog: N high-value,
-// oldest Xd") — we mirror it here so the CLI mock stays byte-parity with the
-// production render path without importing the real one (which would defeat
-// the vi.doMock isolation).
-const renderBacklogAgeLineStub = (m: {
-  count: number;
-  oldest_days: number | null;
-}): string => {
-  if (m.count === 0) return "  backlog: 0 high-value";
-  return `  backlog: ${m.count} high-value, oldest ${m.oldest_days}d`;
-};
+// T-5: this used to be a hand-copied stub of the real `renderBacklogAgeLine`,
+// on the belief that importing the real one "would defeat the vi.doMock
+// isolation". It does not — `vi.importActual` bypasses the mock registry by
+// design, which is exactly what it is for. The copy needed its own guard test
+// (render-backlog-line-parity.test.ts) to catch format drift; using the real
+// function makes drift impossible and retires that test.
+const { renderBacklogAgeLine } = await vi.importActual<{
+  renderBacklogAgeLine: (m: { count: number; oldest_days: number | null }) => string;
+}>("@fenglimg/fabric-server");
 
 function baseServerMock(overrides: Record<string, unknown> = {}) {
   return {
@@ -46,7 +42,7 @@ function baseServerMock(overrides: Record<string, unknown> = {}) {
     runDoctorReport: vi.fn().mockResolvedValue(createReport("ok")),
     runDoctorFix: vi.fn(),
     runDoctorApplyLint: vi.fn(),
-    renderBacklogAgeLine: renderBacklogAgeLineStub,
+    renderBacklogAgeLine,
     ...overrides,
   };
 }
