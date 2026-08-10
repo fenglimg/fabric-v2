@@ -148,8 +148,10 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 |---|---|---|
 | **I1** | **recall-playbook 的 ref 从来没被装过**: SKILL.md 两处指示 agent 打开 `ref/scenarios.md`,install spec 却没设 `includeRefFiles`。根因是该布尔值本身有三份真相(install 侧 / uninstall 侧 / 模板目录),而两侧实现本就优雅处理缺席 → 删标记,文件系统当唯一真源;补双向 producer-consumer round-trip oracle(24 tests,变异实证有判别力) | ✅ **已完成** commit 4585235a |
 | **I2** | **knowledge-hint-narrow 装在入口位却零注册**: 已退化为 pretooluse 的 lib(cite-policy-evict 在 CC 侧同理),却仍装在 `hooks/` 顶层 → 移入 `hooks/lib/`,旧路径进 deprecated 清扫。**不是死文件是分类错位**:顶层位置误导心智模型,且 doctor wired 检查够不着 | W4(中风险,动分发路径) |
-| **I3** | **两个 thin shim skill 的常驻描述税**: `fabric-store`(30L)/`fabric-sync`(28L)是纯意图→命令表+红线,各占一条常驻 description。红线有真价值但可并入一个 skill | ⚠️ **待裁决**(产品面) |
-| **I4** | **DEPRECATED_SKILL_DIRS 只增不减**: 10 条永久清扫,最老来自 rc.35,无退役判据。清扫成本≈0,但把历史包袱永久钉在活代码里 | ⚠️ **待裁决**(零用户阶段可整条清空 / 定退役规则 / 维持) |
+| **I3** | **两个 thin shim skill 的常驻描述税**: `fabric-store`(30L)/`fabric-sync`(28L)是纯意图→命令表+红线 | ❌ **用户裁决:不做** — 合并没必要 |
+| **I4** | **清空历史清扫机制**: install 侧 `DEPRECATED_SKILL_DIRS`(10 条)+ `cleanupDeprecatedSkills()`,以及 uninstall 侧打**同一批目录**的 4 个 legacy sweeper(router/import/audit/connect)——只清一边自相矛盾,一起拆。零用户阶段不背 pre-W3-C 包袱 | ✅ **已完成** commit da51bcf6 |
+
+**I4 拆除后的连带发现**(同族残留,已随批修): 用户可见文案还在指向已折叠的 skill —— `preview.ts` 让用户「用 fabric-connect 建边」(该 skill 早已折进 fabric-review 的 relate 子流程),`plan-context-hint` 的 --help 称被 fabric-import 调用。另修三处严重过期模块 doc(wiring site 指向已退休的 `commands/install.ts`、orchestrator 列 8 步实为 6 步且编号断裂、`SKILL_DESTINATIONS` 头注称「5 skills」实为 6)。**教训**: 删机制时要顺着它的"服务对象"再查一遍文案与注释 —— 代码删干净了,指向死物的字还在。
 
 风险提示: 删文档要区分「复述代码的」与「记录为什么这么做的」——后者(设计意图、被否决的方案)代码里没有,删了就真丢了,应转入 fabric 知识库而非删除。这条边界要在 T2 census 时逐份把关。
 
