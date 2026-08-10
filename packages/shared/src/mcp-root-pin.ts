@@ -2,19 +2,54 @@ import { createHash } from "node:crypto";
 import { mkdir, open, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
+import { atomicWriteJson, atomicWriteText } from "./node/atomic-write.js";
 
-import type { ClientKind, ServerEntry } from "./writer.js";
+// ---------------------------------------------------------------------------
+// The `FABRIC_PROJECT_ROOT` pin an MCP client config may carry for the fabric
+// server entry, and the classification of WHO put it there.
+//
+// Lives in shared because both ends need the same answer:
+//   * `fabric install` (CLI) consults it so a re-install never silently
+//     inherits a stale pin it did not mean to keep;
+//   * `fabric doctor` (server) reports and repairs a legacy installer pin.
+//
+// Why a pin is worth classifying at all: an MCP client spawns the server with
+// an UNCONTROLLED cwd (observed: `/`, or another fabric-installed repo). With
+// no pin the server resolves the root dynamically, which is today's default. An
+// installer-written pin from an older fabric froze whatever root that install
+// ran in — so after the project moves, or when the entry is user-scoped and
+// therefore shared by every repo, the server silently reads and writes the
+// WRONG project. That is the `managed` state, and removing it is the repair.
+//
+// An `explicit` pin (`operator:v1` / `project:v1`) is a human's choice and is
+// never touched. `ambiguous` means we cannot prove we wrote it, so we leave it
+// alone too — a config file is user territory (KT-GLD-0016).
+// ---------------------------------------------------------------------------
 
-export type RootPinState = "managed" | "explicit" | "ambiguous" | "absent";
+export type RootPinState =
+  /** Written by an old fabric installer: marker matches the entry's digest. */
+  | "managed"
+  /** A human's deliberate pin (`operator:v1` / `project:v1`). Never touched. */
+  | "explicit"
+  /** A pin we cannot prove authorship of. Left alone. */
+  | "ambiguous"
+  /** No pin at all — the healthy default, root resolves dynamically. */
+  | "absent";
+
+/** Shape of an MCP server registration, as both JSON and TOML clients store it. */
+export type McpServerEntry = {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+};
 
 export type RootPinInput = {
   configPath?: string;
-  clientKind: ClientKind | string;
+  clientKind: string;
   command?: string;
   args?: string[];
   root?: string;
-  entry?: ServerEntry | null;
+  entry?: McpServerEntry | null;
   raw?: string;
 };
 
@@ -53,7 +88,7 @@ function entryValues(input: RootPinInput): { command?: string; args?: string[]; 
   };
 }
 
-function parseToml(raw: string): { entry: ServerEntry | null; marker?: string; root?: string } {
+function parseToml(raw: string): { entry: McpServerEntry | null; marker?: string; root?: string } {
   const match = raw.match(/(?:^|\n)\[mcp_servers\.fabric\]\n([\s\S]*?)(?=\n\[[^\n]+\]|$)/);
   if (!match) return { entry: null };
   const body = match[1];
@@ -69,7 +104,7 @@ function parseToml(raw: string): { entry: ServerEntry | null; marker?: string; r
 function extract(input: RootPinInput): RootPinInput {
   if (input.entry || input.command || input.root || input.raw === undefined) return input;
   if (input.raw.trimStart().startsWith("{")) {
-    const parsed = JSON.parse(input.raw) as { mcpServers?: Record<string, ServerEntry> };
+    const parsed = JSON.parse(input.raw) as { mcpServers?: Record<string, McpServerEntry> };
     return { ...input, entry: parsed.mcpServers?.fabric ?? null };
   }
   const parsed = parseToml(input.raw);
@@ -93,7 +128,7 @@ export function inspectManagedRootPin(source: RootPinInput): RootPinInspection {
 }
 
 function removeJson(raw: string): string {
-  const parsed = JSON.parse(raw) as { mcpServers?: Record<string, ServerEntry> };
+  const parsed = JSON.parse(raw) as { mcpServers?: Record<string, McpServerEntry> };
   const entry = parsed.mcpServers?.fabric;
   if (entry?.env) {
     delete entry.env.FABRIC_PROJECT_ROOT;

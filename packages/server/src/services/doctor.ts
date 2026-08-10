@@ -160,6 +160,7 @@ import {
   inspectHooksWired,
 } from "./doctor-hooks-lints.js";
 import { inspectInstallCopyDrift } from "./doctor-install-drift.js";
+import { fixMcpRootPins, inspectMcpRootPins } from "./doctor-mcp-root-pin.js";
 import {
   inspectBootstrapAnchor,
   inspectL1BootstrapSnapshotDrift,
@@ -498,12 +499,14 @@ export async function runDoctorReport(
   // way to catch BOTH clients going equally stale (hooks_content_drift compares
   // the two clients to each other, so a uniformly old install looks healthy
   // there). Detection-only — see doctor-install-drift.ts for why.
-  const [hooksWired, hooksRuntime, hooksContentDrift, installCopyDrift] = await Promise.all([
-    inspectHooksWired(projectRoot),
-    inspectHooksRuntime(projectRoot),
-    inspectHooksContentDrift(projectRoot),
-    inspectInstallCopyDrift(projectRoot),
-  ]);
+  const [hooksWired, hooksRuntime, hooksContentDrift, installCopyDrift, mcpRootPin] =
+    await Promise.all([
+      inspectHooksWired(projectRoot),
+      inspectHooksRuntime(projectRoot),
+      inspectHooksContentDrift(projectRoot),
+      inspectInstallCopyDrift(projectRoot),
+      inspectMcpRootPins(projectRoot),
+    ]);
   // v2.0.0-rc.37 NEW-20: hooks_runtime closes the gap below hooks_wired —
   // shebang + Node.js syntax validity of each installed .cjs hook file.
   // v2.0.0-rc.37 NEW-27: hooks_content_drift — cross-client sha256 parity
@@ -581,6 +584,7 @@ export async function runDoctorReport(
     hooksRuntime,
     hooksContentDrift,
     installCopyDrift,
+    mcpRootPin,
   });
 
 // Phase 3 — aggregate issues + summary + health.
@@ -739,6 +743,30 @@ export async function runDoctorFix(target: string): Promise<DoctorFixReport> {
     const result = await fixHookConfigs(projectRoot);
     if (result.rewritten.length > 0) {
       fixed.push(findIssue(before.fixable_errors, hookConfigIssue));
+    }
+  }
+
+  // W2 #9: installer-written FABRIC_PROJECT_ROOT pins in MCP client configs.
+  // The code lands in fixable_errors when the pin names another project and in
+  // warnings when it still names this one (see doctor-mcp-root-pin.ts for why
+  // the severity splits), so both buckets are scanned — the repair is the same
+  // either way, and the latent case is exactly the one a user will never fix by
+  // hand. Re-inspects on-disk state rather than trusting `before`, because a
+  // preceding fix arm may have rewritten a config.
+  if (
+    before.fixable_errors.some((issue) => issue.code === "mcp_root_pin_managed") ||
+    before.warnings.some((issue) => issue.code === "mcp_root_pin_managed")
+  ) {
+    const result = await fixMcpRootPins(await inspectMcpRootPins(projectRoot));
+    if (result.repaired.length > 0) {
+      fixed.push(
+        findIssue([...before.fixable_errors, ...before.warnings], "mcp_root_pin_managed"),
+      );
+    }
+    if (result.failed.length > 0) {
+      failed.push(
+        findIssue([...before.fixable_errors, ...before.warnings], "mcp_root_pin_managed"),
+      );
     }
   }
 

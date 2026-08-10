@@ -879,6 +879,17 @@ export const enMessages: Messages = {
     "{count} of {tracked} installed files no longer match what fabric {version} wrote; first: {first_path} ({first_kind}). Both clients can drift together, so cross-client parity does not catch this.",
   "doctor.check.install_copy_drift.remediation":
     "Run `fabric install` to restore the installed copies from the canonical templates (idempotent). If you edited an installed file on purpose, move the change into packages/cli/templates/ instead — install overwrites in-place edits.",
+  // W2 #9: mcp_root_pin_managed — a FABRIC_PROJECT_ROOT pin an OLD installer
+  // wrote. Fixable here (removing an env key needs no CLI templates).
+  "doctor.check.mcp_root_pin.name": "MCP project-root pin",
+  "doctor.check.mcp_root_pin.ok.clean":
+    "No MCP client config carries an installer-written FABRIC_PROJECT_ROOT pin; the server resolves the project root dynamically.",
+  "doctor.check.mcp_root_pin.message.stale":
+    "{count} MCP client config(s) carry a FABRIC_PROJECT_ROOT pin written by an older fabric installer, and {config} pins {pinned} — not this project. The MCP server will read and write that other project instead, silently.",
+  "doctor.check.mcp_root_pin.message.aligned":
+    "{count} MCP client config(s) carry a FABRIC_PROJECT_ROOT pin written by an older fabric installer ({config} pins {pinned}). It happens to name this project today, but it is frozen: move the checkout, or open another repo with a user-scoped pin, and the server silently serves the wrong project.",
+  "doctor.check.mcp_root_pin.remediation":
+    "Run `fabric doctor --fix` to remove the installer-written pin (a verified backup of each config is taken first) so the root resolves dynamically again. A pin you set yourself — marked `operator:v1` or `project:v1` — is never touched.",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "Promote ledger invariant",
   "doctor.check.promote_ledger_invariant.ok":

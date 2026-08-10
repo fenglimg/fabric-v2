@@ -850,6 +850,17 @@ export const zhCNMessages: Messages = {
     "{tracked} 个安装文件中有 {count} 个已不再等于 fabric {version} 写下的内容;首个:{first_path}({first_kind})。两端 client 可能一起变旧,所以跨端一致性检查抓不到这类漂移。",
   "doctor.check.install_copy_drift.remediation":
     "运行 `fabric install` 从 canonical 模板恢复安装副本(幂等)。若你是有意改了某个安装后的文件,请把改动移进 packages/cli/templates/ —— install 会覆盖就地编辑。",
+  // W2 #9: mcp_root_pin_managed —— 老版本 installer 写下的 FABRIC_PROJECT_ROOT 钉。
+  // 这条可修:删一个 env 键不需要 CLI 模板,server 够得到。
+  "doctor.check.mcp_root_pin.name": "MCP 项目根钉",
+  "doctor.check.mcp_root_pin.ok.clean":
+    "没有任何 MCP client 配置带着 installer 写下的 FABRIC_PROJECT_ROOT 钉;server 会动态解析项目根。",
+  "doctor.check.mcp_root_pin.message.stale":
+    "{count} 个 MCP client 配置带着老版本 fabric installer 写下的 FABRIC_PROJECT_ROOT 钉,其中 {config} 钉的是 {pinned} —— 不是本项目。MCP server 会静默地去读写那个项目。",
+  "doctor.check.mcp_root_pin.message.aligned":
+    "{count} 个 MCP client 配置带着老版本 fabric installer 写下的 FABRIC_PROJECT_ROOT 钉({config} 钉的是 {pinned})。它今天恰好指向本项目,但这个值是冻结的:一旦目录搬家,或用户级配置里的钉被别的 repo 撞上,server 就会静默服务错的项目。",
+  "doctor.check.mcp_root_pin.remediation":
+    "跑 `fabric doctor --fix` 删掉 installer 写的钉(先对每个配置做带校验的备份),让项目根重新动态解析。你自己设的钉(标记为 `operator:v1` / `project:v1`)不会被动。",
   // rc.31 BUG-G2/G5: promote-ledger invariant check.
   "doctor.check.promote_ledger_invariant.name": "晋升账本不变量",
   "doctor.check.promote_ledger_invariant.ok":

@@ -53,6 +53,7 @@ export { isHighValueArchiveCandidate } from "./high-value-predicate.js";
 // `fabric doctor` (checks they are still wired) read from.
 export * from "./hook-registrations.js";
 export * from "./install-manifest.js";
+export * from "./mcp-root-pin.js";
 // v2.2 A-INFRA-2 (W1-T1-CJK): CJK-aware tokenizer for BM25 content scoring.
 export { tokenize } from "./text-tokenize.js";
 export type {

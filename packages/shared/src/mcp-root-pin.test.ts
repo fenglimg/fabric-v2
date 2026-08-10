@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { digestFor, inspectManagedRootPin, repairManagedRootPin } from "../src/config/root-pin-migration.js";
+import { digestFor, inspectManagedRootPin, repairManagedRootPin } from "./mcp-root-pin.js";
 
 const root = "/tmp/project";
 const command = "/usr/bin/node";

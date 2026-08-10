@@ -66,6 +66,10 @@ import {
   type InstallDriftInspection,
 } from "./doctor-install-drift.js";
 import {
+  createMcpRootPinCheck,
+  type McpRootPinInspection,
+} from "./doctor-mcp-root-pin.js";
+import {
   createRetiredReferenceCheck,
 } from "./doctor-retired-references-lint.js";
 import {
@@ -201,6 +205,7 @@ export type DoctorCheckBuildContext = {
   hooksRuntime: Awaited<ReturnType<typeof inspectHooksRuntime>>;
   hooksContentDrift: Awaited<ReturnType<typeof inspectHooksContentDrift>>;
   installCopyDrift: InstallDriftInspection;
+  mcpRootPin: McpRootPinInspection;
 };
 
 export function materializeDoctorChecks(
@@ -257,6 +262,7 @@ export const DOCTOR_CHECK_BUILDERS: ReadonlyArray<
   (ctx) => createHooksRuntimeCheck(ctx.t, ctx.hooksRuntime),
   (ctx) => createHooksContentDriftCheck(ctx.t, ctx.hooksContentDrift),
   (ctx) => createInstallCopyDriftCheck(ctx.t, ctx.installCopyDrift),
+  (ctx) => createMcpRootPinCheck(ctx.t, ctx.mcpRootPin),
   (ctx) => createGlobalCliVersionCheck(ctx.t, ctx.globalCliVersion),
   (ctx) => createKnowledgeSummaryOpaqueCheck(
       ctx.t,
