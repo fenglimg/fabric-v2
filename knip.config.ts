@@ -8,6 +8,10 @@ const config: KnipConfig = {
     // knip --strict otherwise flags artifacts like discoveries/*/_generate.cjs
     // as unused files (W4-10 / ISS-019).
     '.workflow/**',
+    // Trellis task scratch (.trellis/tasks/*/research/*.mjs one-off analysis
+    // scripts, workflow scripts). Same class as .workflow/** above: run by hand
+    // during a task, never imported by shipped TS sources.
+    '.trellis/**',
     // Dogfooded Fabric Stop-hook scripts installed by `fabric install` into this
     // repo's own .claude / .codex client configs. They are runtime hooks
     // invoked externally by Claude Code / Codex CLI — never imported by TS

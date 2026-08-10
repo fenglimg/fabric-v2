@@ -49,8 +49,13 @@
 6. `pnpm test:store-only-e2e`
 7. `pnpm test:upgrade-e2e`
 8. `node --experimental-strip-types scripts/lint-protected-tokens.ts`
-9. `NO_COLOR=1` + scoped CLI reskin/i18n snapshot tests (not full CLI suite)
-10. `node scripts/perf-benchmark.mjs`
+9. `node scripts/perf-benchmark.mjs`
+
+> **T-4:曾经的第 9 步「`NO_COLOR=1` + scoped reskin/i18n 快照」已删。** 那 4 个快照文件
+> 自身就 stub 了 `NO_COLOR`(`vi.stubEnv` / 直接赋值),实测在 `NO_COLOR` 未设与
+> `FORCE_COLOR=1` 两种环境下结果完全一致 —— 该步是第 4 步覆盖率跑的纯重复。
+> 删除依赖「文件自身 stub」这一不变量,该不变量现由 `test:strategy` 强制:任一文件
+> 停止 stub `NO_COLOR`,门禁直接红。
 
 Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--version`，不替代 Linux 全量。
 
@@ -115,7 +120,7 @@ Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--ver
 | --- | --- |
 | 纯 shared 契约 | `pnpm --filter @fenglimg/fabric-shared test` |
 | server / MCP | `pnpm --filter @fenglimg/fabric-server test` |
-| CLI / hook 文案 | `NO_COLOR=1` + scoped reskin/i18n snapshot tests |
+| CLI / hook 文案 | `pnpm --filter @fenglimg/fabric-cli test`(reskin/i18n 快照文件自身 stub `NO_COLOR`,无需外部 env) |
 | store 旅程 / install | `pnpm -r build && pnpm test:store-only-e2e`（升级路径再加 `test:upgrade-e2e`） |
 | 只改本文件或文档命令名 | `pnpm test:strategy` |
 
