@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => {
   return {
     ok,
     okList,
-    cleanupDeprecatedSkills: vi.fn(() => okList("skill-deprecated-cleanup")),
     installFabricArchiveSkill: vi.fn(() =>
       Promise.resolve([
         {
@@ -44,7 +43,6 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("../src/install/skills-and-hooks.js", () => ({
-  cleanupDeprecatedSkills: mocks.cleanupDeprecatedSkills,
   installFabricArchiveSkill: mocks.installFabricArchiveSkill,
   installFabricReviewSkill: mocks.installFabricReviewSkill,
   installFabricSyncSkill: mocks.installFabricSyncSkill,

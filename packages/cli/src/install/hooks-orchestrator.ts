@@ -52,35 +52,29 @@ export type InstallHooksResult = {
 };
 
 /**
- * v2/rc.2+rc.3+rc.4+rc.5 hook installer. Re-installable from `fabric install`
- * (and was historically also `fabric hooks install` until rc.15 deleted the
- * top-level command). Performs the full archive+review+import-feature install
- * in sequence (each idempotent):
- *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
- *   2. Copy templates/skills/fabric-review/SKILL.md into .claude/skills/ + .codex/skills/  (rc.3)
- *   3. Copy templates/skills/fabric-import/SKILL.md into .claude/skills/ + .codex/skills/  (rc.4)
- *   4. Copy templates/hooks/fabric-hint.cjs into .claude/hooks/ + .codex/hooks/
- *      (rc.5 TASK-010: renamed from archive-hint.cjs)
- *   5. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
- *      (hooks.Stop[] array-append-with-dedupe — preserves user entries)
- *   6. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
- *      (events.Stop[] array-append-with-dedupe)
- *   7. Append fabric-archive, fabric-review AND fabric-import Skill
- *      pointers to CLAUDE.md/AGENTS.md when those files
+ * Hook + skill installer, re-invocable from `fabric install`. Performs the full
+ * install in sequence (each step idempotent):
+ *   1. Copy every templates/skills/<slug>/SKILL.md (+ its ref/*.md companions)
+ *      into .claude/skills/ + .codex/skills/
+ *   2. Copy the hook scripts and hook libs into .claude/hooks/ + .codex/hooks/
+ *   3. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
+ *      (per-event array-append-with-dedupe — preserves user entries)
+ *   4. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
+ *      (same append semantics under events.*)
+ *   5. Append the Skill pointers to CLAUDE.md/AGENTS.md when those files
  *      already exist (does not create them; each pointer is dedup-checked
  *      independently).
- *   8. Validate that every installed client hook config resolves to the
- *      fabric-hint.cjs script on disk — guards against template / install
- *      drift (e.g. partial copy, manual edit of one config file).
+ *   6. Validate that every installed client hook config resolves to a hook
+ *      script that exists on disk — guards against template / install drift
+ *      (e.g. partial copy, manual edit of one config file).
  *
  * Returns the union of paths written, skipped, and any errors. Best-effort:
  * a single client's failure (missing directory, unreadable settings.json)
  * surfaces in `errors` but does not throw — the other client install still
  * runs.
  *
- * Why all 8 steps (not just hooks): rc.2 wires the Skill, hook script, and
- * config-merge as one feature. Installing only the hook script would leave
- * the Stop hook firing without a Skill to invoke.
+ * Why skills AND hooks in one step: they are one feature. Installing the hook
+ * script alone would leave the Stop hook firing with no Skill to invoke.
  */
 export async function installHooks(
   target: string,

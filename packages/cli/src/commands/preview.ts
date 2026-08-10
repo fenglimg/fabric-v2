@@ -395,7 +395,7 @@ function renderGraphView(): string {
   }
   function showOrphans(){
     var html='<span class="close" id="pclose">✕</span><h2>未关联条目 '+orphans.length+' 条</h2>';
-    html+='<div class="meta">这些条目还没有 related 关联边 — 用 fabric-connect 建边后会进入图中。</div>';
+    html+='<div class="meta">这些条目还没有 related 关联边 — 用 fabric-review 的 relate 子流程建边后会进入图中。</div>';
     html+=orphans.map(function(n){
       return '<a class="row" href="/?entry='+encodeURIComponent(n.id)+'">'+esc(truncate14(n.title))+'<span class="m">'+esc(n.local)+' · '+esc(n.store)+'</span></a>';
     }).join('');

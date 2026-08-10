@@ -19,22 +19,25 @@ import {
 } from "./write-bootstrap-snapshot.js";
 
 /**
- * Install helpers for the v2 fabric-archive / fabric-review / fabric-import
- * Skills + the cross-client fabric-hint Stop hook (renamed from archive-hint
- * in rc.5 TASK-010). Each helper is idempotent — re-running `fabric install` (or
- * `fabric hooks install`) after the first successful run produces no diff.
+ * Install helpers for every artifact `fabric install` writes into a project:
+ * the 6 Skills, their `ref/*.md` companions, the shared skill lib, the hook
+ * scripts + hook libs, and each client's hook config. Each helper is
+ * idempotent — re-running `fabric install` after a successful run produces no
+ * diff.
  *
- * Wiring sites:
- *   - packages/cli/src/commands/install.ts  bootstrap stage (skill + hook + pointer)
- *   - packages/cli/src/commands/hooks.ts hooks command (re-install only)
+ * Wiring site: `HooksStage` (src/install/pipeline/hooks.stage.ts), which is the
+ * only caller. `fabric uninstall` consumes the same `*_DESTINATIONS` constants
+ * from here so the two directions cannot drift.
  *
- * Templates resolved:
- *   - packages/cli/templates/skills/fabric-archive/SKILL.md          (TASK-002)
- *   - packages/cli/templates/skills/fabric-review/SKILL.md           (TASK-006)
- *   - packages/cli/templates/skills/fabric-import/SKILL.md           (rc.4 TASK-005)
- *   - packages/cli/templates/hooks/fabric-hint.cjs                   (rc.5 TASK-010)
- *   - packages/cli/templates/hooks/configs/claude-code.json          (TASK-004)
- *   - packages/cli/templates/hooks/configs/codex-hooks.json          (TASK-004)
+ * Templates all resolve under packages/cli/templates/:
+ *   - skills/<slug>/SKILL.md + skills/<slug>/ref/*.md  (slugs in SKILL_DESTINATIONS)
+ *   - skills/lib/*.md                                  (SKILL_LIB_DESTINATIONS)
+ *   - hooks/*.cjs + hooks/lib/*.cjs                    (HOOK_SCRIPT/LIB_DESTINATIONS)
+ *   - hooks/configs/{claude-code,codex-hooks}.json     (HOOK_CONFIG_TARGETS)
+ *
+ * The shipped hook configs are pinned byte-for-byte against
+ * `HOOK_REGISTRATIONS` (packages/shared) by a template-parity test, so a hook
+ * added to one side cannot go unchecked by doctor on the other.
  */
 
 // rc.14 TASK-002: diff-mode classification.
@@ -130,12 +133,15 @@ const CODEX_HOOK_CONFIG_TEMPLATE_REL = "hooks/configs/codex-hooks.json";
  * Client coverage: Skills are only meaningful for Claude Code and Codex CLI
  * (the two clients that surface a Skills directory).
  */
-// W3-C (skill collapse): terminal skill set = 2 real leaf (archive/review) +
-// 2 thin shim (store/sync) + 1 protocol playbook + 0 router. The fabric router + fabric-import /
-// fabric-audit / fabric-connect were folded — import→archive `source` mode,
-// audit→review `retire` sub-flow, connect→review `relate` sub-flow — so the AI
-// chooses between 5 skills (was 4 before S2 recall-playbook). The removed installed dirs are swept by
-// DEPRECATED_SKILL_DIRS below on the next `fabric install`.
+// Terminal skill set = 2 real leaf (archive/review) + 2 thin shim (store/sync)
+// + 1 protocol playbook (recall-playbook) + 1 config checkup = 6, and 0 router.
+// The W3-C collapse folded the fabric router and three leaves into these:
+// import→archive `source` mode, audit→review `retire`, connect→review `relate`.
+//
+// This list is the WHOLE set install writes. It carries no residue-sweeping for
+// the folded skills: the sweep of their installed directories was retired once
+// the project confirmed it has no users predating the collapse, so a path that
+// is not here is a path fabric simply does not manage.
 export const SKILL_DESTINATIONS = {
   fabricArchive: [
     ".claude/skills/fabric-archive/SKILL.md",
@@ -214,30 +220,6 @@ const FABRIC_SKILL_INSTALL_SPECS = {
     step: "skill-config",
   },
 } as const satisfies Record<keyof typeof SKILL_DESTINATIONS, FabricSkillInstallSpec>;
-
-// rc.35 TASK-03 (P2-6): legacy Skill directories that `fabric install` must
-// remove. The template directory was already deleted, but rc.30-and-earlier
-// installs still carry the residual copy in `.codex/skills/` and
-// `.claude/skills/`. Listed as full directories (not just SKILL.md) because
-// the skill ships supporting files; rm -rf the whole subtree is the only
-// safe cleanup. Removal is best-effort and runs before the modern skills
-// are installed so users see the deprecation as a single install side-effect.
-export const DEPRECATED_SKILL_DIRS = [
-  ".claude/skills/fabric-init",
-  ".codex/skills/fabric-init",
-  // W3-C (skill collapse): the router + 3 folded leaves are retired. import→
-  // archive source mode, audit→review retire, connect→review relate. Sweep the
-  // residual installed copies on the next `fabric install`.
-  ".claude/skills/fabric",
-  ".codex/skills/fabric",
-  ".claude/skills/fabric-import",
-  ".codex/skills/fabric-import",
-  ".claude/skills/fabric-audit",
-  ".codex/skills/fabric-audit",
-  ".claude/skills/fabric-connect",
-  ".codex/skills/fabric-connect",
-] as const;
-
 
 /**
  * Project-root-relative destination paths for the two cross-client hook
@@ -601,47 +583,6 @@ export async function installFabricConfigSkill(
   _options: InstallOptions = {},
 ): Promise<InstallStepResult[]> {
   return installFabricSkill(projectRoot, FABRIC_SKILL_INSTALL_SPECS.fabricConfig);
-}
-
-/**
- * v2.0.0-rc.35 TASK-03 (P2-6): remove deprecated skill directories left over
- * from rc.30-and-earlier installs. Idempotent: absent paths become `skipped /
- * absent` rows; present paths are removed via `rm -rf` and recorded as
- * `written / removed-deprecated`. Failures are surfaced as `error` rows but
- * never abort `fabric install` (caller wraps in runBestEffort).
- *
- * Must run BEFORE the modern installFabric*Skill calls so a user upgrading
- * from rc.30 sees the deprecated removal and the modern install as a single
- * coherent diff in stdout.
- */
-export async function cleanupDeprecatedSkills(
-  projectRoot: string,
-): Promise<InstallStepResult[]> {
-  const results: InstallStepResult[] = [];
-  for (const rel of DEPRECATED_SKILL_DIRS) {
-    const target = join(projectRoot, rel);
-    if (!existsSync(target)) {
-      results.push({ step: "skill-deprecated-cleanup", path: target, status: "skipped", message: "absent" });
-      continue;
-    }
-    try {
-      await rm(target, { recursive: true, force: true });
-      results.push({
-        step: "skill-deprecated-cleanup",
-        path: target,
-        status: "written",
-        message: "removed-deprecated",
-      });
-    } catch (error: unknown) {
-      results.push({
-        step: "skill-deprecated-cleanup",
-        path: target,
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-  return results;
 }
 
 /**

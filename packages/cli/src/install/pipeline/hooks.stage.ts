@@ -2,7 +2,6 @@ import type { Stage, InstallContext, StageResult } from "./types.js";
 import { stageFailed, stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 import { installHooks, validateHookPaths } from "../hooks-orchestrator.js";
 import {
-  cleanupDeprecatedSkills,
   installFabricArchiveSkill,
   installFabricReviewSkill,
   installFabricSyncSkill,
@@ -36,14 +35,13 @@ import { paint } from "../../colors.js";
  * Hooks stage: installs hooks and skills across all clients.
  *
  * Responsibilities:
- * 1. Clean up deprecated skills
- * 2. Install all Fabric skills (archive, review, import, sync, store, audit, connect)
- * 3. Install shared skill library
- * 4. Install hook scripts (fabric-hint, knowledge-hint-broad/narrow, cite-policy-evict, etc.)
- * 5. Install hook libs
- * 6. Merge hook configs for each client
- * 7. Write bootstrap snapshots and propagation
- * 8. Validate hook paths exist
+ * 1. Install all 6 Fabric skills (archive, review, sync, store, recall-playbook, config)
+ * 2. Install shared skill library
+ * 3. Install hook scripts (fabric-hint, knowledge-hint-broad/narrow, cite-policy-evict, etc.)
+ * 4. Install hook libs
+ * 5. Merge hook configs for each client
+ * 6. Write bootstrap snapshots and propagation
+ * 7. Validate hook paths exist
  *
  * This stage can be skipped via --skipHooks.
  */
@@ -62,10 +60,8 @@ export class HooksStage implements Stage {
       const target = context.target;
       const installResults: InstallStepResult[] = [];
 
-      // Clean up deprecated skills
-      installResults.push(...await this.runBestEffort("skill-deprecated-cleanup", () => cleanupDeprecatedSkills(target)));
-
-      // W3-C + S2: 5-skill terminal set (0 router) — archive/review + sync/store + recall-playbook.
+      // 6-skill terminal set (0 router) — archive/review + sync/store +
+      // recall-playbook + config.
       installResults.push(...await this.runBestEffort("skill-install", () => installFabricArchiveSkill(target)));
       installResults.push(...await this.runBestEffort("skill-review-install", () => installFabricReviewSkill(target)));
       installResults.push(...await this.runBestEffort("skill-sync-install", () => installFabricSyncSkill(target)));

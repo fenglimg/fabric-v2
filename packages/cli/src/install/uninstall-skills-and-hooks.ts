@@ -53,21 +53,6 @@ export type UninstallOptions = Record<string, never>;
 // -----------------------------------------------------------------------
 
 /**
- * W3-C legacy cleanup: the fabric/ router was retired (0-router terminal set).
- * Kept so `fabric uninstall` still sweeps the residual dir from pre-W3-C
- * installs — paths are inlined since the destination key no longer exists.
- */
-export async function uninstallFabricRouterSkill(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeSkill(
-    "skill-router",
-    [".claude/skills/fabric/SKILL.md", ".codex/skills/fabric/SKILL.md"],
-    projectRoot,
-  );
-}
-
-/**
  * Inverse of `installFabricArchiveSkill`. Removes each SKILL.md at
  * `SKILL_DESTINATIONS.fabricArchive`, then attempts to remove the parent
  * `fabric-archive/` directory if it is empty.
@@ -87,20 +72,6 @@ export async function uninstallFabricReviewSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
   return removeSkill("skill-review", SKILL_DESTINATIONS.fabricReview, projectRoot);
-}
-
-/**
- * W3-C legacy cleanup: fabric-import folded into archive `source` mode. Kept so
- * uninstall sweeps the residual dir from pre-W3-C installs.
- */
-export async function uninstallFabricImportSkill(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeSkill(
-    "skill-import",
-    [".claude/skills/fabric-import/SKILL.md", ".codex/skills/fabric-import/SKILL.md"],
-    projectRoot,
-  );
 }
 
 /**
@@ -142,34 +113,6 @@ export async function uninstallFabricConfigSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
   return removeSkill("skill-config", SKILL_DESTINATIONS.fabricConfig, projectRoot);
-}
-
-/**
- * W3-C legacy cleanup: fabric-audit folded into review `retire` sub-flow. Kept
- * so uninstall sweeps the residual dir from pre-W3-C installs.
- */
-export async function uninstallFabricAuditSkill(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeSkill(
-    "skill-audit",
-    [".claude/skills/fabric-audit/SKILL.md", ".codex/skills/fabric-audit/SKILL.md"],
-    projectRoot,
-  );
-}
-
-/**
- * W3-C legacy cleanup: fabric-connect folded into review `relate` sub-flow. Kept
- * so uninstall sweeps the residual dir from pre-W3-C installs.
- */
-export async function uninstallFabricConnectSkill(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeSkill(
-    "skill-connect",
-    [".claude/skills/fabric-connect/SKILL.md", ".codex/skills/fabric-connect/SKILL.md"],
-    projectRoot,
-  );
 }
 
 // Ref pruning is unconditional, mirroring the install side. A skill that ships
@@ -656,7 +599,7 @@ export async function deleteFabricAgentsSnapshot(
  *   2. Hook-config un-merge (codex → claude — reverse of install)
  *   3. Hook-lib removal (lib/*.cjs across both client hook dirs — rc.16 TASK-004)
  *   4. Hook-script removal (knowledge-narrow → knowledge-broad → fabric-hint)
- *   5. Skill removal (fabric-import → fabric-review → fabric-archive)
+ *   5. Skill removal (exact reverse of install order — see the fan-out below)
  *
  * Each helper invocation is try/catch-wrapped: a thrown error becomes a
  * `{ status: 'error', message }` entry in the returned results array. The
@@ -727,17 +670,10 @@ export async function uninstallBootstrapStage(
     removeSharedSkillLib(projectRoot),
   );
 
-  // 5. Skill files (reverse of install order: connect → audit → store → sync → import → review → archive)
-  await runAndCollect(results, "skill-connect", projectRoot, () =>
-    uninstallFabricConnectSkill(projectRoot),
-  );
-  await runAndCollect(results, "skill-audit", projectRoot, () =>
-    uninstallFabricAuditSkill(projectRoot),
-  );
-  // W4 uninstall-symmetry: the fabric-store skill is installed by the hooks
-  // stage (installFabricStoreSkill) but was never swept on uninstall — surfaced
-  // by the W4 validate stage as a residual artifact. Install order is sync →
-  // store → recall-playbook, so uninstall removes playbook, then store, then sync.
+  // 5. Skill files, exact reverse of install order: config → recall-playbook →
+  // store → sync → review → archive. Each installed skill has one remover here
+  // and nothing else does — a skill missing from this list survives uninstall
+  // (how fabric-store once did, caught by the W4 validate stage).
   await runAndCollect(results, "skill-config", projectRoot, () =>
     uninstallFabricConfigSkill(projectRoot),
   );
@@ -750,18 +686,11 @@ export async function uninstallBootstrapStage(
   await runAndCollect(results, "skill-sync", projectRoot, () =>
     uninstallFabricSyncSkill(projectRoot),
   );
-  await runAndCollect(results, "skill-import", projectRoot, () =>
-    uninstallFabricImportSkill(projectRoot),
-  );
   await runAndCollect(results, "skill-review", projectRoot, () =>
     uninstallFabricReviewSkill(projectRoot),
   );
   await runAndCollect(results, "skill", projectRoot, () =>
     uninstallFabricArchiveSkill(projectRoot),
-  );
-  // B2 skill-router: the fabric/ router installs first, so it uninstalls last.
-  await runAndCollect(results, "skill-router", projectRoot, () =>
-    uninstallFabricRouterSkill(projectRoot),
   );
 
   return results;
