@@ -3,7 +3,9 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { cleanupFixtureRoot, createWerewolfFixtureRoot } from "./helpers/init-test-utils.ts";
+import { cleanupFixtureRoot, createWerewolfFixtureRoot,
+  runScaffoldOnly,
+} from "./helpers/init-test-utils.ts";
 import { GLOBAL_POLICY_DEFAULTS } from "../src/install/install-scaffold-config.ts";
 
 /**
@@ -38,8 +40,7 @@ describe("install-scaffold nudge_mode default (G1 → ISS-20260713-058)", () => 
     const target = createWerewolfFixtureRoot("fab-init-nudge-minimal-default");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/install.ts");
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const configPath = join(target, ".fabric", "fabric-config.json");
     // The file must still EXIST — it is the upward marker ProjectRootResolver
@@ -57,8 +58,7 @@ describe("install-scaffold nudge_mode default (G1 → ISS-20260713-058)", () => 
     const target = createWerewolfFixtureRoot("fab-init-nudge-minimal-byte");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/install.ts");
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const raw = readFileSync(join(target, ".fabric", "fabric-config.json"), "utf8");
     expect(raw).not.toContain("nudge_mode");

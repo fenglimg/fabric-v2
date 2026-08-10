@@ -61,7 +61,7 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
 
   const installTarget = trackFixture(`fab-i18n-install-${locale}`);
   vi.resetModules();
-  const { installCommand } = await import("../src/commands/install.ts");
+  const { installCommand } = await import("../src/commands/install-v2.ts");
   const installOutput = await captureOutput(async () => {
     await installCommand.run?.({ args: { target: installTarget } } as never);
   });

@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { initStore } from "@fenglimg/fabric-shared";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { bindCreatedStoreToProject, bindRemoteStoreToProject } from "../src/install/install-onboarding.js";
+import { ensureStoreProjectBinding } from "../src/install/store-project-onboarding.js";
+import { storeCreate, storeList } from "../src/store/store-ops.js";
 import { mountStoreFromRemote } from "../src/install/run-global-install.js";
 import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
@@ -23,6 +24,43 @@ const TEAM = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
 const NOW = "2026-05-30T00:00:00.000Z";
 const dirs: string[] = [];
+
+// T-2: these two helpers compose exactly what the SHIPPING store stage does in
+// its private bindRemoteStoreToProject / bindCreatedStoreToProject (mount-or-reuse
+// by remote url, then ensureStoreProjectBinding). They replace the retired v1
+// install-onboarding wrappers this suite used to import: the behaviour actually
+// under test (mountStoreFromRemote dedupe / adoption / collision, and the
+// bind + write-target contract) lives in those live primitives, not in the
+// wrapper — the wrapper was only the call site.
+async function bindRemoteStoreToProject(
+  projectRoot: string,
+  url: string,
+  globalRoot: string,
+): Promise<void> {
+  const already = storeList(globalRoot).find((store) => store.remote === url);
+  const mounted = already ?? (await mountStoreFromRemote(url, globalRoot));
+  await ensureStoreProjectBinding(projectRoot, mounted.alias, {
+    globalRoot,
+    now: NOW,
+    suggestedRemote: url,
+  });
+}
+
+async function bindCreatedStoreToProject(
+  projectRoot: string,
+  alias: string,
+  options: { globalRoot: string; remote?: string },
+): Promise<void> {
+  await storeCreate(alias, NOW, {
+    ...(options.remote === undefined ? {} : { remote: options.remote }),
+    globalRoot: options.globalRoot,
+  });
+  await ensureStoreProjectBinding(projectRoot, alias, {
+    globalRoot: options.globalRoot,
+    now: NOW,
+    ...(options.remote === undefined ? {} : { suggestedRemote: options.remote }),
+  });
+}
 
 afterEach(() => {
   for (const dir of dirs.splice(0)) {
