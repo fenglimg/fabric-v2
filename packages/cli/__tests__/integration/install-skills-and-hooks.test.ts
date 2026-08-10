@@ -31,6 +31,7 @@ import { resolveBootstrapCanonical } from "@fenglimg/fabric-shared/templates/boo
 import { installHooks } from "../../src/install/hooks-orchestrator.ts";
 import {
   cleanupFixtureRoot,
+  createInstalledFixtureRoot,
   createWerewolfFixtureRoot,
   runInit,
   snapshotTree,
@@ -74,10 +75,9 @@ function readTemplate(rel: string): string {
 
 describe("TASK-006 install-skills-and-hooks: fresh init", () => {
   it("writes archive+review skills + Stop + SessionStart + PreToolUse hooks + per-client configs (W3-C+S2: 0 router, 5-skill set)", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-fresh");
+    const target = await createInstalledFixtureRoot("itg-install-fresh");
     tempRoots.push(target);
 
-    await runInit(target);
 
     const archiveSkillTemplate = readTemplate("skills/fabric-archive/SKILL.md");
     const reviewSkillTemplate = readTemplate("skills/fabric-review/SKILL.md");
@@ -189,10 +189,9 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
 
 describe("TASK-006 install-skills-and-hooks: idempotency", () => {
   it("re-running init produces zero diff in .claude/ and .codex/ trees", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-reinit");
+    const target = await createInstalledFixtureRoot("itg-install-reinit");
     tempRoots.push(target);
 
-    await runInit(target);
     const snap1Claude = snapshotTree(target, ".claude");
     const snap1Codex = snapshotTree(target, ".codex");
 
@@ -254,7 +253,7 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
   // left configs pointing at a missing file. The script must now be copied by
   // the bootstrap stage too.
   it("bootstrap-only install copies the PreToolUse orchestrator the config references (F4 / ux-w2-6)", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-cite");
+    const target = await createInstalledFixtureRoot("itg-install-bootstrap-only-cite");
     tempRoots.push(target);
 
     // T-2: this used to run a BOOTSTRAP-ONLY install (skipHooks). The shipping
@@ -263,7 +262,6 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     // label in the guidance stage. So the v1 split this test policed cannot occur;
     // what remains worth guarding is the invariant itself, asserted on a full
     // install: every config the install writes must reference a script it shipped.
-    await runInit(target);
 
     // ux-w2-6: the Claude config now wires the single PreToolUse orchestrator...
     const settings = readFileSync(join(target, ".claude/settings.json"), "utf8");
@@ -277,7 +275,7 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
   // came only from the downstream hooks stage. A bootstrap-only install must
   // ship the complete 7-skill set.
   it("bootstrap-only install ships all 5 skills + shared skill lib (W3-C+S2: 0 router)", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-bootstrap-only-skills");
+    const target = await createInstalledFixtureRoot("itg-install-bootstrap-only-skills");
     tempRoots.push(target);
 
     // T-2: this used to run a BOOTSTRAP-ONLY install (skipHooks). The shipping
@@ -286,7 +284,6 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
     // label in the guidance stage. So the v1 split this test policed cannot occur;
     // what remains worth guarding is the invariant itself, asserted on a full
     // install: every config the install writes must reference a script it shipped.
-    await runInit(target);
 
     // W3-C + S2 + W9 terminal set: archive/review + store/sync/config shims +
     // recall-playbook.
@@ -371,10 +368,9 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
 
 describe("TASK-006 install-skills-and-hooks: dedup", () => {
   it("re-init does not duplicate hooks.Stop entries", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-dedup");
+    const target = await createInstalledFixtureRoot("itg-install-dedup");
     tempRoots.push(target);
 
-    await runInit(target);
     const settingsAfterFirst = JSON.parse(
       readFileSync(join(target, ".claude/settings.json"), "utf8"),
     ) as { hooks?: { Stop?: unknown[] } };
@@ -409,11 +405,10 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
   // before the merge, so the canonical template entry becomes the sole
   // survivor.
   it("rc27 §2.6: install sweeps legacy archive-hint.cjs and any path-form duplicates", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-rc27-sweep");
+    const target = await createInstalledFixtureRoot("itg-install-rc27-sweep");
     tempRoots.push(target);
 
     // First install establishes the canonical state.
-    await runInit(target);
     const settingsPath = join(target, ".claude/settings.json");
 
     // Inject a legacy archive-hint.cjs entry alongside the canonical fabric-hint
@@ -465,11 +460,10 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
   // post-tooluse-mutation.cjs in FABRIC_HOOK_SCRIPT_BASENAMES the stale-matcher
   // entry would survive and the new `apply_patch` matcher would be silently dropped.
   it("W5-1: re-install propagates the codex apply_patch matcher into pre-existing hooks (all 3 slots)", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-codex-matcher-upgrade");
+    const target = await createInstalledFixtureRoot("itg-install-codex-matcher-upgrade");
     tempRoots.push(target);
 
     // First install establishes canonical state.
-    await runInit(target);
     const codexHooksPath = join(target, ".codex/hooks.json");
 
     // Simulate a pre-upgrade install: rewrite all fabric-owned matchers to the
@@ -524,10 +518,9 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
 
 describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks: POSIX exec bit", () => {
   it("fabric-hint.cjs, knowledge-hint-broad.cjs AND knowledge-hint-narrow.cjs have owner-execute bit set", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-execbit");
+    const target = await createInstalledFixtureRoot("itg-install-execbit");
     tempRoots.push(target);
 
-    await runInit(target);
 
     const claudeStat = statSync(join(target, ".claude/hooks/fabric-hint.cjs"));
     const codexStat = statSync(join(target, ".codex/hooks/fabric-hint.cjs"));
@@ -564,10 +557,9 @@ describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks
 
 describe("TASK-006 install-skills-and-hooks: fabric hooks idempotent", () => {
   it("running installHooks after init reports zero installed and no errors (covers archive+review)", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-hooks-cmd");
+    const target = await createInstalledFixtureRoot("itg-install-hooks-cmd");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // After init, the real-leaf skills must be on disk (proof installHooks
     // would see them as up-to-date on the next call). W3-C: import folded.
@@ -685,10 +677,9 @@ function extractManagedBlockBody(content: string): string | null {
 
 describe("rc.19 TASK-003 bootstrap propagation: two-end managed block + thin shell", () => {
   it("writes .fabric/AGENTS.md byte-equal to BOOTSTRAP_CANONICAL + propagates to both clients", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-bootstrap-propagation");
+    const target = await createInstalledFixtureRoot("itg-install-bootstrap-propagation");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // L1 snapshot: .fabric/AGENTS.md exists with content byte-equal to canonical.
     const snapshotPath = join(target, ".fabric/AGENTS.md");
@@ -718,10 +709,9 @@ describe("rc.19 TASK-003 bootstrap propagation: two-end managed block + thin she
   });
 
   it("is idempotent: re-running install yields byte-identical files across all targets", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-bootstrap-idempotent");
+    const target = await createInstalledFixtureRoot("itg-install-bootstrap-idempotent");
     tempRoots.push(target);
 
-    await runInit(target);
     const afterFirst: Record<string, string> = {};
     for (const rel of [
       ".fabric/AGENTS.md",
@@ -802,10 +792,9 @@ describe("rc.19 TASK-003 bootstrap propagation: two-end managed block + thin she
 
   describe("project-rules.md only-if-exists concat behavior", () => {
     it("Scenario A: without .fabric/project-rules.md — Codex block body byte-equals .fabric/AGENTS.md", async () => {
-      const target = createWerewolfFixtureRoot("itg-install-bootstrap-project-rules-absent");
+      const target = await createInstalledFixtureRoot("itg-install-bootstrap-project-rules-absent");
       tempRoots.push(target);
 
-      await runInit(target);
 
       const snapshot = readFileSync(join(target, ".fabric/AGENTS.md"), "utf8");
       const agentsMd = readFileSync(join(target, "AGENTS.md"), "utf8");
@@ -860,10 +849,9 @@ describe("rc.19 TASK-003 bootstrap propagation: two-end managed block + thin she
 
 describe("rc.16 TASK-004 install-hook-libs: directory-walk contract", () => {
   it("ships every .cjs file from templates/hooks/lib/ to all client lib dirs", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-hook-libs");
+    const target = await createInstalledFixtureRoot("itg-install-hook-libs");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Discover the source-of-truth set of lib files at test time so this
     // assertion auto-tracks future additions to templates/hooks/lib/.
@@ -886,10 +874,9 @@ describe("rc.16 TASK-004 install-hook-libs: directory-walk contract", () => {
   });
 
   it("re-running init does not duplicate or alter shipped lib files", async () => {
-    const target = createWerewolfFixtureRoot("itg-install-hook-libs-idempotent");
+    const target = await createInstalledFixtureRoot("itg-install-hook-libs-idempotent");
     tempRoots.push(target);
 
-    await runInit(target);
     const libRel = ".claude/hooks/lib/banner-i18n.cjs";
     const afterFirst = readFileSync(join(target, libRel), "utf8");
 

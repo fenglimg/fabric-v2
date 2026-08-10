@@ -24,6 +24,7 @@ import { resolveBootstrapCanonical } from "@fenglimg/fabric-shared/templates/boo
 
 import {
   cleanupFixtureRoot,
+  createInstalledFixtureRoot,
   createWerewolfFixtureRoot,
   runInit,
 } from "../helpers/init-test-utils.ts";
@@ -38,10 +39,9 @@ afterEach(() => {
 
 describe("rc.19 TASK-002 bootstrap-snapshot: .fabric/AGENTS.md", () => {
   it("writes .fabric/AGENTS.md byte-equal to BOOTSTRAP_CANONICAL on first install", async () => {
-    const target = createWerewolfFixtureRoot("itg-bootstrap-snapshot-first");
+    const target = await createInstalledFixtureRoot("itg-bootstrap-snapshot-first");
     tempRoots.push(target);
 
-    await runInit(target);
 
     const snapshotPath = join(target, ".fabric/AGENTS.md");
     expect(existsSync(snapshotPath)).toBe(true);
@@ -52,10 +52,9 @@ describe("rc.19 TASK-002 bootstrap-snapshot: .fabric/AGENTS.md", () => {
   });
 
   it("second install is byte-identical (idempotent)", async () => {
-    const target = createWerewolfFixtureRoot("itg-bootstrap-snapshot-idempotent");
+    const target = await createInstalledFixtureRoot("itg-bootstrap-snapshot-idempotent");
     tempRoots.push(target);
 
-    await runInit(target);
     const snapshotPath = join(target, ".fabric/AGENTS.md");
     const firstContent = readFileSync(snapshotPath, "utf8");
     const firstStat = statSync(snapshotPath);
@@ -72,10 +71,9 @@ describe("rc.19 TASK-002 bootstrap-snapshot: .fabric/AGENTS.md", () => {
   });
 
   it("restores deleted .fabric/AGENTS.md on re-install", async () => {
-    const target = createWerewolfFixtureRoot("itg-bootstrap-snapshot-restore");
+    const target = await createInstalledFixtureRoot("itg-bootstrap-snapshot-restore");
     tempRoots.push(target);
 
-    await runInit(target);
     const snapshotPath = join(target, ".fabric/AGENTS.md");
     expect(existsSync(snapshotPath)).toBe(true);
 

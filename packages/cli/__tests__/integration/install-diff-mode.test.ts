@@ -39,6 +39,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import {
   cleanupFixtureRoot,
+  createInstalledFixtureRoot,
   createWerewolfFixtureRoot,
   runInit,
   seedMissingFile,
@@ -85,10 +86,9 @@ function captureStdio(): {
 
 describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
   it("re-running install on a canonical workspace prints the canonical confirmation and writes nothing", async () => {
-    const target = createWerewolfFixtureRoot("itg-diff-canonical-noop");
+    const target = await createInstalledFixtureRoot("itg-diff-canonical-noop");
     tempRoots.push(target);
 
-    await runInit(target);
     // W5 I1: install no longer scaffolds the co-location knowledge cabinet
     // nor agents.meta.json — assert they are absent after a real install.
     expect(existsSync(join(target, ".fabric", "agents.meta.json"))).toBe(false);
@@ -141,10 +141,9 @@ describe("rc.14 TASK-002 install-diff-mode: canonical no-op", () => {
 
 describe("rc.14 TASK-002 install-diff-mode: missing file auto-applies", () => {
   it("restores a deleted managed hook script on re-run without --force", async () => {
-    const target = createWerewolfFixtureRoot("itg-diff-missing-restore");
+    const target = await createInstalledFixtureRoot("itg-diff-missing-restore");
     tempRoots.push(target);
 
-    await runInit(target);
     const hookPath = ".claude/hooks/fabric-hint.cjs";
     expect(existsSync(join(target, hookPath))).toBe(true);
 
@@ -165,10 +164,9 @@ describe("rc.14 TASK-002 install-diff-mode: missing file auto-applies", () => {
 
 describe("rc.14 TASK-002 install-diff-mode: drift aborts with helpful message", () => {
   it("aborts with a stderr message naming the path, `fabric doctor`, and `fabric uninstall && fabric install`", async () => {
-    const target = createWerewolfFixtureRoot("itg-diff-drift-abort");
+    const target = await createInstalledFixtureRoot("itg-diff-drift-abort");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Occupy a managed scaffold FILE location (events.jsonl) with a directory
     // so the per-file classifier flags it as user-modified (not a file).
@@ -198,10 +196,9 @@ describe("rc.14 TASK-002 install-diff-mode: drift aborts with helpful message", 
 
 describe("rc.14 TASK-002 install-diff-mode: --dry-run on existing workspace", () => {
   it("planOnly=true on a post-install workspace does NOT throw and writes nothing", async () => {
-    const target = createWerewolfFixtureRoot("itg-diff-dryrun-existing");
+    const target = await createInstalledFixtureRoot("itg-diff-dryrun-existing");
     tempRoots.push(target);
 
-    await runInit(target);
     const beforeSnapshot = snapshotTree(target, ".fabric");
 
     const captured = captureStdio();
@@ -228,10 +225,9 @@ describe("rc.14 TASK-002 install-diff-mode: --dry-run on existing workspace", ()
   });
 
   it("planOnly=true on a workspace missing one hook shows the missing classification, no writes", async () => {
-    const target = createWerewolfFixtureRoot("itg-diff-dryrun-missing");
+    const target = await createInstalledFixtureRoot("itg-diff-dryrun-missing");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Delete a managed scaffold file so classification surfaces "missing".
     seedMissingFile(target, ".fabric/events.jsonl");

@@ -204,6 +204,55 @@ export async function runScaffoldOnly(target: string): Promise<ScaffoldResult> {
   return scaffold;
 }
 
+// ---------------------------------------------------------------------------
+// Installed-fixture template (T-2b)
+// ---------------------------------------------------------------------------
+
+/**
+ * A real `runInit` costs ~1.0s, and 90% of that is the hooks stage writing the
+ * ~175-file skill/hook/bootstrap payload (measured per-stage: preflight 40ms,
+ * env 12ms, store 41ms, **hooks 910ms**, mcp/validate/guidance <5ms). The
+ * install-heavy integration files ran one such install PER TEST, which is why a
+ * single file was the whole suite's wall-clock long pole.
+ *
+ * Copying an already-installed tree costs ~33ms — 30x cheaper — and the result is
+ * indistinguishable from a fresh install: a census of every installed file found
+ * exactly ONE that embeds the absolute target path (`.fabric/forensic.json`, a
+ * scan snapshot that install always rewrites anyway), and `cpSync` preserves the
+ * owner-execute bits the hook scripts carry.
+ *
+ * So: install ONCE per worker process into a template root, then hand each test a
+ * fresh byte-identical copy. Use this wherever a test's premise is "GIVEN an
+ * installed workspace" — including re-install/idempotency tests, whose second
+ * install is a genuine install over a genuine installed tree.
+ *
+ * Do NOT use it when the test seeds files BEFORE install (user settings to merge,
+ * a pre-existing AGENTS.md, `.claude` occupied by a regular file): those assert
+ * what the installer DOES on first contact, so they need a real cold install.
+ */
+let installedTemplate: Promise<string> | null = null;
+
+async function resolveInstalledTemplate(): Promise<string> {
+  installedTemplate ??= (async () => {
+    const root = createWerewolfFixtureRoot("fab-installed-template");
+    await runInit(root);
+    // The template outlives every individual test file in this worker, so it is
+    // reaped at process exit rather than in any one file's afterAll.
+    process.on("exit", () => {
+      rmSync(root, { recursive: true, force: true });
+    });
+    return root;
+  })();
+  return installedTemplate;
+}
+
+export async function createInstalledFixtureRoot(prefix: string): Promise<string> {
+  const template = await resolveInstalledTemplate();
+  const root = join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  cpSync(template, root, { recursive: true });
+  return root;
+}
+
 export type FsSnapshot = Record<string, string>;
 
 /**
