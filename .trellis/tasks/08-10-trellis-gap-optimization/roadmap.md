@@ -136,6 +136,21 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **T4** | **skill ref 树瘦身**: fabric-archive 21 ref / fabric-review 10 ref → 合并同类项,目标是 AI 读更少的字拿到同样的确定性(与 steal #11「快速通道」天然协同) | W3 |
 | **T5** | **止漂机制**: 版本号等确定性事实由代码/构建产出注入文档,而非人工同步(README 版本漂移的根治);无法自动化的加 census ratchet | W4 |
 
+### 4.6 轨I · 安装物件必要性(用户 2026-08-10 新增原则)
+
+> 原则原话:「对于安装的每一个物件都需要批判看待是否必要,有一些是历史产物没有作用但是还是进行了安装之类的」。
+
+普查见 `research/install-payload-census.md`。与 #16「安装副本漂移」互补:漂移检测问「装下去的还对不对」,本轴问「本来就该不该装」——**manifest 只能查已装文件的字节,查不出缺席条目**(I1 正是这个空档)。
+
+**已还清白的面**(不必再查): hook 入口脚本 8/8 + hook lib 33/33 从 6 个注册入口全部传递可达,0 死文件;`skills/lib/` 与 `hooks/configs/` 均已被活消费者或 W2 parity 测试钉住。
+
+| 提案 | 内容 | 状态 / 优先级 |
+|---|---|---|
+| **I1** | **recall-playbook 的 ref 从来没被装过**: SKILL.md 两处指示 agent 打开 `ref/scenarios.md`,install spec 却没设 `includeRefFiles`。根因是该布尔值本身有三份真相(install 侧 / uninstall 侧 / 模板目录),而两侧实现本就优雅处理缺席 → 删标记,文件系统当唯一真源;补双向 producer-consumer round-trip oracle(24 tests,变异实证有判别力) | ✅ **已完成** commit 4585235a |
+| **I2** | **knowledge-hint-narrow 装在入口位却零注册**: 已退化为 pretooluse 的 lib(cite-policy-evict 在 CC 侧同理),却仍装在 `hooks/` 顶层 → 移入 `hooks/lib/`,旧路径进 deprecated 清扫。**不是死文件是分类错位**:顶层位置误导心智模型,且 doctor wired 检查够不着 | W4(中风险,动分发路径) |
+| **I3** | **两个 thin shim skill 的常驻描述税**: `fabric-store`(30L)/`fabric-sync`(28L)是纯意图→命令表+红线,各占一条常驻 description。红线有真价值但可并入一个 skill | ⚠️ **待裁决**(产品面) |
+| **I4** | **DEPRECATED_SKILL_DIRS 只增不减**: 10 条永久清扫,最老来自 rc.35,无退役判据。清扫成本≈0,但把历史包袱永久钉在活代码里 | ⚠️ **待裁决**(零用户阶段可整条清空 / 定退役规则 / 维持) |
+
 风险提示: 删文档要区分「复述代码的」与「记录为什么这么做的」——后者(设计意图、被否决的方案)代码里没有,删了就真丢了,应转入 fabric 知识库而非删除。这条边界要在 T2 census 时逐份把关。
 
 **明确不动的**(审计还了清白): 三包依赖形状(干净 DAG 无循环无反向)、测试:源码比(server 1.07 健康)、命令面蔓延(已被 hidden/folded 控住)、i18n 双语同步(locale-parity 测试已是确定性 gate)。
@@ -150,7 +165,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **W0 测试架构** | ⬅️ **新增,应前置于 W1 剩余部分**。见 `test-architecture-proposal.md`: T-1 量化 → T-2 解耦死代码 → T-3 切 AI/代码线 → T-4 提速 → T-5 消重 | 待用户评审提案 | 2-3 个会话 |
 | **W2 配置防御** | steal #2+#16 群: doctor settings/hooks/漂移一等检查 + --fix 接入 + 今日事故回归测试;顺带 steal #9 的 root-pin repair | 无 | 1-2 个会话 |
 | **W3 沉淀减负** | steal #11 群: 归档快速通道 + 收口仪式 + review age-nudge + T4 ref 树瘦身;**跑完后**处置 44 会话积压并复评任务轴 | 无 | 1-2 个会话 |
-| **W4 瘦身(代码+文档)** | B5+B6+B7+B8+B9 + 轨T 的 T2/T3/T5 | B7 已拍板删;需同批 supersede KT-DEC-0016 | 2-3 个会话 |
+| **W4 瘦身(代码+文档)** | B5+B6+B7+B8+B9 + 轨T 的 T2/T3/T5 + **轨I 的 I2**(I2 与 B8 同族:都是手写孪生/分发链错位) | B7 已拍板删;需同批 supersede KT-DEC-0016;I3/I4 待裁决后决定是否并入本批 | 2-3 个会话 |
 | **W5 结构化** | B10-B15 择量 + steal P2 三条(#6/#10/#18*) | 无 | 按需分段 |
 | **(条件批)** | 需重议档案 §3.1/§3.2 若开禁,各自单独立项走完整 brainstorm | 你的裁决 | — |
 
