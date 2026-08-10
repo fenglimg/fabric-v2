@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(rm -f CLAUDE.md GEMINI.md)",
-      "Bash(rm -rf .husky)"
-    ]
-  }
-}
