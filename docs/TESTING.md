@@ -75,7 +75,15 @@ Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--ver
 每次改进 prompt 都会假红(单元测试的输出是布尔,eval 的输出是分数;是分数的不进门禁)。
 
 落地方式:同名 `*.wording.test.ts` 兄弟文件 + `describe.runIf(process.env.PROMPT_WORDING === "1")`,
-断言保留不删,只是改成按需跑。
+断言保留不删,只是改成按需跑。现有两个:
+`packages/shared/test/templates/bootstrap-canonical.wording.test.ts`(bootstrap 正文)、
+`packages/cli/__tests__/fabric-hint.wording.test.ts`(Stop hook banner 措辞)。
+
+**留在门禁的那一半怎么写。** hook banner 的中文由 `templates/hooks/lib/banner-i18n.cjs`
+的 catalog 集中渲染,所以「哪条分支触发了」应当断言 `renderBanner("<key>", ...)` 的返回值
+而不是手抄一段中文 —— 前者钉的是 catalog key(契约),改文案时两侧自动同步;后者是文案副本,
+改一次文案要追着改测试。数量类断言(命中数 / 阈值 / 比例)只断言**算出来的值**
+(`/\b20\b/`、`/3\/10/`),别把它包在中文框架句里。
 
 | 命令 / 脚本 | 何时跑 |
 | --- | --- |
