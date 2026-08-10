@@ -81,7 +81,8 @@ parity 家族 10 文件 / 1,368 行,存在的唯一理由是同一逻辑有 TS +
 | 批 | 内容 | 解锁什么 |
 |---|---|---|
 | **T-1 量化** ✅已完成 | per-file 慢榜产出;证伪「竞态」归因并落地并行+超时(102.7s→46.4s);证伪 ISS-003 flaky 基线(正规入口 0 失败) | 让后续每一刀有据 |
-| **T-2 解耦死代码 + 削安装成本** | `init-test-utils.runInit` 迁到 install-v2;renderer 测试同理;同批把安装型测试从「每例重装」改为「文件内复用」 | **解锁 W1 的 2,270 行删除** + §5.3 的 47% 耗时 |
+| **T-2 解耦死代码** ✅已完成 | `runInit`/`runScaffoldOnly` 迁到 install-v2 管线;11 个测试文件解钉,3 个测 v1 独有能力的文件删除 | **已解锁 W1:2,049 行删除,CLI 不可达代码归零** |
+| **T-2b 削安装成本** 待做 | 安装型测试从「每例重装」改为「文件内复用」 | §5.3 的 47% 耗时 |
 | **T-3 切 AI/代码线** | 档 A 移出门禁;档 B 拆结构 vs 文案;写进 `docs/TESTING.md` 判据 | 门禁只剩确定性断言,prompt 可自由优化 |
 | **T-4 提速** | 唯一路径 + 关串行 + fixture 降频 + CI 去重 | 壁钟目标 < 20s |
 | **T-5 消重** | 随 B8 删 parity 家族;撤覆盖率阈值 | -1,368 行 |
@@ -94,3 +95,17 @@ parity 家族 10 文件 / 1,368 行,存在的唯一理由是同一逻辑有 TS +
 - 外部调研的 exa/web 搜索通道在子代理环境不可用,B 节改用一手权威源(MCP SDK 官方测试文档、pnpm/oclif 真实代码、Hamel/promptfoo)取证;**可能漏掉 2026 年新出现的小众实践**,这是该报告最大盲区。
 - 现状普查基于静态特征计数,未逐个读测试正文,计数有误差。
 - 「档 B 拆结构 vs 文案」需逐文件人工判读,10,768 行是本提案最大的人工量。
+
+## 8. T-2/W1 执行中发现的「死契约」(代码已删,行为差异待定夺)
+
+删 v1 安装器的过程中,发现 5 处「测试是绿的,但守的是没人跑的代码」。前 1 项已修,后 4 项是 v2 有意或无意丢掉的行为,记录在此不擅自恢复:
+
+| # | 契约 | v1 有 | v2 现状 | 处置 |
+|---|---|---|---|---|
+| 1 | **drift-abort 闸口** | 有 | 分类出 `user-modified` 但无人消费,`.fabric/events.jsonl` 被目录占位时 install 仍报 SUCCESS | ✅ 已在 env.stage 补回(62e95d32) |
+| 2 | `install_diff_applied` 事件 | 只有 v1 写 | 全仓 0 个消费者,shared schema 仍声明该 variant | 退役候选,未动 |
+| 3 | **扫描期 TTY 进度**(ISS-035) | `install.ts:617` 两行 stderr | 无。preflight 选择扫完后在框内渲染摘要,大仓扫描期间完全无反馈 | 记为 UX gap |
+| 4 | **能力选择向导** | 勾选 bootstrap/mcp/hooks 并重写计划;取消 = exitCode 130 | 无对应物。`skipBootstrap` 只在 guidance 当显示标签,各 prompt 取消 = 各自 skip 继续 | 视为有意 supersede |
+| 5 | **--dry-run 预览** | 抬头 + 逐路径 diff 分类表 | 抬头只在 `--global` 分支硬编码;项目级 dry-run 无抬头无分类表。`cli.install.plan.preview-title` / `mode-banner.plan` 成孤儿 key | 记为 UX gap |
+
+**方法论副产品**:钉子普查第一版只匹配 `from "` 开头的 import 行,漏掉 4 个文件里的 `await import(...)`,导致删完才在 vitest 里炸出来(`tsc --noEmit` 也没拦住)。删文件前的引用普查必须同时覆盖静态与动态两种形态。
