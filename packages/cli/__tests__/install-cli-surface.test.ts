@@ -129,16 +129,26 @@ describe("init CLI surface", () => {
 
     // Second install — must succeed via canonical-no-op short-circuit.
     let secondRunError: unknown = null;
+    let second: Awaited<ReturnType<typeof runInit>> | null = null;
     try {
-      await runInit(target);
+      second = await runInit(target);
     } catch (e) {
       secondRunError = e;
     }
     expect(secondRunError).toBeNull();
 
-    // Canonical confirmation banner is visible in stdout.
-    const allOutput = [...stdoutLines, ...stderrLines].join("\n");
-    expect(allOutput).toMatch(/Workspace already canonical/);
+    // T-2: the no-op contract is asserted on the pipeline result, not on a
+    // banner string. The old assertion matched "Workspace already canonical",
+    // which only the RETIRED v1 installer ever printed — the shipping installer
+    // replaced that banner with the idempotent-re-install collapse, so the
+    // assertion was passing against code no user runs. The durable, wording-free
+    // statement of "no-op" is: the run succeeded and no stage materially
+    // changed anything.
+    expect(second?.success).toBe(true);
+    const changedStages = (second?.context.stageResults ?? [])
+      .filter((s) => s.changed === true)
+      .map((s) => s.name);
+    expect(changedStages).toEqual([]);
   });
 
   it("renders dry-run preview when --dry-run is used in a TTY context", async () => {

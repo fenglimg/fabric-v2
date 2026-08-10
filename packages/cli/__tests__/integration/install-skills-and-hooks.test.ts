@@ -610,12 +610,18 @@ describe("TASK-006 install-skills-and-hooks: partial install resilience", () => 
     // install helpers will then fail with ENOTDIR/EEXIST on the .claude path.
     writeFixtureFile(target, ".claude", "this-is-a-file-not-a-directory");
 
-    // initFabric must NOT throw — the bootstrap stage's runBestEffort
-    // wrappers catch per-helper failures and surface them as InstallStepResult
-    // entries with status='error'.
-    await expect(runInit(target)).resolves.toBeDefined();
+    // T-2: the install REPORTS FAILURE — and that is the contract being asserted.
+    // The per-helper `runBestEffort` wrappers still catch each failure and keep
+    // going (that is what lets the independent codex steps below succeed), but a
+    // run in which 16 managed writes failed must not be reported as success. The
+    // retired v1 installer resolved anyway; the shipping pipeline escalates a
+    // stage with a non-empty `errors[]` to a failed install, so `fabric install`
+    // exits non-zero and the user is told. Resilience means "keep going and
+    // report", not "keep going and claim success".
+    await expect(runInit(target)).rejects.toThrow(/hooks/i);
 
-    // .codex/hooks.json merge is independent of .claude state — must succeed
+    // The point of the resilience: .codex/hooks.json is merged by its own step,
+    // independent of the broken .claude path — it must still be written.
     expect(existsSync(join(target, ".codex/hooks.json"))).toBe(true);
     const codexHooks = JSON.parse(
       readFileSync(join(target, ".codex/hooks.json"), "utf8"),

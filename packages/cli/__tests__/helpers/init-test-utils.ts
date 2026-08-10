@@ -12,11 +12,16 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  buildInitExecutionPlan,
-  executeInitExecutionPlan,
-  type InitExecutionResult,
-} from "../../src/commands/install.ts";
+import { loadGlobalConfig, resolveGlobalRoot } from "../../src/store/global-config-io.ts";
+import { InstallPipeline } from "../../src/install/pipeline/pipeline.ts";
+import type { InstallContext, PipelineResult, ScaffoldResult } from "../../src/install/pipeline/types.ts";
+import { PreflightStage } from "../../src/install/pipeline/preflight.stage.ts";
+import { EnvStage } from "../../src/install/pipeline/env.stage.ts";
+import { StoreStage } from "../../src/install/pipeline/store.stage.ts";
+import { HooksStage } from "../../src/install/pipeline/hooks.stage.ts";
+import { McpStage } from "../../src/install/pipeline/mcp.stage.ts";
+import { ValidateStage } from "../../src/install/pipeline/validate.stage.ts";
+import { GuidanceStage } from "../../src/install/pipeline/guidance.stage.ts";
 
 const WEREWOLF_FIXTURE = fileURLToPath(new URL("../fixtures/cocos-stub", import.meta.url));
 
@@ -90,25 +95,113 @@ export function setProcessTty(
 // integration tests and the new install-diff-mode test suite.
 
 /**
- * Drive `fabric install` end-to-end via the public execution-plan API but skip
- * the MCP stage — local MCP install would try to write outside the fixture
- * (npm install, global config) which is out of scope for fixture-based
- * install tests. Bootstrap (skill + hook + per-client configs + pointer) and
- * hooks stages run normally.
+ * Drive `fabric install` end-to-end through the SAME stage pipeline the real
+ * `fabric install` command runs (src/commands/install-v2.ts), but skip the MCP
+ * stage — a local MCP install would write outside the fixture (npm install,
+ * global config), which is out of scope for fixture-based install tests.
+ * Bootstrap (skill + hook + per-client configs + pointer) and hooks run normally.
+ *
+ * T-2: this used to drive the RETIRED v1 installer (`src/commands/install.ts`),
+ * which kept 1,953 lines of production-unreachable code alive purely because the
+ * test fixtures imported it. The stage list and context below mirror
+ * install-v2's `createInstallContext` + pipeline assembly; that function is not
+ * exported and hardcodes `skipMcp: false`, so the context is rebuilt here rather
+ * than imported. If install-v2 gains or reorders a stage, mirror it here.
+ *
+ * Contract note: the pipeline CATCHES stage errors and reports them as
+ * `{ success: false, error }`, whereas the v1 `executeInitExecutionPlan` threw.
+ * Tests assert the throwing contract (e.g. the drift-abort guard in
+ * integration/init-guard.test.ts), so failures are rethrown here to keep it.
  */
 export async function runInit(
   target: string,
   opts: { planOnly?: boolean } = {},
-): Promise<InitExecutionResult> {
-  const plan = await buildInitExecutionPlan({
+): Promise<PipelineResult> {
+  const planOnly = opts.planOnly === true;
+
+  const context: InstallContext = {
     target,
+    args: { target, yes: true, "dry-run": planOnly },
     options: {
+      planOnly,
+      skipBootstrap: false,
       skipMcp: true,
-      planOnly: opts.planOnly,
+      skipHooks: false,
     },
+    mcpInstallMode: "global",
+    claudeMcpScope: "project",
+    mcpRootPolicy: { mode: "dynamic" },
+    // Fixtures are always non-TTY: no wizard, no interactive prompts.
     interactive: false,
-  });
-  return executeInitExecutionPlan(plan);
+    wizardEnabled: false,
+    stageResults: [],
+    rollbackStack: [],
+    state: { firstInstall: loadGlobalConfig(resolveGlobalRoot()) === null },
+  };
+
+  const result = await new InstallPipeline()
+    .addStage(new PreflightStage())
+    .addStage(new EnvStage())
+    .addStage(new StoreStage())
+    .addStage(new HooksStage())
+    .addStage(new McpStage())
+    .addStage(new ValidateStage())
+    .addStage(new GuidanceStage())
+    .execute(context);
+
+  if (!result.success) {
+    throw result.error ?? new Error("install pipeline failed without an error");
+  }
+  return result;
+}
+
+/**
+ * Scaffold-only install: creates `.fabric/` (config, .gitignore, events ledger,
+ * forensic snapshot) and nothing else — no skills, hooks, store or MCP wiring.
+ *
+ * T-2: this is the exact v2 replacement for the retired `initFabric()`, which was
+ * `buildInitFabricPlan + executeInitFabricPlan` (scaffold only). Scaffolding is
+ * owned by the env stage, and preflight is included because the env stage reuses
+ * the forensic report preflight builds — running env alone would silently make it
+ * re-walk the whole project.
+ *
+ * Returns the `ScaffoldResult` (same fields the old `InitScaffoldResult` exposed:
+ * fabricDir / agentsMdPath+Action / eventsPath+Action / forensicPath+Action /
+ * forensicReport).
+ */
+export async function runScaffoldOnly(target: string): Promise<ScaffoldResult> {
+  const context: InstallContext = {
+    target,
+    args: { target, yes: true },
+    options: {
+      planOnly: false,
+      skipBootstrap: true,
+      skipMcp: true,
+      skipHooks: true,
+    },
+    mcpInstallMode: "global",
+    claudeMcpScope: "project",
+    mcpRootPolicy: { mode: "dynamic" },
+    interactive: false,
+    wizardEnabled: false,
+    stageResults: [],
+    rollbackStack: [],
+    state: { firstInstall: loadGlobalConfig(resolveGlobalRoot()) === null },
+  };
+
+  const result = await new InstallPipeline()
+    .addStage(new PreflightStage())
+    .addStage(new EnvStage())
+    .execute(context);
+
+  if (!result.success) {
+    throw result.error ?? new Error("scaffold pipeline failed without an error");
+  }
+  const scaffold = result.context.state.scaffold;
+  if (scaffold === undefined) {
+    throw new Error("env stage completed without producing a scaffold result");
+  }
+  return scaffold;
 }
 
 export type FsSnapshot = Record<string, string>;

@@ -16,11 +16,11 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { initFabric } from "../../src/commands/install.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
   runInit,
+  runScaffoldOnly,
   writeFixtureFile,
 } from "../helpers/init-test-utils.ts";
 
@@ -88,7 +88,7 @@ describe("I2: init guard — diff-mode behavior", () => {
     writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
 
     // v2.0 init writes its own layout but does not touch the legacy file.
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     expect(readFileSync(join(target, ".fabric/bootstrap/README.md"), "utf8")).toBe(original);
   });
@@ -162,7 +162,7 @@ describe("T4: preexisting root markdown preservation", () => {
     const original = "# My Project\n\nUser instructions here.\n";
     writeFixtureFile(target, "CLAUDE.md", original);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     expect(readFileSync(join(target, "CLAUDE.md"), "utf8")).toBe(original);
   });
@@ -174,7 +174,7 @@ describe("T4: preexisting root markdown preservation", () => {
     const original = "# Agents\n\nCustom agent instructions.\n";
     writeFixtureFile(target, "AGENTS.md", original);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(original);
   });
