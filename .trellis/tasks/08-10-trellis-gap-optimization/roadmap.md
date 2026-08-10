@@ -165,7 +165,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 |---|---|---|---|
 | **W1 埋尸体** | ⚠️ **部分完成 + 部分受阻**(2026-08-10)。已完成: 911MB worktree 清理 + 811 行零引用死代码(commit bc636bcf/6bac073c)。**受阻**: install.ts 死件簇 1,961 行删不掉——测试基础设施钉住(详见 test-architecture-proposal.md §2 病根一),需先做 T-2 解耦 | ✅ 已拍板 | 已开工 |
 | **W0 测试架构** | ⬅️ **新增,应前置于 W1 剩余部分**。见 `test-architecture-proposal.md`: T-1 量化 → T-2 解耦死代码 → T-3 切 AI/代码线 → T-4 提速 → T-5 消重 | 待用户评审提案 | 2-3 个会话 |
-| **W2 配置防御** | steal #2+#16 群: doctor settings/hooks/漂移一等检查 + --fix 接入 + 今日事故回归测试;顺带 steal #9 的 root-pin repair | 无 | 1-2 个会话 |
+| **W2 配置防御** | ✅ **#2+#16 已完成**(2026-08-10): hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only:server 对 cli 零依赖够不到模板,守 KT-PIT-0016)。**剩 steal #9 的 root-pin repair 未接 --fix** | 无 | 收尾中 |
 | **W3 沉淀减负** | steal #11 群: 归档快速通道 + 收口仪式 + review age-nudge + T4 ref 树瘦身;**跑完后**处置 44 会话积压并复评任务轴 | 无 | 1-2 个会话 |
 | **W4 瘦身(代码+文档)** | B5+B6+B7+B8+B9 + 轨T 的 T2/T3/T5 + **轨I 的 I2**(I2 与 B8 同族:都是手写孪生/分发链错位) | B7 已拍板删;需同批 supersede KT-DEC-0016;I3/I4 待裁决后决定是否并入本批 | 2-3 个会话 |
 | **W5 结构化** | B10-B15 择量 + steal P2 三条(#6/#10/#18*) | 无 | 按需分段 |
