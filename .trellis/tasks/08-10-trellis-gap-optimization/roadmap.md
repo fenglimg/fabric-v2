@@ -62,7 +62,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 **Steal 卡片(6 条,每条一句话设计重写方案):**
 
 - **#2+#16 → 「客户端配置防御群」(P0)**: doctor 把 settings.json 可解析性 + fabric hooks 注册在位 + 安装副本漂移(新增模板 hash 清单)升为一等检查,区分 broken/missing 两码,全部纳入 `doctor --fix` 自动修复;修复动作复用 install 已有的 deep-merge(核证过:保留第三方 key)。今天的事故做成回归测试用例。
-- **#11 → 「沉淀闸口 + 快速通道」(P0)**: bootstrap 政策把「收口回合走一遍归档判断(结论可以是'无')」写成仪式(prompt 层,非 hook gate);fabric-archive 增设小条目快速通道(单 phase 直达 propose,跳过全程 19-ref 长流程);review nudge 从「>10 条」改成「>10 条 或 最老 pending 超 N 天」——三招合力治 W3。
+- **#11 → 「沉淀闸口 + 快速通道」(P0)**: ✅ **已完成**(2026-08-11, W3)。三招全落地: ① 收口仪式写进 bootstrap canonical 中英双语(`0b6c252a`);② 快速通道 —— 单条明确条目走「去重搜索 → 就地分类 → propose → 记账」,零 ref 跳转,三条件破一条即退回长链路(`68c60cf7`);③ review nudge 的量/龄双触发 —— **核证发现 Stop hook 早就是 count-OR-age**,真缺口在 SessionStart 的 action ladder 只看 count(其注释还声称与 Stop hook 一致),数据 `oldestPendingMtimeMs` 本就在算却被调用点丢弃(`779b0138`)。
 - **#9 → 「--fix 扩面」(P1)**: ✅ **已完成**(2026-08-10, commit ea134c91)。挂账的 MCP root-pin repair 接进 `--fix`:`repairManagedRootPin` 原本生产侧零调用方(只有一个测试引用),逻辑从 `packages/cli/src/config/root-pin-migration.ts` 移进 `packages/shared/src/mcp-root-pin.ts` —— 不是为整洁,server 对 cli 零依赖,不移就接不上。新检查 `mcp_root_pin_managed` 只报 `managed`(digest 能证明是 installer 写的),`explicit`/`ambiguous` 不碰(KT-GLD-0016);严重级按钉是否仍指向本项目分叉(指别处 error/fixable,指对了 warning——对今天能工作的钉喊 error 会训练用户忽略检查)。**这条承诺 --fix,与邻居 install_copy_drift 相反:KT-PIT-0016 是双向的**,删 env 键不需要 CLI 模板。settings/hooks 修复已由 #2 群完成(commit 2e4dc057);README 版本同步经核证**树里根本没有对应检测**(全仓无任何 README 版本机制;最接近的 `global_cli_outdated` 管的是全局装的 CLI 版本),给不存在的检测接 --fix = 新建检测而非「扩面」,**本轮不做**。
 - **#6 → 「子代理知识提示」(P2)**: 增设 PreToolUse(Task/Agent)hook,向子代理 dispatch prompt 追加一行「对将改文件先 fab_recall」+ 当前 session 已召回条目索引;守 never-block(纯追加,失败放行)。
 - **#10 → 「pitfall 根因词汇表」(P2)**: fabric-archive 的 pitfall phase ref 增加封闭根因分类(缺规范/跨层契约/传播失败/测试缺口/隐式假设)+「上次修复为什么没修好」提问;纯 skill 文本,零 schema 变更。
@@ -101,7 +101,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **B1 清 .claude/worktrees 910MB**(1 个已合并纯尸体 + 2 个落后 12-13 commit)⚠️ 删 worktree 不删分支,但 2 个未合 worktree 若有未提交改动需先确认 | complexity-shared-misc.md §4;实证喂养 flaky 假红(ISS-003 家族) | 低(分支保留) |
 | ~~**B2 cli 死代码一刀删 1,961 行(src 的 8.1%)**~~ ✅ **已完成**(commit ecef80f5):W0 的 T-2 把 `runInit`/`runScaffoldOnly` 迁进 install-v2 管线解钉测试后,v1 安装器 8 文件 2,049 行删除,**CLI 不可达代码归零** | complexity-cli.md §6,可达性分析实锤 | — |
 | **B3 server 死代码** ⚠️ **剩尾巴**: unarchive-knowledge.ts / 双胞胎 builder / 死 export 已随 W1 清掉;**`doctor-test-helpers.ts` 115 行仍在 `src/` 未移出** | complexity-server.md §4 | 低;⚠️ barrel 修剪须防 quarantine 包与离线 cold-eval 两类静态 grep 假阴性 |
-| **B4 修 ISS-001 归档全量扫**(需你二选一: (a) backlog 可达优先→改文档语义 (b) all 应显式 opt-in→改 Phase 0)⚠️ 产品决策 | issues.jsonl ISS-20260806-001(high);archive-scan.ts:75 vs ref 文档矛盾 | 中(改主链路) |
+| ~~**B4 修 ISS-001 归档全量扫**~~ ✅ **已完成**(随 W3, `5e42db62`,取裁决 (b))。核证后**根因不在代码**:`archive-scan.ts` 省略 range 本就走 anchor cutoff,错的是 skill 契约强制它永远不省略 | issues.jsonl ISS-20260806-001(已 closed) | — |
 
 ### P1(小手术,需回归验证)
 
@@ -130,10 +130,10 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 
 | 提案 | 内容 | 优先级 |
 |---|---|---|
-| **T1** | **删矛盾文档而非补丁**: ISS-001 的 `ref/phase-0-range-resolution.md` 语义与实现冲突 → 随 B4 修代码时直接删该 ref,语义由参数名/默认值/错误信息自解释 | 随 B4(W1) |
+| ~~**T1**~~ ✅ **已完成**(随 W3 B4, `5e42db62`)。**部分偏离原计划**: 没整份删 `ref/phase-0-range-resolution.md` —— 其 Step 2-5(双语时间窗解析表 / 关键词抽取 / session_id 解析算法 / AskUserQuestion 兜底)是纯 LLM 行为规约,代码里没有对应物,删了就真丢。删的是**真矛盾的那部分**: Step 6 carry-forward contract 整段 + Step 5 落到 `"all"` 的兜底 + 3 个复述表格的 worked example(157→107 行),权威契约收敛到 zod `describe` | 随 B4(W1) |
 | **T2** | **文档 census 三分类**: 全仓 prose(docs/*.md、README、.workflow/ 文档、skill ref 树)逐份判 **活契约 / 已漂移 / 尸体**;尸体删、漂移的要么修代码让其自明要么删、活契约留 | W4 |
 | **T3** | **凡是复述代码的文档一律删**: 判据 = 「这段话的信息代码里已经有(类型/schema/错误信息/默认值),读代码就能知道」→ 删文档,必要时补强代码自解释性(更好的类型名、更明确的错误文案) | W4 |
-| **T4** | **skill ref 树瘦身**: fabric-archive 21 ref / fabric-review 10 ref → 合并同类项,目标是 AI 读更少的字拿到同样的确定性(与 steal #11「快速通道」天然协同) | W3 |
+| **T4** | **skill ref 树瘦身**: ✅ **fabric-archive 21 → 11 已完成**(`68c60cf7`): source-* 6 合 1 / phase-3-* 4 合 1 / 删 rc-history / dry-run 折进 SKILL.md。合并按「读者带着什么问题来」切,不按主题名。**fabric-review 的 10 ref 未动**,留 W4 顺手做 | W3 |
 | **T5** | **止漂机制**: 版本号等确定性事实由代码/构建产出注入文档,而非人工同步(README 版本漂移的根治);无法自动化的加 census ratchet | W4 |
 
 ### 4.6 轨I · 安装物件必要性(用户 2026-08-10 新增原则)
@@ -166,7 +166,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **W1 埋尸体** | ✅ **全部完成**(2026-08-10): 911MB worktree 清理 + 811 行零引用死代码(commit bc636bcf/6bac073c);原受阻的 install.ts 死件簇经 W0 的 T-2 解钉后删除 2,049 行(commit ecef80f5),**CLI 不可达代码归零**。**剩一个尾巴**: `doctor-test-helpers.ts` 115 行仍在 `src/`(见 B3) | ✅ 已拍板 | ✅ 收口 |
 | **W0 测试架构** | ✅ **全部完成**。T-1 量化(证伪「竞态」归因,落并行+超时 102.7s→46.4s)→ T-2 解耦死代码(**解锁 W1**)+ T-2b fixture 降频(46.4s→**26.4s**)→ T-3 切 AI/代码线(判据写进 `docs/TESTING.md`,措辞锁移 `PROMPT_WORDING=1`)→ T-4 提速(CI 门禁 10 步→9 步)→ T-5 消重(**吃掉 B8**,−382 行)。两处经实测**否决**: 档 B 拆分不做、撤 70% 覆盖率阈值不做 | 待用户评审提案 | ✅ 收口 |
 | **W2 配置防御** | ✅ **全部完成**(2026-08-10): #2 hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);#16 安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only,守 KT-PIT-0016);#9 MCP root-pin repair 从「造好没人调」接进检查 + `--fix`,逻辑移进 shared 打通 server↔cli 边界(commit ea134c91)。doctor 检查数 51→53 | 无 | ✅ 收口 |
-| **W3 沉淀减负** | ⬅️ **当前批次(2026-08-11 开工)**。steal #11 群: 归档快速通道 + 收口仪式 + review age-nudge + T4 ref 树瘦身;**连带两个同链尾巴 B4 + T1**(ISS-001 归档全量扫按已裁决走代码侧修,并直接删掉矛盾的 `ref/phase-0-range-resolution.md`);**跑完后**处置 46 会话积压并复评任务轴 §3.1 | 无 | 1-2 个会话 |
+| **W3 沉淀减负** | ✅ **全部完成**(2026-08-11)。**B4+T1**(`5e42db62`): ISS-001 根因不在代码而在 skill 契约 —— Step 6 规定 Phase 0 只能产出 `session_id[]` 或 `"all"`,没有 omit 选项,于是 skill 永远不省略 range,anchor cutoff 实际失效;改成三选一表(无 hint 一律 OMIT),矛盾的 Step 6 整段删除,权威契约收敛到 `archiveScanInputSchema.range` 的 describe。**review 龄触发**(`779b0138`): Stop hook 早已是 count-OR-age,缺口在 SessionStart 只看 count(注释还声称两边一致);`liveKnowledgeStats` 一直在算 `oldestPendingMtimeMs` 然后被丢掉 —— 与 #9 同族的"造好没人调"。**收口仪式**(`0b6c252a`): bootstrap 加"做完一段必须显式给归档判断,'无'是合法结论"。**T4 + 快速通道**(`68c60cf7`): ref 21→11(source-* 6 合 1 / phase-3-* 4 合 1 / 删 rc-history / dry-run 折进 SKILL.md),加单跳快速通道 | 无 | ✅ 收口 |
 | **W4 瘦身(代码+文档)** | ~~B9~~ ✅(f82fa3b3)、~~B8~~ ✅(随 T-5);**剩 B5 + B6 + B7 + 轨I 的 I2 + 轨T 的 T2/T3/T5** | B7 已拍板删;需同批 supersede KT-DEC-0016;I3 已裁决不做 / I4 已完成 | 2 个会话 |
 | **W5 结构化** | B10-B15 择量 + steal P2 三条(#6/#10/#18*) | 无 | 按需分段 |
 | **(条件批)** | 需重议档案 §3.1/§3.2 若开禁,各自单独立项走完整 brainstorm | 你的裁决 | — |
