@@ -88,6 +88,7 @@ export async function mergeCodexHookConfig(
 const FABRIC_HOOK_SCRIPT_BASENAMES: ReadonlySet<string> = new Set([
   "fabric-hint.cjs",
   "knowledge-hint-broad.cjs",
+  "knowledge-hint-subagent.cjs",
   "knowledge-hint-narrow.cjs",
   // ux-w2-6: the single PreToolUse orchestrator — must be in the strip set so a
   // template matcher edit re-syncs on re-install (same reason as the others below).

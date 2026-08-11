@@ -11,6 +11,7 @@ import {
   HOOK_SCRIPT_DESTINATIONS,
   HOOK_SCRIPT_TEMPLATE_REL,
   HOOK_SESSION_END_SCRIPT_TEMPLATE_REL,
+  HOOK_SUBAGENT_SCRIPT_TEMPLATE_REL,
 } from "./distribution-targets.js";
 import type { InstallStepResult } from "./step-result.js";
 import { copyTextIdempotent, findTemplatePath, readTemplate } from "./template-io.js";
@@ -87,6 +88,21 @@ export async function installKnowledgeHintBroadHook(
 // lives in templates/hooks/lib/ and rides installHookLibs below with every
 // other lib — no bespoke copy step, no destination list, no validate row of its
 // own beyond the lib path.
+
+/**
+ * W5 #6: copy templates/hooks/knowledge-hint-subagent.cjs (SubagentStart
+ * knowledge injection for dispatched sub-agents).
+ */
+export async function installKnowledgeHintSubagentHook(
+  projectRoot: string,
+): Promise<InstallStepResult[]> {
+  return installHookScriptCopies(
+    "hook-subagent-script",
+    HOOK_SUBAGENT_SCRIPT_TEMPLATE_REL,
+    HOOK_SCRIPT_DESTINATIONS.knowledgeHintSubagent,
+    projectRoot,
+  );
+}
 
 /**
  * ux-w2-6: copy templates/hooks/knowledge-pretooluse.cjs (PreToolUse orchestrator).

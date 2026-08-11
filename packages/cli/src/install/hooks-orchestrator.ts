@@ -16,6 +16,7 @@ import {
   installCitePolicyEvictHook,
   installHookLibs,
   installKnowledgeHintBroadHook,
+  installKnowledgeHintSubagentHook,
   installKnowledgePretoolUseHook,
   installPostTooluseMutationHook,
   installSessionEndMarkerHook,
@@ -104,6 +105,7 @@ export async function installHooks(
   // chmod 0o755 on POSIX. Order vs config-merge matters: copy first so the
   // validateHookPaths post-step finds the script on disk.
   results.push(...await runStep(() => installKnowledgeHintBroadHook(normalizedTarget)));
+  results.push(...await runStep(() => installKnowledgeHintSubagentHook(normalizedTarget)));
   // W4 I2: the narrow hook no longer has a copy step here — it moved under
   // templates/hooks/lib/ and ships with installHookLibs below.
   // v2.0.0-rc.34 TASK-06: Claude Code-only UserPromptSubmit cite-policy
@@ -177,6 +179,10 @@ export function validateHookPaths(projectRoot: string): InstallStepResult[] {
     { stepSuffix: "-pretooluse", hookFile: "knowledge-pretooluse.cjs" },
     // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hooks.
     { stepSuffix: "-session-end", hookFile: "session-end-marker.cjs" },
+    // W5 #6: SubagentStart knowledge injection. Validated like every other
+    // registered entry point — a missing copy silently returns sub-agents to
+    // starting blind, which is exactly the gap it was added to close.
+    { stepSuffix: "-subagent", hookFile: "knowledge-hint-subagent.cjs" },
     { stepSuffix: "-post-tooluse", hookFile: "post-tooluse-mutation.cjs" },
   ];
   const clients: Array<{ client: string; configRel: string; hookDir: string }> = [

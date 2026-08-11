@@ -59,6 +59,13 @@ export const HOOK_REGISTRATIONS: Record<HookClient, HookClientLayout> = {
         matcher: "Edit|Write|MultiEdit|Read",
       },
       { event: "SessionEnd", hookFile: "session-end-marker.cjs", matcher: "*" },
+      // W5 #6: a sub-agent starts with a blank conversation — it inherits
+      // neither the dispatcher's SessionStart injection nor anything the
+      // dispatcher recalled, yet the edit-capable sub-agents are the ones that
+      // modify the repo. SubagentStart is the only event whose additionalContext
+      // reaches the sub-agent itself (PreToolUse's lands in the dispatcher's
+      // context). Matcher "*" — every agent type, since any of them may edit.
+      { event: "SubagentStart", hookFile: "knowledge-hint-subagent.cjs", matcher: "*" },
     ],
   },
   codex: {
@@ -82,6 +89,8 @@ export const HOOK_REGISTRATIONS: Record<HookClient, HookClientLayout> = {
         matcher: "Edit|Write|MultiEdit|apply_patch|Read",
       },
       { event: "SessionEnd", hookFile: "session-end-marker.cjs", matcher: "*" },
+      // W5 #6, Codex side. Same rationale as the Claude Code entry above.
+      { event: "SubagentStart", hookFile: "knowledge-hint-subagent.cjs", matcher: "*" },
     ],
   },
 };

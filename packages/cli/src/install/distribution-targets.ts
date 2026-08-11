@@ -58,6 +58,13 @@ export const HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL = "hooks/cite-policy-evict.cjs"
 // append). Sibling to knowledge-hint-*.cjs — same install/copy plumbing,
 // registered against the SessionEnd event in each client config.
 export const HOOK_SESSION_END_SCRIPT_TEMPLATE_REL = "hooks/session-end-marker.cjs";
+// W5 #6: SubagentStart knowledge-injection hook. A sub-agent starts with a
+// blank conversation — it inherits neither the dispatcher's SessionStart
+// injection nor anything the dispatcher recalled — yet the edit-capable
+// sub-agents are the ones that go on to modify the repo. Registered against
+// SubagentStart (NOT PreToolUse: that event's additionalContext lands in the
+// DISPATCHER's context, which is the wrong agent).
+export const HOOK_SUBAGENT_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-subagent.cjs";
 // lifecycle-refactor W2-T3: PostToolUse marker hook. Emits `file_mutated` on
 // Edit/Write/MultiEdit (per-call key) and, since W3-3/KT-DEC-0030,
 // `knowledge_body_read` on a Read of a store knowledge body — so its matcher
@@ -187,6 +194,12 @@ export const HOOK_SCRIPT_DESTINATIONS = {
     ".claude/hooks/knowledge-hint-broad.cjs",
     ".codex/hooks/knowledge-hint-broad.cjs",
   ],
+  // W5 #6: SubagentStart injection. Shipped to both client trees so the
+  // validate sweep stays uniform; each client registers it in its own config.
+  knowledgeHintSubagent: [
+    ".claude/hooks/knowledge-hint-subagent.cjs",
+    ".codex/hooks/knowledge-hint-subagent.cjs",
+  ],
   // ux-w2-6: the single PreToolUse orchestrator. Requires knowledge-hint-narrow
   // (now shipped by installHookLibs from templates/hooks/lib/, per W4 I2) and
   // cite-policy-evict, merging their output into one envelope so the
@@ -290,8 +303,18 @@ export const HOOK_CONFIG_ARRAY_PATHS = {
     "hooks.UserPromptSubmit",
     "hooks.PostToolUse",
     "hooks.SessionEnd",
+    // W5 #6: SubagentStart knowledge injection.
+    "hooks.SubagentStart",
   ],
-  codex: ["events.Stop", "events.SessionStart", "events.PreToolUse", "events.PostToolUse", "events.SessionEnd"],
+  codex: [
+    "events.Stop",
+    "events.SessionStart",
+    "events.PreToolUse",
+    "events.PostToolUse",
+    "events.SessionEnd",
+    // W5 #6: SubagentStart knowledge injection.
+    "events.SubagentStart",
+  ],
 } as const;
 
 /**
@@ -310,6 +333,7 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
   claudeCode: {
     fabricHint: "${CLAUDE_PROJECT_DIR}/.claude/hooks/fabric-hint.cjs",
     knowledgeHintBroad: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-broad.cjs",
+    knowledgeHintSubagent: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-subagent.cjs",
     knowledgeHintNarrow: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-hint-narrow.cjs",
     knowledgePretoolUse: "${CLAUDE_PROJECT_DIR}/.claude/hooks/knowledge-pretooluse.cjs",
     citePolicyEvict: "${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs",
@@ -319,6 +343,7 @@ export const FABRIC_HOOK_COMMAND_PATHS = {
   codex: {
     fabricHint: "\"$(git rev-parse --show-toplevel)/.codex/hooks/fabric-hint.cjs\"",
     knowledgeHintBroad: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-broad.cjs\"",
+    knowledgeHintSubagent: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-subagent.cjs\"",
     knowledgeHintNarrow: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-hint-narrow.cjs\"",
     knowledgePretoolUse: "\"$(git rev-parse --show-toplevel)/.codex/hooks/knowledge-pretooluse.cjs\"",
     citePolicyEvict: "\"$(git rev-parse --show-toplevel)/.codex/hooks/cite-policy-evict.cjs\"",

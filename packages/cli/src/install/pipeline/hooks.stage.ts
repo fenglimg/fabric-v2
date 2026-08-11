@@ -15,6 +15,7 @@ import {
   installCitePolicyEvictHook,
   installHookLibs,
   installKnowledgeHintBroadHook,
+  installKnowledgeHintSubagentHook,
   installKnowledgePretoolUseHook,
   installPostTooluseMutationHook,
   installSessionEndMarkerHook,
@@ -78,6 +79,7 @@ export class HooksStage implements Stage {
       // Install hook scripts
       installResults.push(...await this.runBestEffort("hook-script", () => installArchiveHintHook(target)));
       installResults.push(...await this.runBestEffort("hook-broad-script", () => installKnowledgeHintBroadHook(target)));
+      installResults.push(...await this.runBestEffort("hook-subagent-script", () => installKnowledgeHintSubagentHook(target)));
       installResults.push(...await this.runBestEffort("hook-cite-policy-evict-script", () => installCitePolicyEvictHook(target)));
       // ux-w2-6: single PreToolUse orchestrator (requires narrow + cite above).
       installResults.push(...await this.runBestEffort("hook-pretooluse-script", () => installKnowledgePretoolUseHook(target)));

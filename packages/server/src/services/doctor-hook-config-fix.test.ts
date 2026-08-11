@@ -100,8 +100,8 @@ describe("inspectHooksWired", () => {
 
   it("reports every registration the config is missing, not just the first", async () => {
     const root = makeRoot();
-    // Stop only — the other four Claude Code registrations are absent. The
-    // hand-written predecessor of this check knew about 3 of the 5 and would
+    // Stop only — every other Claude Code registration is absent. The
+    // hand-written predecessor of this check knew about 3 of them and would
     // have called a config missing PostToolUse + SessionEnd healthy.
     write(
       root,
@@ -126,6 +126,7 @@ describe("inspectHooksWired", () => {
       `${CLAUDE_CONFIG} PreToolUse:knowledge-pretooluse.cjs`,
       `${CLAUDE_CONFIG} PostToolUse:post-tooluse-mutation.cjs`,
       `${CLAUDE_CONFIG} SessionEnd:session-end-marker.cjs`,
+      `${CLAUDE_CONFIG} SubagentStart:knowledge-hint-subagent.cjs`,
     ]);
   });
 

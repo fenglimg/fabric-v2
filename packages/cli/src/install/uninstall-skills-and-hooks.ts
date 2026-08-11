@@ -207,6 +207,19 @@ export async function removeKnowledgeHintBroadHook(
   );
 }
 
+/**
+ * W5 #6: inverse of `installKnowledgeHintSubagentHook`.
+ */
+export async function removeKnowledgeHintSubagentHook(
+  projectRoot: string,
+): Promise<UninstallStepResult[]> {
+  return removeHookScripts(
+    "hook-subagent-script",
+    HOOK_SCRIPT_DESTINATIONS.knowledgeHintSubagent,
+    projectRoot,
+  );
+}
+
 // W4 I2: removeKnowledgeHintNarrowHook deleted alongside its install-side
 // counterpart. knowledge-hint-narrow.cjs now lives in <client>/hooks/lib/, and
 // removeHookLibs already deletes every `.cjs` under those directories.
@@ -630,6 +643,10 @@ export async function uninstallBootstrapStage(
   // 4. Hook scripts (reverse of install order)
   await runAndCollect(results, "hook-broad-script", projectRoot, () =>
     removeKnowledgeHintBroadHook(projectRoot),
+  );
+  // W5 #6: SubagentStart injection script.
+  await runAndCollect(results, "hook-subagent-script", projectRoot, () =>
+    removeKnowledgeHintSubagentHook(projectRoot),
   );
   await runAndCollect(results, "hook-script", projectRoot, () =>
     removeArchiveHintHook(projectRoot),

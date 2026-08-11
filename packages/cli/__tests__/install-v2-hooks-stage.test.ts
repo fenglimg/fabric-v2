@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => {
     installSharedSkillLib: vi.fn(() => okList("skill-shared-lib")),
     installArchiveHintHook: vi.fn(() => okList("hook-script")),
     installKnowledgeHintBroadHook: vi.fn(() => okList("hook-broad-script")),
+    installKnowledgeHintSubagentHook: vi.fn(() => okList("hook-subagent-script")),
     installKnowledgeHintNarrowHook: vi.fn(() => okList("hook-narrow-script")),
     installCitePolicyEvictHook: vi.fn(() => okList("hook-cite-policy-evict-script")),
     installSessionEndMarkerHook: vi.fn(() => okList("hook-session-end-script")),
@@ -63,6 +64,7 @@ vi.mock("../src/install/install-skills.js", () => ({
 vi.mock("../src/install/install-hook-scripts.js", () => ({
   installArchiveHintHook: mocks.installArchiveHintHook,
   installKnowledgeHintBroadHook: mocks.installKnowledgeHintBroadHook,
+  installKnowledgeHintSubagentHook: mocks.installKnowledgeHintSubagentHook,
   installKnowledgeHintNarrowHook: mocks.installKnowledgeHintNarrowHook,
   installKnowledgePretoolUseHook: mocks.installKnowledgePretoolUseHook,
   installCitePolicyEvictHook: mocks.installCitePolicyEvictHook,
