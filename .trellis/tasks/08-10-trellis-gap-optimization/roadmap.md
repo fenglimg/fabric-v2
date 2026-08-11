@@ -147,7 +147,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | 提案 | 内容 | 状态 / 优先级 |
 |---|---|---|
 | **I1** | **recall-playbook 的 ref 从来没被装过**: SKILL.md 两处指示 agent 打开 `ref/scenarios.md`,install spec 却没设 `includeRefFiles`。根因是该布尔值本身有三份真相(install 侧 / uninstall 侧 / 模板目录),而两侧实现本就优雅处理缺席 → 删标记,文件系统当唯一真源;补双向 producer-consumer round-trip oracle(24 tests,变异实证有判别力) | ✅ **已完成** commit 4585235a |
-| **I2** | **knowledge-hint-narrow 装在入口位却零注册**: 已退化为 pretooluse 的 lib(cite-policy-evict 在 CC 侧同理),却仍装在 `hooks/` 顶层 → 移入 `hooks/lib/`,旧路径进 deprecated 清扫。**不是死文件是分类错位**:顶层位置误导心智模型,且 doctor wired 检查够不着 | W4(中风险,动分发路径) |
+| **I2** | **knowledge-hint-narrow 装在入口位却零注册**: 已退化为 pretooluse 的 lib,却仍装在 `hooks/` 顶层 → 移入 `hooks/lib/`,旧路径进 deprecated 清扫。**不是死文件是分类错位**:顶层位置误导心智模型,且 doctor wired 检查够不着。**W4 实测修正前提(逐 config 核对两端注册表)**:`knowledge-hint-narrow` 两端(`.claude/settings.json` + `.codex/hooks.json`)**都**未注册 → 确为错位,可移;但 `cite-policy-evict` **在 Codex 侧是注册的入口**(`.codex/hooks.json`),只在 CC 侧不是 —— 它不是错位而是**客户端不对称的真入口**,移进 lib/ 会直接打断 Codex 的钩子。所以 I2 只搬前者;后者的正确处置是把这份不对称显式化+可检,不是搬家 | W4(中风险,动分发路径) |
 | **I3** | **两个 thin shim skill 的常驻描述税**: `fabric-store`(30L)/`fabric-sync`(28L)是纯意图→命令表+红线 | ❌ **用户裁决:不做** — 合并没必要 |
 | **I4** | **清空历史清扫机制**: install 侧 `DEPRECATED_SKILL_DIRS`(10 条)+ `cleanupDeprecatedSkills()`,以及 uninstall 侧打**同一批目录**的 4 个 legacy sweeper(router/import/audit/connect)——只清一边自相矛盾,一起拆。零用户阶段不背 pre-W3-C 包袱 | ✅ **已完成** commit da51bcf6 |
 
