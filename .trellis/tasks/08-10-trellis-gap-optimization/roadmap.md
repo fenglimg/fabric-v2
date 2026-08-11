@@ -111,7 +111,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **B6 shared 死区**: 6 个死/test-only 模块(KnowledgeEntryFrontmatterSchema 0 消费者、events.ts、human-lock、api-contracts §10 等) | complexity-shared-misc.md §2(69 模块全量普查) | 低 |
 | **B7 删 server-http-experimental 包(2,603 行)**⚠️ 需 supersede KT-DEC-0016(quarantine-not-delete)——代码已烂(http.ts:23 import 不存在的导出,typecheck 从不跑),隔离的"以后可能复活"前提已不成立;删除进 git 历史可随时找回;需同步改 census 测试 :109-111 | complexity-shared-misc.md §1 | 低(git 历史可回);决策成本>技术成本 |
 | **B8 templates CJS 孪生迁生成通道**: 3 个手写孪生(cite-line-parser/theme/high-value-predicate,靠 4 个 parity 测试压住)+ config 读取 5 处 3 实现 → 迁入既有生成 bundle 通道后删手写份 | complexity-cli.md §5 | 中(动分发链,parity 测试是安全网) |
-| **B9 拆 skills-and-hooks.ts 1,570 行五合一**(skill 安装/hook 安装/config merge/bootstrap 传播/模板解析),install+uninstall 双向依赖的枢纽 | complexity-cli.md §2 | 中(行为保持重构,7 ship gate 兜底) |
+| ~~**B9 拆 skills-and-hooks.ts 五合一**~~ ✅ **已完成**(2026-08-10, commit f82fa3b3):1517 行 → 7 个单职责模块(step-result 34 / distribution-targets 329 / template-io 76 / install-skills 307 / install-hook-scripts 255 / hook-config-merge 275 / bootstrap-propagation 273)。拆分顺带清出 5 处死面:`InstallOptions` 空类型 + 19 处 `_options` 形参(零调用点传参)、`readFabricLanguagePreference` export(零 import,env.stage 有私有同名副本)、`BOOTSTRAP_MARKER_*` 再导出(零消费者)、`buildManagedBlockBody`/`FABRIC_HOOK_SCRIPT_BASENAMES` 过度导出、未用 `rm` import。**行为保持用真实 install 双跑比对证明**(158 文件 sha256 全集 + 完整 InstallStepResult 行流逐字节相同),不只靠测试绿 | complexity-cli.md §2 | — |
 
 ### P2(结构化,分批慢做)
 
@@ -167,7 +167,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **W0 测试架构** | ⬅️ **新增,应前置于 W1 剩余部分**。见 `test-architecture-proposal.md`: T-1 量化 → T-2 解耦死代码 → T-3 切 AI/代码线 → T-4 提速 → T-5 消重 | 待用户评审提案 | 2-3 个会话 |
 | **W2 配置防御** | ✅ **全部完成**(2026-08-10): #2 hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);#16 安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only,守 KT-PIT-0016);#9 MCP root-pin repair 从「造好没人调」接进检查 + `--fix`,逻辑移进 shared 打通 server↔cli 边界(commit ea134c91)。doctor 检查数 51→53 | 无 | ✅ 收口 |
 | **W3 沉淀减负** | steal #11 群: 归档快速通道 + 收口仪式 + review age-nudge + T4 ref 树瘦身;**跑完后**处置 44 会话积压并复评任务轴 | 无 | 1-2 个会话 |
-| **W4 瘦身(代码+文档)** | B5+B6+B7+B8+B9 + 轨T 的 T2/T3/T5 + **轨I 的 I2**(I2 与 B8 同族:都是手写孪生/分发链错位) | B7 已拍板删;需同批 supersede KT-DEC-0016;I3/I4 待裁决后决定是否并入本批 | 2-3 个会话 |
+| **W4 瘦身(代码+文档)** | ~~B9~~ ✅ 已完成(commit f82fa3b3);剩 B5+B6+B7+B8 + 轨T 的 T2/T3/T5 + **轨I 的 I2**(I2 与 B8 同族:都是手写孪生/分发链错位) | B7 已拍板删;需同批 supersede KT-DEC-0016;I3/I4 待裁决后决定是否并入本批 | 2 个会话 |
 | **W5 结构化** | B10-B15 择量 + steal P2 三条(#6/#10/#18*) | 无 | 按需分段 |
 | **(条件批)** | 需重议档案 §3.1/§3.2 若开禁,各自单独立项走完整 brainstorm | 你的裁决 | — |
 
