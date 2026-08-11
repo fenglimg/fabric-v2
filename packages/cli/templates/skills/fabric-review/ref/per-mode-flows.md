@@ -14,7 +14,7 @@ Step-by-step procedures, bilingual rendering blocks, and the closing roll-up for
 
 1. Call `fab_pending` with `action: "list"`, no filters (or `filters.layer="both"` if user explicitly mentioned both layers).
 2. Server returns `items[]` (each = `{pending_path, type, layer, maturity, tags?, title?, summary?}`).
-3. Before presenting, perform **Semantic Check + Activation Check** (see `ref/semantic-check.md`) by issuing one or more `fab_pending action="search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries, then judge whether the pending entry changes next action.
+3. Before presenting, perform **Semantic Check + Activation Check** (see `ref/semantic-check.md`) by issuing one or more `fab_recall` calls on the paths each pending entry is about, to surface possible duplicates / contradictions among already-canonical entries, then judge whether the pending entry changes next action. (Ranked retrieval, not `fab_pending action="search"` — see `ref/semantic-check.md` for why a substring gate cannot do dedupe.)
 4. For each pending item, render a per-item block. Render `proposed_reason` (frontmatter) with its display-time description from `PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE` enum (v-next grill D8) + first line of `## Context` so future-self has full context without re-reading the transcript. UX i18n Policy class 1 — roll-up templates; protected tokens (`pending_path`, `layer`, `team`, `decisions`, `proposed_reason`, `Tags`, etc.) appear verbatim in BOTH variants:
 
    **en variant** (`language === "en"`):

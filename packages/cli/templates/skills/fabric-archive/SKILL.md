@@ -45,7 +45,9 @@ The full chain exists for ambiguous batches. Most archives are not that: the use
 
 **Then run exactly this, reading NO ref files:**
 
-`fab_pending action="search"` (dedupe — a near-duplicate is the highest-noise failure, never skip it) → classify with the layer heuristic and the 5 types **already stated in this file** → `fab_propose` → Phase 4.5 emit → show `pending_path`.
+`fab_recall(paths=[<the code paths this candidate is about>])` (dedupe vs canonical — a near-duplicate is the highest-noise failure, never skip it) + `fab_pending action="list"` (dedupe vs the pending backlog) → classify with the layer heuristic and the 5 types **already stated in this file** → `fab_propose` → Phase 4.5 emit → show `pending_path`.
+
+> **Do NOT dedupe with `fab_pending action="search"`.** Its query is a SUBSTRING gate, and dedupe is precisely the case where you do not know the words the existing entry used — an empty result there means "your guessed terms missed", not "no duplicate". `fab_recall` is the ranked retrieval path and finds the near-duplicate you cannot name; the pending backlog is small enough to just `list` and read. Search is the right tool for a human browsing BY a known keyword, which is a different job.
 
 **Bail out to the full chain** the moment any of the three conditions breaks — two candidates, a signal you had to infer, or a layer/audience call you are unsure of. Uncertainty is exactly what the long path is for; the fast path is not a licence to guess faster.
 
@@ -60,9 +62,9 @@ The WRITE Rules at the bottom of this file are **not** waived on the fast path �
 Source-mode pipeline (replaces GATHER; REVIEW+PERSIST unchanged):
 
 1. **Init / checkpoint** — read/init `.fabric/.import-state.json` (single resumability source; atomic `Write .tmp` → `Bash mv`). Full state schema, 6-step resume, and the crash-recovery path → `Read ref/source-mode.md` (sections D + E).
-2. **Init-scan reference (NO re-implement)** — `fabric onboard-coverage --json` + `fab_pending action="search"` to learn existing canonical titles for the negative filter. `fabric install` already produced the baseline; source mode references it, never redoes it.
+2. **Init-scan reference (NO re-implement)** — `fabric onboard-coverage --json` + `fab_pending action="list"` to learn existing canonical titles for the negative filter. `fabric install` already produced the baseline; source mode references it, never redoes it.
 3. **Mine (git + docs)** — `git log --since="<window> months ago"` (conventional prefix → type signal) + `docs/*.md`; classify into the 5 types; `fab_propose` per candidate. **Source-mode scope lock (NON-NEGOTIABLE): every mined entry `relevance_scope="broad"` + `relevance_paths=[]`** — LLM-inferred narrow lies about applicability; narrowing is deferred to `fab_review.modify` post-import. Cap `import_max_pending_per_run` (default 10). Full mining procedure, conventional-prefix table, `--dry-run` template → `Read ref/source-mode.md` (section A).
-4. **Dedupe vs canonical** — for each pending, `fab_pending action="search"` (top 5 by type), classify duplicate / subsumption / subsumption-with-novelty / contradiction / genuinely-new, then `fab_review` reject / modify. `fab_pending` does NOT compare meaning — semantic compare is the LLM's job. Full 5-way classification → `Read ref/source-mode.md` (section B).
+4. **Dedupe vs canonical** — for each pending, `fab_recall(paths=[...])` on the paths the entry is about (ranked retrieval, not a substring gate), classify duplicate / subsumption / subsumption-with-novelty / contradiction / genuinely-new, then `fab_review` reject / modify. Neither tool compares MEANING — semantic compare is the LLM's job; recall's job is to put the right candidates in front of it. Full 5-way classification → `Read ref/source-mode.md` (section B).
 
 Source-mode config knobs (read from `.fabric/fabric-config.json`, defaults if absent): `import_window_first_run_months` (60), `import_window_rerun_months` (2), `import_max_pending_per_run` (10), `import_max_commits_scan` (500), `import_skip_canonical_threshold` (50).
 
@@ -140,7 +142,7 @@ Gather raw evidence: tail `.fabric/events.jsonl` since last `knowledge_proposed`
 
 Coarse viability check. **PASS**: user_explicit_invoke OR ≥1 archive signal hit. rc.37 NEW-4 folds the legacy 8 signals into **3 categories**: (1) **User-driven knowledge expression** (normative language `always`/`never`/`以后`/`记一下`/`永远不要`, OR decision-with-rationale, OR dismissal-with-reason); (2) **Reflective discovery** (wrong-turn-and-revert, OR long diagnostic loop, OR a named reusable pattern); (3) **Concrete artifact change** (new dependency diff, OR a formalized multi-step procedure).
 
-Pre-PASS HARD gate (rc.37 NEW-4): per candidate, run `fab_pending action="search"` against the mounted read-set; duplicate canonical → drop the candidate (anti-signal #4). Silently writing a near-duplicate is the highest-noise failure mode.
+Pre-PASS HARD gate (rc.37 NEW-4): per candidate, run `fab_recall(paths=[...])` against the mounted read-set (plus `fab_pending action="list"` for the un-reviewed backlog); duplicate canonical → drop the candidate (anti-signal #4). Silently writing a near-duplicate is the highest-noise failure mode — and a substring `search` that returns nothing does NOT clear this gate, see the fast-path note above.
 
 **FAIL → branch**: E1/E3/E5 silent-skip (`outcome='skipped_no_signal'`); E2/E4 render gate-FAIL (`outcome='viability_failed'`) and MUST include the force-archive escape hatch (zh-CN: `如需强制归档，请显式调用 fabric-archive` / en: `To force-archive, explicitly invoke fabric-archive`).
 

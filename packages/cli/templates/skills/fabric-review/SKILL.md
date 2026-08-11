@@ -105,7 +105,9 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 
 > Boundary B (locked): "extraction / classification / layer / slug / mode / **semantic dedup** → Skill (LLM); file write / frontmatter / idempotency / counter / layer-flip / atomic promote → MCP (deterministic)"
 
-Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run during `pending` mode (and on demand during `maintain`/browse): for each pending entry, `fab_pending action="search"` scoped by `filters.type` → LLM judges semantically against returned canonical entries → surface semantic flags and activation/actionability flags as informational:
+Semantic check is the LLM's job — no MCP tool compares meaning. Run during `pending` mode (and on demand during `maintain`/browse): for each pending entry, `fab_recall(paths=[<the code paths the entry is about>])` → LLM judges semantically against the returned canonical entries → surface semantic flags and activation/actionability flags as informational:
+
+> Use `fab_recall`, not `fab_pending action="search"`, to gather the comparison set. Search matches a SUBSTRING of title/summary/tags/path, so it can only find entries that happen to reuse your wording — exactly the entries you would have spotted anyway. The duplicate that matters is the one phrased differently, and only ranked retrieval surfaces it. (`fab_pending action="search"` remains right for browse-by-topic, where the user supplied the keyword.)
 
 - `⚠ Possible duplicate of <stable_id> (overlap: high)` — same essential claim
 - `⚠ Contradicts <stable_id> (overlap: high)` — opposing claims, same scope

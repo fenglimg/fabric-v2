@@ -1,5 +1,33 @@
 /**
  * ISS-20260713-013: fab_pending search (extracted from review.ts).
+ *
+ * ## Why this does not fold into the recall stack
+ *
+ * It looks like a second retrieval engine sitting next to plan-context /
+ * bm25 / vector-retrieval, and the question "why aren't these one stack?"
+ * comes up on every read. Two thirds of it already ARE one stack: scoring goes
+ * through the shared `buildScoringContext` + `rankDescriptionItems('triage')`
+ * below, so ranking is not duplicated. What stays separate is the corpus walk,
+ * and that separation is forced, not incidental:
+ *
+ *   - The recall read-set structurally EXCLUDES pending drafts
+ *     (cross-store-recall.ts filters `/knowledge/pending/` out of both the
+ *     revision fingerprint and the candidate walk) because pending entries are
+ *     review-only and must never be injected into an agent's context.
+ *   - Review is the one caller whose whole job is the pending tree.
+ *
+ * So there is no walk to share for the half that matters. Merging would only
+ * unify the canonical half and leave two walks anyway.
+ *
+ * ## What `matchesTriageQuery` is, and what it is NOT
+ *
+ * The query is a SUBSTRING GATE (see the comment on that function), which is
+ * right for its designed caller — a human browsing by a keyword they already
+ * know. It is WRONG for dedupe, where the point is that you do not know how the
+ * existing entry was worded, and an empty result reads as "no duplicate" when it
+ * actually means "your guessed terms missed". Dedupe callers must use
+ * `fab_recall` (ranked) for canonical and `fab_pending action="list"` for the
+ * backlog; the fabric-archive / fabric-review skills say so explicitly.
  */
 import { join, relative, resolve, sep } from "node:path";
 import { readFile, readdir, stat } from "node:fs/promises";
