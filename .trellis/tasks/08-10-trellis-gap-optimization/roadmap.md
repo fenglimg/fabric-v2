@@ -130,6 +130,23 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 - **B14 巨型测试拆分**: doctor-cite-coverage.test.ts 2,887 行有 9 个 describe 缝;review.test.ts 2,398。
 - **B15 pending 检索双栈评估**: review-search.ts 475 行自带 cache 与主检索栈(~3,900 行)并行——评估并栈或明确分工文档化。
 
+### 4.4 轨F · 功能面必要性挑战(用户 2026-08-11 新增:「太臃肿了」)
+
+> 用户原话:「我需要全面的了解当前具备哪些功能,需要挑战一下功能存在的必要性,当前太臃肿了感觉」。经确认并进本任务,不新开 task。
+
+**与已有普查的分工**:`debloat-census.md` 管**代码级**臃肿(死事件 / 注释代号噪声 / 低价值测试);本轴管**功能级** —— 这个产品到底有多少功能面,哪些不该存在。砍一个不该存在的功能省的是代码+测试+文档+i18n+doctor 检查项+未来每次重构的照顾成本,杠杆比拆巨石函数大一个数量级。
+
+全集实测 + 5 条挑战详见 → `research/feature-surface-census.md`。要点:
+
+- **全集**:14 顶层命令 / ≥41 citty 声明(≥13 hidden) / 5 MCP 工具 / 6 hook 事件槽 / 7 hook 脚本 + **34 lib 模块** / 6 skill / 45 doctor code / 65 event_type 声明。
+- **本轮找到的最硬 oracle**:本仓 dogfood 账本 `.fabric/events.jsonl`(9,586 行,跨 6 周)。它是全仓唯一的功能级 producer-consumer 往返验证 —— 声明面在 schema,消费面在账本。**65 个 event_type 只有 26 个真出现过。**
+- **挑战 A**:`store` 组 18 个子命令 9 个 hidden;`backfill/scope/promote/reroot` 有实现有测试但**无任何文档/skill/链路按名字调用** —— 一次性迁移工具的典型形状。
+- **挑战 B**:`audit conflicts/history/descriptions` 除自身注册外**全仓零引用**(无文档无测试无 skill)。
+- **挑战 C**:cite-coverage 整套机器(含今天刚拆的 960 行函数)的输入 `assistant_turn_observed` 与它服务的编辑流是 1:8。
+- **挑战 E(最该先修)**:`.fabric/AGENTS.md` 这份**直接注进 AI 上下文的权威正文**写「Skills (4)」,实际 ship 6 个。一个存在但被权威文档否认的功能是**负价值**,比不存在更糟。
+
+**方法学教训(本轮实际踩到,两条初判被自己推翻)**:① `.workflow/` 下 maestro 生成的 `search-cache.json`/`wiki-index.json` 会让符号名普查全线假活;② `includes` 与 `\b` 词边界方向相反地都会撒谎(`FabricLanguage` 的 19 个"命中"全是 `readFabricLanguage` 的子串)。**名字探针两个方向都会骗人,零引用结论必须逐条落到文件复核。**
+
 ### 4.5 轨T · 文档瘦身 / code-as-truth(用户 2026-08-10 新增原则)
 
 > 原则原话:「一些文档可以考虑删除,尽量保证代码就是真源是最好的感觉,需要让代码足够清晰和明确对于 AI 来说」。
