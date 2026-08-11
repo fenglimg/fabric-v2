@@ -11,7 +11,6 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { historyStateQuerySchema, annotateIntentRequestSchema } from '../../src/schemas/api-contracts.js'
 import { ruleDescriptionSchema } from '../../src/schemas/agents-meta.js'
 import { forensicReportSchema } from '../../src/schemas/forensic-report.js'
 import { knowledgeTestIndexSchema } from '../../src/schemas/knowledge-test-index.js'
@@ -29,38 +28,10 @@ function parseAndGetIssues(schema: { parse: (x: unknown) => unknown }, input: un
   }
 }
 
-// ---------------------------------------------------------------------------
-// T4.1 — historyStateQuerySchema superRefine: custom message + path
-// ---------------------------------------------------------------------------
-describe('T4 historyStateQuerySchema superRefine error shape', () => {
-  it('providing neither ledger_id nor ts: message is readable, path is present', () => {
-    const issues = parseAndGetIssues(historyStateQuerySchema, {})
-    expect(issues).not.toBeNull()
-    expect(issues!.length).toBeGreaterThan(0)
-    expect(issues![0]?.message).not.toBe('Invalid input')
-    expect(issues![0]?.message).toContain('exactly one')
-    expect(issues![0]?.path).toBeDefined()
-    expect(Array.isArray(issues![0]?.path)).toBe(true)
-  })
-
-  it('providing both ledger_id and ts: message is readable, path is present', () => {
-    const issues = parseAndGetIssues(historyStateQuerySchema, {
-      ledger_id: 'ledger:abc',
-      ts: 1_000_000,
-    })
-    expect(issues).not.toBeNull()
-    expect(issues![0]?.message).toContain('exactly one')
-    expect(issues![0]?.path).toBeDefined()
-  })
-
-  it('providing only ledger_id: succeeds (no error)', () => {
-    expect(() => historyStateQuerySchema.parse({ ledger_id: 'ledger:abc' })).not.toThrow()
-  })
-
-  it('providing only ts: succeeds (no error)', () => {
-    expect(() => historyStateQuerySchema.parse({ ts: 1_000_000 })).not.toThrow()
-  })
-})
+// W4 B6: T4.1 (historyStateQuerySchema) deleted with its subject. The remaining
+// blocks below still cover the two refine shapes this file exists to pin —
+// superRefine custom messages (T4.6 ratio bounds) and .strict() unknown-key
+// rejection (T4.2) — so the file keeps its purpose.
 
 // ---------------------------------------------------------------------------
 // T4.2 — ruleDescriptionSchema .strict(): unknown keys rejected with path
@@ -154,31 +125,8 @@ describe('T4 knowledgeTestIndexSchema datetime format error shape', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// T4.5 — annotateIntentRequestSchema: annotation trim + min(1)
-// ---------------------------------------------------------------------------
-describe('T4 annotateIntentRequestSchema trim+min(1) error shape', () => {
-  it('empty annotation after trim produces error with path', () => {
-    const issues = parseAndGetIssues(annotateIntentRequestSchema, {
-      ledger_entry_id: 'ledger:abc',
-      annotation: '   ',  // trim → empty → fails min(1)
-    })
-
-    expect(issues).not.toBeNull()
-    const paths = issues!.flatMap((i) => i.path.map(String))
-    expect(paths).toContain('annotation')
-  })
-
-  it('missing ledger_entry_id produces error with path', () => {
-    const issues = parseAndGetIssues(annotateIntentRequestSchema, {
-      annotation: 'valid annotation',
-    })
-
-    expect(issues).not.toBeNull()
-    const paths = issues!.flatMap((i) => i.path.map(String))
-    expect(paths).toContain('ledger_entry_id')
-  })
-})
+// W4 B6: T4.5 (annotateIntentRequestSchema trim+min(1)) deleted with its
+// subject.
 
 // ---------------------------------------------------------------------------
 // T4.6 — Coverage ratio min/max validation (forensicAssertionCoverageSchema)

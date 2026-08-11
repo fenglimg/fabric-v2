@@ -12,18 +12,10 @@ import { test, fc } from '@fast-check/vitest'
 import { describe, expect, it } from 'vitest'
 
 import { agentsMetaNodeSchema, agentsMetaSchema, ruleDescriptionSchema } from '../../src/schemas/agents-meta.js'
-import {
-  structuredWarningSchema,
-  ledgerQuerySchema,
-  annotateIntentRequestSchema,
-  humanLockApproveRequestSchema,
-  humanLockFileParamsSchema,
-} from '../../src/schemas/api-contracts.js'
+import { structuredWarningSchema } from '../../src/schemas/api-contracts.js'
 import { eventLedgerEventSchema } from '../../src/schemas/event-ledger.js'
-import { fabricEventSchema } from '../../src/schemas/events.js'
 import { fabricConfigSchema } from '../../src/schemas/fabric-config.js'
 import { forensicReportSchema } from '../../src/schemas/forensic-report.js'
-import { humanLockEntrySchema, humanLockFileSchema } from '../../src/schemas/human-lock.js'
 import { initContextSchema } from '../../src/schemas/init-context.js'
 import { aiLedgerEntrySchema, humanLedgerEntrySchema, ledgerEntrySchema } from '../../src/schemas/ledger-entry.js'
 import { knowledgeTestIndexSchema, knowledgeTestLinkSchema } from '../../src/schemas/knowledge-test-index.js'
@@ -67,15 +59,8 @@ describe('I1.1 fabricConfigSchema round-trip', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// I1.2 — humanLockEntrySchema + humanLockFileSchema
-// ---------------------------------------------------------------------------
-describe('I1.2 humanLock schemas round-trip', () => {
-  const entry = { file: 'src/foo.ts', start_line: 1, end_line: 10, hash: 'sha256:abc' }
-  it('humanLockEntrySchema', () => roundTrip(humanLockEntrySchema, entry))
-  it('humanLockFileSchema empty', () => roundTrip(humanLockFileSchema, {}))
-  it('humanLockFileSchema with entries', () => roundTrip(humanLockFileSchema, { locked: [entry] }))
-})
+// W4 B6: I1.2 (humanLock schemas) deleted with its subject — human-lock.ts had
+// no consumer outside this file once the v1.8 HTTP package went.
 
 // ---------------------------------------------------------------------------
 // I1.3 — ledgerEntrySchema (discriminated union + preprocess)
@@ -394,40 +379,8 @@ describe('I1.8 eventLedgerEventSchema round-trip', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// I1.9 — fabricEventSchema (events.ts discriminated union)
-// ---------------------------------------------------------------------------
-describe('I1.9 fabricEventSchema round-trip', () => {
-  it('meta:updated event', () => {
-    roundTrip(fabricEventSchema, {
-      type: 'meta:updated',
-      payload: {
-        revision: 'rev-1',
-        nodes: {
-          bootstrap: {
-            file: 'AGENTS.md',
-            scope_glob: '**/*',
-            deps: [],
-            priority: 'high',
-            hash: 'sha256:abc',
-          },
-        },
-      },
-    })
-  })
-
-  it('ledger:appended event', () => {
-    roundTrip(fabricEventSchema, {
-      type: 'ledger:appended',
-      payload: {
-        ts: 1000,
-        intent: 'update UI',
-        affected_paths: ['src/App.tsx'],
-        source: 'ai',
-      },
-    })
-  })
-})
+// W4 B6: I1.9 (fabricEventSchema) deleted with its subject. The live event
+// model is eventLedgerEventSchema, covered by I1.8 above.
 
 // ---------------------------------------------------------------------------
 // I1.10 — agentsMetaSchema round-trip
@@ -449,47 +402,5 @@ describe('I1.10 agentsMetaSchema round-trip', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// I1.11 — ledgerQuerySchema + annotateIntentRequestSchema (api-contracts)
-// ---------------------------------------------------------------------------
-describe('I1.11 remaining api-contracts schemas round-trip', () => {
-  it('ledgerQuerySchema', () => {
-    roundTrip(ledgerQuerySchema, { source: 'ai' })
-    roundTrip(ledgerQuerySchema, {})
-  })
-  it('humanLockApproveRequestSchema', () => {
-    roundTrip(humanLockApproveRequestSchema, {
-      file: 'src/app.ts',
-      start_line: 10,
-      end_line: 20,
-      new_hash: 'sha256:new',
-    })
-  })
-  it('humanLockFileParamsSchema', () => {
-    roundTrip(humanLockFileParamsSchema, { file: 'src/app.ts' })
-  })
-  it('annotateIntentRequestSchema', () => {
-    roundTrip(annotateIntentRequestSchema, {
-      ledger_entry_id: 'ledger:abc',
-      annotation: 'Reviewed and approved.',
-    })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Property-based I1 for humanLockEntrySchema
-// ---------------------------------------------------------------------------
-describe('I1 property-based: humanLockEntrySchema', () => {
-  test.prop([
-    fc.record({
-      file: fc.string({ minLength: 1 }),
-      start_line: fc.integer({ min: 0, max: 100000 }),
-      end_line: fc.integer({ min: 0, max: 100000 }),
-      hash: fc.string({ minLength: 1 }),
-    }),
-  ])('humanLockEntrySchema round-trip', (input) => {
-    const a = humanLockEntrySchema.parse(input)
-    const b = humanLockEntrySchema.parse(JSON.parse(JSON.stringify(a)))
-    expect(b).toStrictEqual(a)
-  })
-})
+// W4 B6: I1.11 (the api-contracts "Existing API contract schemas" section) and
+// the humanLockEntrySchema property-based block deleted with their subjects.

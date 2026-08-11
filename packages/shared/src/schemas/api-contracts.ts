@@ -1770,73 +1770,16 @@ export const citeCoverageReportSchema = z.object({
 export type CiteCoverageReport = z.infer<typeof citeCoverageReportSchema>;
 
 // ---------------------------------------------------------------------------
-// Existing API contract schemas
+// W4 B6: the "Existing API contract schemas" section stood here — request/query
+// shapes for the v1.8 HTTP endpoints (`ledgerQuery`, `historyStateQuery`,
+// `humanLockApprove`, `humanLockFileParams`, `annotateIntent`, plus their
+// `ledgerSource` / `timestampFilter` helpers). Their only callers were the HTTP
+// routes, deleted in W4 B7; the sole remaining references were two shared
+// round-trip tests, i.e. the schemas existed to prove they could parse
+// themselves. The section header ("Existing") is the tell: it dated from a
+// migration where everything else got a purpose-named banner and this got
+// "whatever was already here".
 // ---------------------------------------------------------------------------
-
-export const ledgerSourceSchema = z.enum(["ai", "human"]);
-
-const timestampFilterSchema = z.preprocess((value) => {
-  if (value === undefined || value === null || value === "") {
-    return undefined;
-  }
-
-  if (typeof value === "number") {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (trimmed.length === 0) {
-      return undefined;
-    }
-
-    if (/^\d+$/.test(trimmed)) {
-      return Number.parseInt(trimmed, 10);
-    }
-
-    const parsed = Date.parse(trimmed);
-    return Number.isNaN(parsed) ? value : parsed;
-  }
-
-  return value;
-}, z.number().int().nonnegative());
-
-export const ledgerQuerySchema = z.object({
-  source: ledgerSourceSchema.optional(),
-  since: timestampFilterSchema.optional(),
-});
-
-export const historyStateQuerySchema = z.object({
-  ledger_id: z.string().trim().min(1).optional(),
-  ts: timestampFilterSchema.optional(),
-}).superRefine((value, ctx) => {
-  const provided = [value.ledger_id, value.ts].filter((entry) => entry !== undefined);
-
-  if (provided.length !== 1) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Provide exactly one of ledger_id or ts.",
-      path: ["ledger_id"],
-    });
-  }
-});
-
-export const humanLockApproveRequestSchema = z.object({
-  file: z.string().min(1),
-  start_line: z.number().int().positive(),
-  end_line: z.number().int().positive(),
-  new_hash: z.string().min(1),
-});
-
-export const humanLockFileParamsSchema = z.object({
-  file: z.string().min(1),
-});
-
-export const annotateIntentRequestSchema = z.object({
-  ledger_entry_id: z.string().min(1),
-  annotation: z.string().trim().min(1),
-});
 
 // ---------------------------------------------------------------------------
 // v2.0 Knowledge entry schema

@@ -5,7 +5,6 @@ export * from "./schemas/agents-meta.js";
 export * from "./schemas/knowledge-test-index.js";
 export * from "./schemas/api-contracts.js";
 export * from "./schemas/ledger-entry.js";
-export * from "./schemas/human-lock.js";
 export * from "./schemas/fabric-config.js";
 export * from "./schemas/fabric-config-introspect.js";
 export * from "./schemas/config-profiles.js";
@@ -36,7 +35,11 @@ export * from "./store/bindings.js";
 export * from "./store/store-lifecycle.js";
 export * from "./schemas/forensic-report.js";
 export * from "./schemas/init-context.js";
-export * from "./schemas/events.js";
+// W4 B6: `./schemas/events.js` deleted. Its 5-variant `fabricEventSchema`
+// discriminated union was the v1.8 HTTP server's SSE event model and had no
+// consumer left once that package went; the live event model is
+// `event-ledger.js` below. Two files named "events" with unrelated schemas was
+// itself a hazard — the dead one is the shorter, more obvious-looking import.
 export * from "./schemas/event-ledger.js";
 export * from "./templates/index.js";
 export { parseCiteLine, normalizeCiteTag } from "./cite-line-parser.js";
