@@ -641,7 +641,7 @@ export const archiveScanInputSchema = z.object({
     .union([z.array(z.string()).min(1), z.literal("all")])
     .optional()
     .describe(
-      "Phase 0 scope: explicit session_id[] to constrain the scan, or the 'all' sentinel. Omitted = scan everything since the last knowledge_proposed anchor.",
+      "Phase 0 scope. OMIT for the default incremental scan (only sessions newer than the last knowledge_proposed anchor) — this is what a caller with no range hint MUST send. Pass session_id[] to scan exactly those sessions. Pass 'all' ONLY when the user explicitly asked for full history: it ignores the anchor and re-walks the entire ledger.",
     ),
   now_ms: z
     .number()

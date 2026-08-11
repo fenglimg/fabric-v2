@@ -1,6 +1,8 @@
 # Phase 0 — Range Resolution (ref)
 
-> **Loaded on demand.** SKILL.md hot path retains the Phase 0 intro, the Confidence decision rule, and Step 1 (invocation context inspection). This file holds Steps 2-6 (parsing tables, session_id resolution algorithm, AskUserQuestion fallback, carry-forward contract) + worked examples. Read when entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback} AND the user prompt likely carries a range hint that needs parsing.
+> **Loaded on demand.** This file holds ONLY what has no code counterpart: the bilingual parsing tables, the session_id resolution algorithm, and the AskUserQuestion fallback. Read when entry_point ∈ {E2_explicit_user_invoke, E4_user_range_rollback} AND the user prompt likely carries a range hint that needs parsing.
+>
+> **The carry-forward contract is NOT here.** What Phase 0 hands to `fab_archive_scan` is stated in SKILL.md's Phase 0 table and, authoritatively, in `archiveScanInputSchema.range`'s `describe`. A prose copy of it lived here until 2026-08-11 and had drifted into saying the opposite of the implementation (ISS-20260806-001) — it was deleted rather than patched.
 
 ## Step 2 — Time-window parsing
 
@@ -100,57 +102,6 @@ Routing:
 | `today` | Re-enter Step 2 with synthetic prompt `今日` / `today` (per `fabric_language`); resolve session_ids; proceed to Phase 0.5. |
 | `last-week` | Re-enter Step 2 with synthetic prompt `上周` / `last week`; proceed to Phase 0.5. |
 | `since-last-archive` | Re-enter Step 2 with synthetic prompt `自上次归档` / `since last archive`; proceed to Phase 0.5. |
-| `custom` | Surface a one-line text prompt to the user ("type a range, e.g. 'rc.20', 'past 3 days', '上周 cite policy'"). Re-enter Phase 0 Step 1 with the user-typed sub-prompt. Loop max 1 time — second parse-miss falls through to `range = "all"` with a warning. |
+| `custom` | Surface a one-line text prompt to the user ("type a range, e.g. 'rc.20', 'past 3 days', '上周 cite policy'"). Re-enter Phase 0 Step 1 with the user-typed sub-prompt. Loop max 1 time — a second parse-miss **omits `range`** (default incremental scan), never `"all"`. |
 
-## Step 6 — Carry-forward contract
-
-Phase 0 produces ONE of:
-
-- `session_id[]` (non-empty array of distinct session_ids) — passed to Phase 1 as the explicit scope filter; Phase 1 skips its own anchor-walk and uses this list directly.
-- `"all"` (sentinel string) — no range hint detected; Phase 1 falls back to the legacy anchor-walk behaviour ("all distinct sessions since last `knowledge_proposed`").
-
-NEVER pass an empty `session_id[]` forward — that case must degrade to Step 5 fallback (or, when fallback is forbidden by invocation type, to `"all"` with a one-line stderr warning).
-
-## Worked examples
-
-### Example A — time-only: `今日复盘`
-
-```
-Step 1: prompt = "今日复盘"; user_invocation_type = E2.
-Step 2: matches `今日` → time_window = [floor(now, day), now].
-Step 3: residual "复盘" survives stop-word filter → topic_keywords = ["复盘"].
-        (Edge case: the residual content word may also filter; if 复盘 is
-        in the stop list it becomes []. Treat as topic-keyword empty.)
-Step 4: tail-scan events.jsonl; keep sessions whose [ts_min, ts_max]
-        intersects today's window. Say 3 sessions match.
-Step 5: skipped (resolution succeeded).
-Step 6: emit session_id[] = ["sess-a", "sess-b", "sess-c"] → Phase 0.5.
-```
-
-### Example B — keyword-only: `rc.20 的归档下`
-
-```
-Step 1: prompt = "rc.20 的归档下"; user_invocation_type = E2.
-Step 2: no time pattern matches → time_window = null.
-Step 3: strip "归档"/"下"/"的" stop-words → topic_keywords = ["rc.20"].
-Step 4: tail-scan events.jsonl; for each session_id, Read its digest;
-        keep those whose digest body matches /rc\.20/i. Say 2 sessions
-        match (one was the rc.20 grilling session, one had a tangential
-        mention).
-Step 5: skipped.
-Step 6: emit session_id[] = ["sess-x", "sess-y"] → Phase 0.5.
-```
-
-### Example C — combined: `上周 rc.20`
-
-```
-Step 1: prompt = "上周 rc.20"; user_invocation_type = E4.
-Step 2: matches `上周` → time_window = [now - 7d, now].
-Step 3: strip "上周" → topic_keywords = ["rc.20"].
-Step 4: AND filter — keep sessions whose [ts_min, ts_max] intersects last
-        week AND whose digest matches /rc\.20/i. Say 1 session matches.
-Step 5: skipped.
-Step 6: emit session_id[] = ["sess-z"] → Phase 0.5.
-```
-
-If Example C had resolved to zero sessions (e.g. user types `上周 rc.99`), Step 4 would degrade into Step 5 — surfacing AskUserQuestion since E4 permits prompting.
+A resolution that lands on zero sessions is a parse-miss, not an empty list: NEVER hand `session_id: []` forward. Degrade to the Step 5 fallback, or — when the invocation type forbids prompting (E1 / E3 / E5) — omit `range`.

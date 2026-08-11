@@ -52,9 +52,17 @@ Source-mode output roll-up + worked examples → `Read ref/source-output-contrac
 
 ### Phase 0 — Range Resolution
 
-Parse user's prompt for time-window (`今日` / `last week`), topic keyword (`rc.20`), or literal `session_id` reference; emit `session_id[]` OR `"all"` sentinel that constrains Phase 1 collection. LLM-as-parser contract — no parser code.
+Parse the user's prompt into ONE of three values for Phase 1's `fab_archive_scan({ range })`:
 
-`Read ref/phase-0-range-resolution.md` for the confidence decision rule, bilingual time-window patterns, session_id resolution, AskUserQuestion fallback, and worked examples.
+| Situation | `range` |
+|---|---|
+| Prompt carries a time-window (`今日` / `last week`), topic keyword (`rc.20`), or literal session_id | `session_id[]` (the resolved list) |
+| User **explicitly** asked for full history (`全部` / `从头` / `把积压都扫一遍` / `all history`) | `"all"` — ignores the anchor, re-walks the whole ledger |
+| **Everything else, including a parse-miss** | **OMIT `range` entirely** — the default incremental scan (only sessions newer than the last `knowledge_proposed`) |
+
+**The no-hint default is OMIT, never `"all"` (ISS-20260806-001).** `"all"` used to be the no-hint fallback, which quietly disabled the anchor cutoff on every skill-driven archive: each run re-walked all history, candidates exploded, cost climbed. `"all"` is an explicit user intent, not a fallback. The authoritative statement of this lives in `archiveScanInputSchema.range`'s `describe` — read it there if this table and the tool disagree.
+
+`Read ref/phase-0-range-resolution.md` for the bilingual time-window patterns, topic-keyword extraction, the session_id resolution algorithm, and the AskUserQuestion fallback.
 
 ### Phase 0.5 — Config Load
 
@@ -72,7 +80,7 @@ Read machine-wide `~/.fabric/fabric-global.json` `language` (`zh-CN` | `en` only
 
 ### Phase 1 — Collect Cross-Session Digests (server-side ledger scan, rc.37 NEW-9)
 
-The deterministic ledger scan now runs **server-side** — call `fab_archive_scan({ range, session_id })` (range = Phase 0's `session_id[]` or `"all"`/omitted). It returns:
+The deterministic ledger scan now runs **server-side** — call `fab_archive_scan({ range, session_id })` with the `range` Phase 0 resolved (omit the key entirely when Phase 0 said OMIT). It returns:
 
 - `anchor_ts` — ts of the last `knowledge_proposed` (the lower bound).
 - `session_ids[]` — distinct in-scope sessions since the anchor, ALREADY filtered through the outcome-ledger state machine (drops `user_dismissed`, sessions inside the 12h anti-loop cooldown, and watermarked sessions with no new high-value signal). First-seen order.
