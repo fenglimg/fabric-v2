@@ -2,7 +2,8 @@ import type { Translator } from "../i18n/types.js";
 
 // W4-11 (ISS-021): single source of truth for project-scan recommendations.
 // Previously forked across cli/scanner/forensic.ts (hardcoded zh-CN) and
-// server-http-experimental/api/scan.ts (hardcoded en), drifting and bypassing
+// the experimental HTTP package's api/scan.ts (hardcoded en; that package was
+// deleted in W4 B7), drifting and bypassing
 // the i18n layer. Both entry points now call this one i18n-keyed builder, so
 // the same input yields the same (locale-resolved) recommendation set.
 //

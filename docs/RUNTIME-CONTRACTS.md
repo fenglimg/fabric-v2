@@ -32,7 +32,7 @@ Hidden or script-facing commands:
 
 Removed from mainline:
 
-- `serve`：HTTP server 已 quarantine 到 `packages/server-http-experimental`
+- `serve`：无 HTTP server —— 三端全走 MCP stdio。v1.8 的 HTTP/REST/SSE 包先隔离、后于 W4 B7 删除，代码在 git 历史里
 - `scan`：顶层命令已移除，deterministic scanner 只作为 install / doctor 内部能力
 - `hooks install`：不再是 public command，hook 写入由 `fabric install` pipeline 管理
 

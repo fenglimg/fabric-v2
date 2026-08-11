@@ -30,7 +30,7 @@
 **已退役 / 迁入**
 
 - 顶层 `whoami` / `status` / `scope-explain` → 已并入 `fabric info`（含 `fabric info scope <coord>`），**不再作为顶层子命令注册**
-- `fabric serve` → quarantine 到 `packages/server-http-experimental/`（主线不注册；见 KT-DEC-0016）
+- `fabric serve` → 已删除（先隔离，W4 B7 删包；见 KT-DEC-0016 及其 supersede）
 
 ## 常用命令
 

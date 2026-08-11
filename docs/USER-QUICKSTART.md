@@ -185,8 +185,7 @@ client 提供单一 workspace root，或使用显式 pinned 模式。
 
 开发 generated hook runtime 时运行
 `pnpm --filter @fenglimg/fabric-cli build:hook-project-context`，并让 byte-parity test
-验证生成的 CJS。`packages/server-http-experimental` 仍是 quarantine：不属于主 pnpm
-workspace、主线依赖或 release gates，也不要用它验证 stdio MCP 的 root 行为。
+验证生成的 CJS。
 
 ## First 30 minutes — troubleshooting
 

@@ -243,7 +243,6 @@ fabric doctor / fabric audit 持续保持健康
 - `packages/cli` —— `fabric` CLI（`install`、`store`、`sync`、`info`、`doctor`、`audit`、`config`、`inspect`、`uninstall`）。
 - `packages/server` —— MCP server `fabric-knowledge-server`（5 个工具，stdio）+ 生命周期服务（recall、review、doctor、lint、事件账本、metrics）。
 - `packages/shared` —— CLI 与 server 共享的 schema（事件账本、api 契约、知识 frontmatter、store + scope）。
-- `packages/server-http-experimental` —— v1.8 时代的 HTTP/REST/SSE + Dashboard 包，已于 v2.0.0-rc.37 隔离。不构建 / 不测试。
 - `packages/cli/templates/skills/` —— `fabric install` 时分发的 Skill 模板（`fabric-archive`、`fabric-review`、`fabric-store`、`fabric-sync`、`fabric-recall-playbook`）。
 - `packages/cli/templates/hooks/` —— 共享 hook 脚本 + 各客户端配置（`claude-code.json`、`codex-hooks.json`）。
 

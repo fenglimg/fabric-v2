@@ -31,11 +31,10 @@ function newConfiguredProject(projectId?: string): string {
   return root;
 }
 
-// v2.0.0-rc.37 Wave A2: `describe("startHttpServer", ...)` block removed.
-// startHttpServer was quarantined to packages/server-http-experimental/ per
-// KB [[fabric-serve-quarantine-not-delete]]; this block tested the HTTP boot
-// path that no longer exists in main. Restore alongside startHttpServer if
-// the web UI surface is ever re-enabled.
+// v2.0.0-rc.37 Wave A2: `describe("startHttpServer", ...)` block removed — it
+// tested an HTTP boot path that no longer exists here. startHttpServer lived in
+// a quarantined package until W4 B7 deleted it; recover from git history if a
+// web UI surface is ever re-enabled.
 
 describe("createFabricServer", () => {
   it("registers only current MCP tools", async () => {

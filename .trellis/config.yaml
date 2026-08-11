@@ -165,6 +165,4 @@ packages:
     path: packages/server
   fabric-shared:
     path: packages/shared
-  fabric-server-http-experimental:
-    path: packages/server-http-experimental
 default_package: @fenglimg/fabric-cli

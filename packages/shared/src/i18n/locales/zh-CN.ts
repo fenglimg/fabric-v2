@@ -1286,9 +1286,8 @@ export const zhCNMessages: Messages = {
   "cli.uninstall.errors.target-not-directory": "目标必须是已存在的目录：{path}",
 
   // v2.0.0-rc.37 Wave A2 Part 2: cli.serve.* + FABRIC_AUTH_TOKEN keys removed
-  // alongside `fabric serve` quarantine to packages/server-http-experimental/
-  // per [[fabric-serve-quarantine-not-delete]]. Restore from git history when
-  // the web UI surface is re-enabled.
+  // alongside the `fabric serve` command. The HTTP package they belonged to was
+  // deleted in W4 B7; restore from git history if a web UI surface returns.
 
   // v2.0.0-rc.29 TASK-008 (BUG-L2): onboard-coverage 国际化键。
   "cli.first-hit.description":

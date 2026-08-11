@@ -8,7 +8,7 @@
  * `loadActiveMeta`) and matched rule nodes by `scope_glob` against a requested
  * path — a model with no remaining consumer (the MCP read tools cut over to the
  * cross-store recall model, and the only `getKnowledge` caller was the
- * quarantined server-http-experimental package).
+ * experimental HTTP package, deleted in W4 B7).
  *
  * `normalizeKnowledgePath` is preserved because `plan-context.ts` still uses it
  * for slash-only path normalization.

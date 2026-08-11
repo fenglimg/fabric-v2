@@ -102,7 +102,6 @@ Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--ver
 | `@fenglimg/fabric-cli` | `packages/cli/__tests__/` | 70% |
 | `@fenglimg/fabric-server` | `src/**/*.test.ts`、`__tests__/` | 75% |
 | `@fenglimg/fabric-shared` | `test/`、`src/**/*.test.ts` | 85% |
-| `server-http-experimental` | quarantine | **不进**主线 ship gate |
 
 ## Do not
 

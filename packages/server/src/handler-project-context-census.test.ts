@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -11,17 +11,11 @@ const handlers = {
   registerExtractKnowledge: "packages/server/src/tools/extract-knowledge.ts",
   registerArchiveScan: "packages/server/src/tools/archive-scan.ts",
 } as const;
-const forbiddenPackage = "@fenglimg/fabric-server-http-experimental";
-const forbiddenPath = "packages/server-http-experimental";
 
 function filesBelow(root: string): string[] {
   const output: string[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
-    if (
-      [".git", "node_modules", "dist", "coverage", "server-http-experimental"].includes(
-        entry.name,
-      )
-    ) continue;
+    if ([".git", "node_modules", "dist", "coverage"].includes(entry.name)) continue;
     const path = join(root, entry.name);
     if (entry.isDirectory()) output.push(...filesBelow(path));
     else if (entry.isFile()) output.push(path);
@@ -55,59 +49,10 @@ describe("production handler ProjectContext census", () => {
     }
   });
 
-  it("keeps experimental HTTP out of dependencies, module specifiers, and release inputs", () => {
-    const violations: string[] = [];
-    for (const file of filesBelow(join(repoRoot, "packages"))) {
-      const rel = relative(repoRoot, file).replaceAll("\\", "/");
-      if (rel.endsWith("package.json")) {
-        const pkg = JSON.parse(readFileSync(file, "utf8")) as Record<
-          string,
-          Record<string, string>
-        >;
-        for (const map of ["dependencies", "devDependencies", "optionalDependencies"] as const) {
-          for (const [name, value] of Object.entries(pkg[map] ?? {})) {
-            if (name === forbiddenPackage || value.includes("server-http-experimental")) {
-              violations.push(`${rel}:${map}:${name}`);
-            }
-          }
-        }
-        continue;
-      }
-      if (
-        !/\.[cm]?[jt]sx?$/u.test(rel) ||
-        /(?:\.test\.|\.spec\.|__tests__)/u.test(rel)
-      ) continue;
-      const source = readFileSync(file, "utf8");
-      const specifiers = source.matchAll(
-        /(?:from\s*|import\s*\(|require\s*\()\s*["']([^"']+)["']/gu,
-      );
-      for (const match of specifiers) {
-        if (
-          match[1] === forbiddenPackage ||
-          match[1]?.includes("server-http-experimental")
-        ) violations.push(`${rel}:${match[1]}`);
-      }
-    }
-
-    const releaseInputs = [
-      "package.json",
-      "scripts/test-strategy-gate.mjs",
-      "scripts/apply-tag-version.mjs",
-      "scripts/sync-versions.mjs",
-      ".github/workflows/ci.yml",
-      ".github/workflows/reusable-validate.yml",
-      ".github/workflows/release.yml",
-    ];
-    for (const rel of releaseInputs) {
-      const source = readFileSync(join(repoRoot, rel), "utf8");
-      if (source.includes(forbiddenPackage) || source.includes(forbiddenPath)) {
-        violations.push(rel);
-      }
-    }
-    expect(violations).toEqual([]);
-
-    const workspace = readFileSync(join(repoRoot, "pnpm-workspace.yaml"), "utf8");
-    expect(workspace.match(/packages\/server-http-experimental/gu)).toHaveLength(1);
-    expect(workspace).toContain('- "!packages/server-http-experimental"');
-  });
+  // W4 B7: the second test here ("keeps experimental HTTP out of dependencies,
+  // module specifiers, and release inputs") was deleted with its subject. It
+  // guarded the quarantined packages/server-http-experimental/ against leaking
+  // back into the mainline — a fence around a thing that no longer exists. With
+  // the package gone, `tsc --noEmit` is the guard: an import of a deleted
+  // package cannot compile, so no bespoke specifier scan is needed.
 });

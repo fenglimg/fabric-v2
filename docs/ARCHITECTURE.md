@@ -10,7 +10,7 @@ Fabric 是 pnpm monorepo，运行时分为 3 个包：
 - `packages/server`：stdio-only MCP server。负责知识检索、提取、review、doctor 服务、event ledger、metrics。
 - `packages/shared`：跨 CLI / server 共享的 Zod schema、i18n、错误类型、atomic-write helper 和 resolver 类型。
 
-历史 HTTP / REST / SSE / Dashboard 代码已隔离到 `packages/server-http-experimental`。主线 CLI 不注册 `fabric serve`，server 主线不启动 HTTP listener；该 package 被 `pnpm-workspace.yaml` 排除，也不得进入主线 package dependency、module specifier、CI 或 release input。
+v1.8 时代的 HTTP / REST / SSE / Dashboard 代码曾隔离成独立 package，已于 W4 B7 删除 —— 三端客户端全走 MCP stdio，没有任何消费者，且删除前它已 import 了仓内不存在的符号(编译不过)。CLI 不注册 `fabric serve`，server 不启动 HTTP listener。要复活去 git 历史取，不要重新引入一个"以后可能用得上"的隔离包:隔离相对 git 历史的边际价值是零，代价却是一个会持续腐烂的活目录。
 
 ## Runtime Surfaces
 
