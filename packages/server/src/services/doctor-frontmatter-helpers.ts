@@ -1,4 +1,14 @@
-// ISS-20260713-054: pure frontmatter helpers extracted from doctor.ts.
+// Pure frontmatter helpers for the enrich-descriptions rewrite (originally
+// inline in doctor.ts, ISS-20260713-054).
+//
+// The extraction left the rationale for both functions behind in doctor.ts as
+// orphaned comment blocks describing code that was no longer there — neither
+// file could be read on its own. Restored here, next to the code it explains.
+
+// Derive a default `must_read_if` line from the entry's body. Preference:
+// the first H1 heading (`# Title`), falling back to a humanized form of the
+// canonical filename slug. The result is trimmed and clamped to 120 chars to
+// match the field's documented per-item budget (see api-contracts.ts).
 function synthesizeMustReadIfStub(source: string, filename: string): string {
   const h1Match = /^#\s+(.+?)\s*$/mu.exec(source);
   let raw = h1Match !== null ? h1Match[1] : filename.replace(/^K[PT]-[A-Z]+-\d+--/, "").replace(/\.md$/u, "").replace(/-/g, " ");
@@ -12,6 +22,10 @@ function synthesizeMustReadIfStub(source: string, filename: string): string {
   return raw;
 }
 
+// YAML flow scalar quoting. Mirrors the extract-knowledge `quoteRelevancePath`
+// rule: if the string contains characters that would confuse the line-based
+// parser (colon, `#`, leading `-`, leading `?`, brackets, quotes), wrap in
+// double quotes and escape embedded quotes/backslashes. Otherwise emit bare.
 function yamlQuoteIfNeeded(value: string): string {
   if (value.length === 0) {
     return '""';

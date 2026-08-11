@@ -11,8 +11,8 @@ import {
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
+import { enrichDescriptions } from "./doctor-enrich-descriptions.js";
 import {
-  enrichDescriptions,
   runDoctorArchiveHistory,
   runDoctorBodyReadMisfireCheck,
   runDoctorHistoryAll,

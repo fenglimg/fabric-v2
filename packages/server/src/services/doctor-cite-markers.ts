@@ -65,9 +65,20 @@ import { inspectL1BootstrapSnapshotDrift } from "./doctor-bootstrap-lints.js";
 import { normalizePath } from "./doctor-path.js";
 import type { DoctorIssue, DoctorReport, LintMaturity } from "./doctor-types.js";
 
+// Rotated by the policy bump pass. Kept inline rather than in a shared const so
+// one grep over THIS file surfaces every site that needs updating — the
+// rationale originally said "over doctor.ts", which stopped being true the
+// moment the marker moved here and left its explanation behind.
 const CITE_POLICY_VERSION = "2.0.0-rc.20";
 
-
+// v2.0.0-rc.20 TASK-04: idempotently emit a `cite_policy_activated` marker on
+// the first invocation for a given project. Subsequent invocations short-circuit
+// after a single ledger read and report the existing marker's `ts`. Read/write
+// failures are absorbed and reported as `{ marker_ts: 0, emitted_now: false }`
+// so callers (doctor / fabric-hint warm-up) can keep moving without surfacing
+// audit-trail churn to the user. Pairs with `assistant_turn_observed` (TASK-03):
+// the activation marker anchors the policy_version under which subsequent
+// per-turn observations were recorded.
 export async function ensureCitePolicyActivatedMarker(
   projectRoot: string,
 ): Promise<{ marker_ts: number; emitted_now: boolean }> {

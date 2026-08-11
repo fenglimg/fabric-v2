@@ -30,7 +30,6 @@ declare const __SERVER_VERSION__: string;
 
 export {
   detectUnboundProject,
-  enrichDescriptions,
   runDoctorApplyLint,
   runDoctorArchiveHistory,
   checkBacklogAge,
@@ -56,6 +55,10 @@ export {
   type EnrichDescriptionsMode,
   type EnrichDescriptionsReport,
 } from "./services/doctor.js";
+// W5 B11: enrichDescriptions is a knowledge-tree mutation the CLI audit drives,
+// not a doctor check — it and its canonical-filename walker moved out of the
+// doctor hub. Types still originate in doctor-types.ts.
+export { enrichDescriptions } from "./services/doctor-enrich-descriptions.js";
 // v2.1 ④ conflict-detection (P4): knowledge-conflict lint.
 export {
   loadConflictEntries,
