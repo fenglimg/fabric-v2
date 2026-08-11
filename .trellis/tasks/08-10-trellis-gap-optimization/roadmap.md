@@ -117,7 +117,11 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 
 - **B10 server services/ 平铺治理**: 96 文件 24,874 行(源码 90.8%)零子目录,doctor-* 前缀 46 文件 11,445 行(46%)→ 按前缀落子目录(doctor/ retrieval/ ledger/ …),纯移动+改 import。
 - **B11 巨型文件拆分**: 🔶 **部分完成**(2026-08-11, `de2634bf`)。**判据从「行数」改成「文件里有没有不属于它的东西」** —— 函数级普查显示 doctor.ts 30 个函数最大 351 行,两个最大的就是枚举 53 项检查的编排器,长是固有的,按行数硬拆是纯 churn。真问题是 `enrichDescriptions`(知识树 mutation,由 `fabric audit` 驱动,doctor 两条流水线都不调)连同其专属依赖链寄居在此 → 搬进 `doctor-enrich-descriptions.ts`,2014→1701。顺带修三处**孤儿注释**(前次拆分搬走代码却把「为什么」留在原地,两边单独读都读不懂)。
-  - **剩余真目标: `runDoctorCiteCoverage` 单函数 960 行** —— 全仓唯一真巨石(该文件 1428 行只有 8 个函数)。已识别 8 个内部阶段边界(store/status 解析 → 单趟 ledger 分区 → client 过滤+跨端分母守卫 → kb 索引+反查表 → per-session fetch 查找 → 聚合单扫 → narrow-surfaced 重建 → 组装报告)。**刻意不做局部抽取**: 从 960 抽 87 行只是装样子,风险有收益无;需要一轮专门的相位分解。
+  - **`runDoctorCiteCoverage` 单函数 960 → 335 行**: ✅ **完成**(2026-08-11, `89441661`,专门一轮相位分解)。先验证测试网真能咬(5 个变异全被杀)再动手,按「接口最窄的先动」抽 9 段,每段跑一次全量 server 测试 + tsc。
+    - **当初拆不动的一大半原因是类型别名声明在函数体内** —— 抽出去的 helper 参数类型在模块作用域根本不存在。所以第一步不是抽代码,是把 8 个 type 提到模块作用域。
+    - 抽出: `computeMutationFunnel` / `partitionLedgerEvents` + `indexPlannedBySession` / `applyClientFilter` / `buildKbRelevanceIndex` + `createRecallVerifier` / `createLayerFilter` + `createOperatorEvaluator` / `computeEditCorrelation` / `mergeRollupAndFoldedTurns` / `aggregateTurnMetrics`。
+    - **18 个产出的聚合扫描刻意留在一个 helper 里**: 它们共用同一套逐 turn 口径决策(层过滤 / 契约窗口 / client 桶),拆成多趟正是这些决策开始漂移的方式 —— 一趟修了过滤另一趟没修,数出来的就不再是同一个总体。返回类型交给推断,手写 18 个字段类型 = 把累加器声明抄第二遍,抄的那份会陈旧。
+    - **行为保持不靠绿测试**: 重构后重跑同一批 5 个变异,仍全部被杀,与重构前一致。顺带删掉一处 dual-truth(kb 索引头上的「build from agents.meta.json」旧注释,紧跟着的新注释已说明 W5 R6 读侧 cutover 后改从 store 构建)。
   - api-contracts.ts(1854)/ locale 文件(1593+1472): **不动**。扁平 schema 与词条清单本来就该长,拆了是 churn。
   - extract-knowledge.ts(1225): 21 个函数,最大 454 行,结构正常,**优先级低于 cite-coverage**。
 - **B12 伪共享下沉**: shared 69 模块中 26 个单端消费(theme 13 exports 仅 cli、event-ledger 132 exports 仅 server)→ 逐步下沉回消费包,shared 收敛到 24 个真共享。
@@ -173,7 +177,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **W2 配置防御** | ✅ **全部完成**(2026-08-10): #2 hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);#16 安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only,守 KT-PIT-0016);#9 MCP root-pin repair 从「造好没人调」接进检查 + `--fix`,逻辑移进 shared 打通 server↔cli 边界(commit ea134c91)。doctor 检查数 51→53 | 无 | ✅ 收口 |
 | **W3 沉淀减负** | ✅ **全部完成**(2026-08-11)。**B4+T1**(`5e42db62`): ISS-001 根因不在代码而在 skill 契约 —— Step 6 规定 Phase 0 只能产出 `session_id[]` 或 `"all"`,没有 omit 选项,于是 skill 永远不省略 range,anchor cutoff 实际失效;改成三选一表(无 hint 一律 OMIT),矛盾的 Step 6 整段删除,权威契约收敛到 `archiveScanInputSchema.range` 的 describe。**review 龄触发**(`779b0138`): Stop hook 早已是 count-OR-age,缺口在 SessionStart 只看 count(注释还声称两边一致);`liveKnowledgeStats` 一直在算 `oldestPendingMtimeMs` 然后被丢掉 —— 与 #9 同族的"造好没人调"。**收口仪式**(`0b6c252a`): bootstrap 加"做完一段必须显式给归档判断,'无'是合法结论"。**T4 + 快速通道**(`68c60cf7`): ref 21→11(source-* 6 合 1 / phase-3-* 4 合 1 / 删 rc-history / dry-run 折进 SKILL.md),加单跳快速通道 | 无 | ✅ 收口 |
 | **W4 瘦身(代码+文档)** | ~~B9~~ ✅、~~B8~~ ✅、~~B5~~ ✅(403 死键)、~~B6~~ ✅(34 符号普查)、~~B7~~ ✅(删包 3651 行);~~I2~~ ✅(删专用分发通道);~~B3 尾巴~~ ✅ + ~~T4~~ ✅(`946ccb04`);~~T2~~ ✅(删 88 份 / 14,616 行)、~~T3~~ ✅、~~T5~~ ✅(新增 dangling-refs 硬闸) | KT-DEC-0016 的 supersede decision 已 propose 进 pending 待审;I3 已裁决不做 / I4 已完成 | ✅ 收口(2026-08-11) |
-| **W5 结构化** | steal P2 三条 ✅ 全完成: ~~#18*~~(`19b18fec`)、~~B15~~(`c2e97ab0`)、~~#10~~(`92ff70fa`)、~~#6~~(`0e3bcc30`)。B11 🔶 部分(`de2634bf`: doctor.ts 2014→1701 + 孤儿注释)。**剩: B11 的 960 行巨石函数(唯一高价值项)、B10/B12/B14(见各自条目的价值判断)** | 无 | 进行中 |
+| **W5 结构化** | steal P2 三条 ✅ 全完成: ~~#18*~~(`19b18fec`)、~~B15~~(`c2e97ab0`)、~~#10~~(`92ff70fa`)、~~#6~~(`0e3bcc30`)。~~B11~~ ✅ 全完成(`de2634bf`: doctor.ts 2014→1701 + 孤儿注释;`89441661`: runDoctorCiteCoverage 960→335)。**剩: B10/B12/B14 —— 三条价值都存疑,见各自条目** | 无 | 进行中 |
 | **(条件批)** | 需重议档案 §3.1/§3.2 若开禁,各自单独立项走完整 brainstorm | 你的裁决 | — |
 
 依赖关系(**已兑现**): W1 先行 → 实际是 W0 先行解钉 W1;W2 与 W3 可并行 → W2 已单独收口;W4 里 B8/B9 排在 W2 之后 → 均已在 W2 收口后完成。**剩余顺序: W5(当前)**;W3 / W4 均已收口。
