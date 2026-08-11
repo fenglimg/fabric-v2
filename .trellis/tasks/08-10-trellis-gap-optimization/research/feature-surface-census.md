@@ -176,6 +176,29 @@
 **F3 · 真正该查的少数。**
 `mcp_event`(零生产引用,只有 5 个测试提它 —— 典型的"测试自己是唯一调用方",KT-PIT-0065)、`init_scan_completed`、`graph_edge_candidate_requested`、`knowledge_enriched`(只有跑 `audit descriptions` 才发,而没人跑它 —— 与挑战 B 的结论互相印证)。
 
+#### F0 已解决:46,不是 65 —— 而且答案本来就在仓里
+
+`event-ledger-census.test.ts` 有一条 inline snapshot,**直接从运行时 schema 的 `optionsMap` 读判别符全集并钉死**,钉的正是 46 个。这条测试的注释已经说清了理由:event_type 是按字符串动态分发的,grep 证不了某个成员死了,所以用快照强制显式 review。
+
+所以 `debloat-census.md` 的 65 是错的,`z.enum` 也不是差异来源(全文件 `event_type:` 位置零个 `z.enum`)。**我本来该先找这条权威快照,而不是自己重数一遍再去跟另一份文档对口径。**
+
+#### F3 逐条查完:4 个里 0 个该删
+
+| 类型 | 生产 emitter | 生产 reader | 判定 |
+|---|---|---|---|
+| `graph_edge_candidate_requested` | ✅ `hooks/lib/graph-edge-emit.cjs:70` | Stop hook 自身 | **活的**,我判错了 |
+| `knowledge_enriched` | ✅ `doctor-enrich-descriptions.ts:290` | enrich history | **活的**,只是没人跑 `audit descriptions` |
+| `init_scan_completed` | ❌ 全仓无 | ✅ `hooks/lib/signal-decide.cjs:197` | **是 bug,不是臃肿** —— 见下 |
+| `mcp_event` | ❌ | ❌ | 无生产两侧,但被 ~60 处测试断言当通用夹具钉着(KT-PIT-0075 正例)。删它=重写那 60 处,换 ~10 行 schema。**不划算,留着** |
+
+**轴 F 最终结论:46 个 event_type 一个都不该删。** 初稿"20 个从没发出过 = 可疑"的框子彻底不成立 —— 罕见路径(F1)、刻意保留的读侧兼容(F2)、以及这里的 3 个,全都有存在理由。
+
+#### 轴 F 真正的产出是一个 bug,不是一份删除清单
+
+`init_scan_completed` **有生产读侧、零生产写侧**:`signal-decide.cjs` 的 Signal C 门禁要求「节点数低于阈值 **且** `init_scan_completed` 已发生 ≥24h」。第二个条件永远为假,所以 **Signal C 在生产里永远不会触发** —— 这条冷启动提醒是死的。测试里它全绿,因为测试自己造了这个事件。
+
+这正是 producer-consumer round-trip oracle 要抓的东西:声明面在、读侧在、写侧空。单看任何一侧都发现不了。
+
 **删之前必须先过 KT-PIT-0075**:「从生产入口不可达 ≠ 可删」—— 测试基建会把死码钉在仓里。上面每个类型都带着 1–7 个测试引用,删 schema 就要同时改那些测试。
 
 ## 3. 建议的执行顺序(复核后重排)
@@ -191,8 +214,9 @@
 | **A″** | 四条迁移命令的描述硬编码英文、绕过 `t()`;`folded-note` 举的例子点名 `migrate`(唯一没被折叠的那批) | 确凿 | 极低 | ✅ 已做 |
 | **B′** | `audit conflicts --deep` 是自陈的空 flag(「no judge wired yet」):删 flag,保留 service 层 judge 注入缝 | **确凿**(自陈) | 低 | ✅ 已做,变异验证 |
 | **G** | `fabric store link` 整条特性 DOA:命令没注册、i18n key 一个不存在、ESM 里写 `require()`;`store-link.ts` 还带一份重复副本 | **确凿**(三条独立证据) | — | 待你裁决 |
-| **F3** | 定性 4 个真存疑 event_type(`mcp_event` / `init_scan_completed` / `graph_edge_candidate_requested` / `knowledge_enriched`)。**F1/F2 一条都不能碰** | 强(账本 oracle + 逐条追 emitter) | 低 | 待做 |
-| F0 | 先统一 event_type 计数口径(46 vs 65) | — | — | 动手前必做 |
+| **F3** | 定性 4 个真存疑 event_type | 强(账本 oracle + 逐条追 emitter) | — | ✅ 查完:**0 个该删**,反而查出 1 个 bug |
+| **F4** | `init_scan_completed` 有读侧无写侧 → Signal C 冷启动提醒在生产里永远不触发 | **确凿** | 中(要补 emitter) | 待你裁决 |
+| F0 | 统一 event_type 计数口径 | — | — | ✅ 46;权威快照本来就在 `event-ledger-census.test.ts` |
 | D | hook lib 合并 | **弱,先别动** | 中 | 不做 |
 
 ### A′ 也被推翻 —— 第四次探针撒谎
@@ -206,6 +230,8 @@
 这是这次普查里**唯一一处真的"死功能"**,而且是我在查一个错误前提时顺手撞上的 —— 不是初稿点名的那五处里的任何一处。
 
 **只剩两个问题代码回答不了,需要你判断**:
+
+**F4**:`init_scan_completed` 的 emitter 要不要补?补 = 在 `fabric install` 完成初扫时写一条,Signal C 就活了;不补 = 那条 gate 和它的配置项(`onboard_*` 阈值)都该删掉,别留一个永远为假的条件在那儿让人以为它在工作。我倾向补 —— 冷启动提醒本身是有价值的功能,只是接线断了。
 
 **G**:`store link` 要删还是要接上?删 = `store-link.ts` 整个文件 + `store.ts` 里那段(约 90 行);接 = 补 5 个 i18n key、把 `require` 换成 import、注册进 `subCommands`、再想清楚谁读 `linked_workspaces`。我倾向删 —— 没有读侧的写入功能等于往磁盘写垃圾。**这次我没动它:超出你批的范围,权限闸口也拦了,只在代码里留了 DOA 注释。**
 
