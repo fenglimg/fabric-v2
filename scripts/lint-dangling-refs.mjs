@@ -39,6 +39,11 @@ const SKIP_SOURCE = [
   ".workflow/worktree-scope.json",
   ".workflow/worktrees.json",
   ".fabric/forensic.json",
+  // This file: its ALLOWLIST is by definition a list of paths that do not
+  // resolve, so scanning itself is guaranteed self-contradiction. (Caught only
+  // after `git add` — while untracked it was invisible to `git ls-files`, so
+  // the gate silently skipped itself on every pre-commit run.)
+  "scripts/lint-dangling-refs.mjs",
   // Pattern files — the "paths" are globs to match, not files to visit.
   ".gitignore",
   ".gitattributes",
