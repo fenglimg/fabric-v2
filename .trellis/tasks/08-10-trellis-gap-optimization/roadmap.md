@@ -138,7 +138,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 
 全集实测 + 5 条挑战详见 → `research/feature-surface-census.md`。要点:
 
-- **全集**:14 顶层命令 / ≥41 citty 声明(≥13 hidden) / 5 MCP 工具 / 6 hook 事件槽 / 7 hook 脚本 + **34 lib 模块** / 6 skill / 45 doctor code / 65 event_type 声明。
+- **全集**:14 顶层命令 / ≥41 citty 声明(≥13 hidden) / 5 MCP 工具 / 6 hook 事件槽 / 7 hook 脚本 + **34 lib 模块** / 6 skill / 45 doctor code / **46** event_type 声明(初稿写 65,已按运行时快照更正)。
 - **本轮找到的最硬 oracle**:本仓 dogfood 账本 `.fabric/events.jsonl`(9,586 行,跨 6 周)。它是全仓唯一的功能级 producer-consumer 往返验证 —— 声明面在 schema,消费面在账本。**65 个 event_type 只有 26 个真出现过。**
 - **挑战 A**:`store` 组 18 个子命令 9 个 hidden;`backfill/scope/promote/reroot` 有实现有测试但**无任何文档/skill/链路按名字调用** —— 一次性迁移工具的典型形状。
 - **挑战 B**:`audit conflicts/history/descriptions` 除自身注册外**全仓零引用**(无文档无测试无 skill)。
@@ -146,6 +146,22 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 - **挑战 E(最该先修)**:`.fabric/AGENTS.md` 这份**直接注进 AI 上下文的权威正文**写「Skills (4)」,实际 ship 6 个。一个存在但被权威文档否认的功能是**负价值**,比不存在更糟。
 
 **方法学教训(本轮实际踩到,两条初判被自己推翻)**:① `.workflow/` 下 maestro 生成的 `search-cache.json`/`wiki-index.json` 会让符号名普查全线假活;② `includes` 与 `\b` 词边界方向相反地都会撒谎(`FabricLanguage` 的 19 个"命中"全是 `readFabricLanguage` 的子串)。**名字探针两个方向都会骗人,零引用结论必须逐条落到文件复核。**
+
+#### 轨F 收口(2026-08-11)
+
+**5 条初判挑战里 4 条被自己的复核推翻**(A/B/C 详见普查文档的 ⛔ 块,A′ 是第四条)。结论反转成:**命令面几乎全是活的;真正缺的不是「删掉死功能」,是「活功能没有使用契约」。**
+
+| 条目 | 结果 | commit |
+|---|---|---|
+| **E** bootstrap 写「Skills (4)」实 ship 6 | ✅ 修正 + **补了缺失的跨包闸口**(`packages/cli/__tests__/bootstrap-skill-coverage.test.ts`) —— shared 侧的 parity 测试**结构上不可能**发现它(那个包看不见 `cli/templates/skills/`,只能断言 ZH/EN 互相一致,而它俩一致地错着) | `eb29dc70` |
+| **A″** 四条迁移命令描述硬编码英文绕过 `t()`;fold-note 举例点名 `migrate`(唯一没被折叠的那批) | ✅ 修正 | `ed64da59` |
+| **B′** `audit conflicts --deep` 自陈「no judge wired yet」的空 flag | ✅ 删 flag(service 层 judge 注入缝保留),变异验证 | `ed64da59` |
+| **F0** event_type 口径 46 vs 65 | ✅ 46。**权威快照本来就在仓里** —— `event-ledger-census.test.ts` 从运行时 `optionsMap` 读全集并钉死 | `d048cf46` |
+| **F3** 4 个存疑 event_type | ✅ **0 个该删**。3 个有生产 emitter;`mcp_event` 被 ~60 处测试断言当通用夹具钉着,删它换 10 行 schema 不划算(KT-PIT-0075 正例) | `d048cf46` |
+| **F4** `init_scan_completed` 有生产读侧、零生产写侧 → Signal C 冷启动提醒**永远不触发** | 🔴 **待裁决**:补 emitter 还是连 gate 带配置项一起删 | — |
+| **G** `fabric store link` 整条特性 DOA(命令没注册 / 5 个 i18n key 全不存在 / ESM 里 `require()` 一用就抛 / `store-link.ts` 还有第二份重复副本) | 🔴 **待裁决**。这是本轮唯一一处真死功能,而且是查一个**错误前提**时顺手撞上的 —— 不在初稿点名的 5 处里任何一处 | 已留 DOA 注释 |
+
+**轨F 最大的方法学产出**:四次同类错误(把"读起来像什么"当成"注册成什么"),补救手法都是同一个 —— **去看注册/装配的那一处,不是声明的那一处**。以及 F4/G 都由同一个 oracle 抓出:producer-consumer 往返,声明面在、一侧空。
 
 ### 4.5 轨T · 文档瘦身 / code-as-truth(用户 2026-08-10 新增原则)
 
