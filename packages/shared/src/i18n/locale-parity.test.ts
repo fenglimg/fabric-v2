@@ -58,8 +58,20 @@ describe("i18n locale parity census", () => {
   // `cli.config.fields.${key}.label` are built dynamically and a literal-only
   // scan reports 562 false deaths.
   // -------------------------------------------------------------------------
+  // 2026-08-11 (W5 轴F): 862 → 866. Net +4 = five added (`cli.store.{backfill,
+  // rescope,promote,reroot,link}.description`, routing the store migration
+  // commands' hardcoded English through t() like every other store command)
+  // minus one removed (`doctor.conflict.deep_no_judge`, orphaned when the empty
+  // `audit conflicts --deep` flag was deleted). Census re-run per the note above:
+  // 10,011 files, 454 template patterns, 0 provably dead.
+  //
+  // Re-running it caught a bug worth repeating here, because it is the natural
+  // way to write the wildcard half and it is wrong: escape the key THEN
+  // substitute `${...}` and you get `\[A-Za-z0-9_.-]+` — an escaped literal
+  // bracket matching nothing — which reported 100+ live keys as dead. Split on
+  // `${...}` first, escape each literal segment, then join with the wildcard.
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(862);
+    expect(enKeys.length).toBe(866);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {
