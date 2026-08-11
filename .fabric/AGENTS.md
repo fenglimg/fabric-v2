@@ -40,7 +40,7 @@
 - **Skills (4)**:写流程 `fabric-archive`(含 source mode 冷启动从 git/docs 回灌)/ `fabric-review`(含 retire 语义淘汰 + relate 关联建边 子流程);store 运维 `fabric-store` / `fabric-sync`。
 - **Language**:渲染按 `~/.fabric/fabric-global.json` 的 `language` 字段(machine-wide tone)。
 - **Archive cadence nudge** (rc.36 / finish→archive): 显著 decision 收口或一批 Edit 达到 config `archive_edit_threshold`(默认 20) 后,在合适回合轻量自调 `fabric-archive`(同 turn 最多 1 次;非 task engine / 非 Stop-hook flood)。Stop hook 仅 soft threshold nudge,守 KT-DEC-0007 — archive 没建立频率会让 KB 慢速死掉。
-- **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 `fab_pending action="list"` 或 `fabric-review` 返回的 `pending_path`;不要 glob 项目本地 `.fabric/knowledge/pending`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 `fabric-review` skill 批量审,避免 draft 卡死。
+- **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 `fab_pending action="list"` 或 `fabric-review` 返回的 `pending_path`;不要 glob 项目本地 `.fabric/knowledge/pending`。两个独立的该审信号,任一成立就在合适回合主动 propose 调 `fabric-review` skill 批量审: ① **量** —— 可见 pending >10 条(`review_hint_pending_count`);② **龄** —— 最老一条已挂 ≥7 天(`review_hint_pending_age_days`)。只看量会漏掉"就三条但烂了一个月"这种 draft 卡死。
 
 ## Self-archive policy (v2.2 C1: 精简说明书)
 
