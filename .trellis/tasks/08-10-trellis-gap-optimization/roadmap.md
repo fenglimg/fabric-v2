@@ -43,11 +43,11 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | 3 | Brainstorm 规划纪律(evidence rule/一问一答) | skip | 工作流工具领地;fabric-review 已有自己的提问 policy;用户侧有 grilling/goal-mode | — | — |
 | 4 | 任务工件体系(prd/design/implement + research 落盘) | **重议** | 任务轴家族,同 #1 | 高÷高 | §3.1 |
 | 5 | JSONL manifest(子代理上下文清单) | skip | 依附任务工件体系,fabric 无对应载体;单独学无意义 | — | — |
-| 6 | 子代理上下文注入(hook 改写 dispatch prompt) | **steal** | 核证:fabric 注册 5 hook 事件**无任何 Task/Agent matcher**(claude-code.json:25-35)→ 子代理只靠 CLAUDE.md 继承政策,无会话级知识提示 | 中÷低 | P2 |
+| 6 | 子代理上下文注入(hook 改写 dispatch prompt) | ✅ **已完成** | 核证:fabric 注册 5 hook 事件**无任何 Task/Agent matcher**→ 子代理只靠 CLAUDE.md 继承政策,无会话级知识提示。落地时改走 `SubagentStart`(见下方卡片) | 中÷低 | P2 |
 | 7 | Spec 两跳索引(index→按需读正文) | have | lean recall 同构:描述+read_path→原生 Read(KT-DEC-0026/KT-GLD-0005) | — | — |
 | 8 | before-dev 注入的 push/pull 双实现 | have | PreToolUse 软 push + fab_recall/recall-playbook pull,同一合同两路径已成立 | — | — |
 | 9 | Check 闭环「自己修,不只报告」 | **steal** | doctor --fix 仅 6 fixable 码+4 卫生动作(doctor.ts:607-886);挂账的 MCP root-pin repair、settings 修复都不在面内 | 中÷中 | P1 |
-| 10 | break-loop 根因封闭分类学(A-E)+「失败的修复」归因 | **steal** | fabric pitfall 归档无根因词汇表;纯 prompt 层补强,零 schema 改动(守 KT-DEC-0005 三轴) | 中÷极低 | P2 |
+| 10 | break-loop 根因封闭分类学(A-E)+「失败的修复」归因 | ✅ **已完成** | fabric pitfall 归档无根因词汇表;纯 prompt 层补强,零 schema 改动(守 KT-DEC-0005 三轴)。分类改为从 83 条语料普查长出(见下方卡片) | 中÷极低 | P2 |
 | 11 | 沉淀是必经闸口(3.3 必经+「没得更新也要走判断」+commit 前再拦) | **steal** | 直击 W3 写入摩擦 + 完成 bet#8 遗留;须以 policy 仪式实现,**不做 hook 硬 gate**(守 KT-DEC-0007) | 高÷低 | **P0** |
 | 12 | trellis mem 跨会话对话检索 | **重议** | evidence 层家族:README 明列 non-goal「不是 session 证据库」;W7 留白是有意的 | 高÷中 | §3.2 |
 | 13 | Workspace journal(刻意书写的 session 日志) | **重议** | 任务轴家族(don't-steal 清单 #5「evidence/journal 自动进 canonical」相邻) | 中÷中 | §3.1 |
@@ -64,8 +64,8 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 - **#2+#16 → 「客户端配置防御群」(P0)**: doctor 把 settings.json 可解析性 + fabric hooks 注册在位 + 安装副本漂移(新增模板 hash 清单)升为一等检查,区分 broken/missing 两码,全部纳入 `doctor --fix` 自动修复;修复动作复用 install 已有的 deep-merge(核证过:保留第三方 key)。今天的事故做成回归测试用例。
 - **#11 → 「沉淀闸口 + 快速通道」(P0)**: ✅ **已完成**(2026-08-11, W3)。三招全落地: ① 收口仪式写进 bootstrap canonical 中英双语(`0b6c252a`);② 快速通道 —— 单条明确条目走「去重搜索 → 就地分类 → propose → 记账」,零 ref 跳转,三条件破一条即退回长链路(`68c60cf7`);③ review nudge 的量/龄双触发 —— **核证发现 Stop hook 早就是 count-OR-age**,真缺口在 SessionStart 的 action ladder 只看 count(其注释还声称与 Stop hook 一致),数据 `oldestPendingMtimeMs` 本就在算却被调用点丢弃(`779b0138`)。
 - **#9 → 「--fix 扩面」(P1)**: ✅ **已完成**(2026-08-10, commit ea134c91)。挂账的 MCP root-pin repair 接进 `--fix`:`repairManagedRootPin` 原本生产侧零调用方(只有一个测试引用),逻辑从 `packages/cli/src/config/root-pin-migration.ts` 移进 `packages/shared/src/mcp-root-pin.ts` —— 不是为整洁,server 对 cli 零依赖,不移就接不上。新检查 `mcp_root_pin_managed` 只报 `managed`(digest 能证明是 installer 写的),`explicit`/`ambiguous` 不碰(KT-GLD-0016);严重级按钉是否仍指向本项目分叉(指别处 error/fixable,指对了 warning——对今天能工作的钉喊 error 会训练用户忽略检查)。**这条承诺 --fix,与邻居 install_copy_drift 相反:KT-PIT-0016 是双向的**,删 env 键不需要 CLI 模板。settings/hooks 修复已由 #2 群完成(commit 2e4dc057);README 版本同步经核证**树里根本没有对应检测**(全仓无任何 README 版本机制;最接近的 `global_cli_outdated` 管的是全局装的 CLI 版本),给不存在的检测接 --fix = 新建检测而非「扩面」,**本轮不做**。
-- **#6 → 「子代理知识提示」(P2)**: 增设 PreToolUse(Task/Agent)hook,向子代理 dispatch prompt 追加一行「对将改文件先 fab_recall」+ 当前 session 已召回条目索引;守 never-block(纯追加,失败放行)。
-- **#10 → 「pitfall 根因词汇表」(P2)**: fabric-archive 的 pitfall phase ref 增加封闭根因分类(缺规范/跨层契约/传播失败/测试缺口/隐式假设)+「上次修复为什么没修好」提问;纯 skill 文本,零 schema 变更。
+- **#6 → 「子代理知识提示」(P2)**: ✅ **已完成**(2026-08-11, `0e3bcc30`)。**原方案两处前提经核证不成立,已改设计**: ① `Task` 不是合法 PreToolUse matcher(matcher 过滤工具名);② PreToolUse 的 `additionalContext` 落在**派发方**上下文里,不是子代理的。真正的机制是专用事件 `SubagentStart`。第二处改设计更关键: 注**知识本身**而非「先去 fab_recall」这句指令 —— 有编辑权的子代理(`trellis-implement`/`trellis-check`)工具白名单是 `Read,Write,Edit,Bash,Glob,Grep`,**不带 MCP**,让它调没有的工具等于什么都没说。复用 `buildSessionStartSinks` 渲染(与派发方逐字节一致)但不复用 broad 的 `main()`(cooldown 单槽会互相吞、human sink 是操作者面、遥测分母 key 在 SessionStart 上会被稀释)。接线过 8 处注册表。**验证**: 先证覆盖缺口(hook 改成什么都不发 → 1454 测试全绿),补 10 条行为测试后三个变异全杀 + 抽掉拷贝步 46 测试红的 producer-consumer 往返。
+- **#10 → 「pitfall 根因词汇表」(P2)**: ✅ **已完成**(2026-08-11, `92ff70fa`)。**分类从语料长出来,没照抄 roadmap 提的 5 类** —— 对 store 里 83 条 pitfall 做普查后,原 5 类(缺规范/跨层契约/传播失败/测试缺口/隐式假设)被打回: 漏了语料里最大的两簇 `built-not-wired`(造好没接线 / schema 声明了实现不读)和 `oracle-lied`+`probe-lied`(判据自己在骗你,合计约 25 条为单项最大);而「缺规范」几乎不独立出现,总以 `dual-truth`(同一事实两处维护)的形态现身。终稿 7 类封闭表,每类 ≥4 条实证。「上次修复为什么没修好」一并落地: 答是时可复用内容是**上次修复的缺口**而非新症状,且应连 `related` 边而不是新开长得像的条目。
 - **#18* → 「多窗口 sidecar 隔离」(P2)**: active-session.json 从单槽改 per-session 文件(或拒猜降级),消除多窗口 last-writer-wins 串台隐患(用户实际是多窗口工作流,见 memory)。
 
 ---
@@ -169,7 +169,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **W2 配置防御** | ✅ **全部完成**(2026-08-10): #2 hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);#16 安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only,守 KT-PIT-0016);#9 MCP root-pin repair 从「造好没人调」接进检查 + `--fix`,逻辑移进 shared 打通 server↔cli 边界(commit ea134c91)。doctor 检查数 51→53 | 无 | ✅ 收口 |
 | **W3 沉淀减负** | ✅ **全部完成**(2026-08-11)。**B4+T1**(`5e42db62`): ISS-001 根因不在代码而在 skill 契约 —— Step 6 规定 Phase 0 只能产出 `session_id[]` 或 `"all"`,没有 omit 选项,于是 skill 永远不省略 range,anchor cutoff 实际失效;改成三选一表(无 hint 一律 OMIT),矛盾的 Step 6 整段删除,权威契约收敛到 `archiveScanInputSchema.range` 的 describe。**review 龄触发**(`779b0138`): Stop hook 早已是 count-OR-age,缺口在 SessionStart 只看 count(注释还声称两边一致);`liveKnowledgeStats` 一直在算 `oldestPendingMtimeMs` 然后被丢掉 —— 与 #9 同族的"造好没人调"。**收口仪式**(`0b6c252a`): bootstrap 加"做完一段必须显式给归档判断,'无'是合法结论"。**T4 + 快速通道**(`68c60cf7`): ref 21→11(source-* 6 合 1 / phase-3-* 4 合 1 / 删 rc-history / dry-run 折进 SKILL.md),加单跳快速通道 | 无 | ✅ 收口 |
 | **W4 瘦身(代码+文档)** | ~~B9~~ ✅、~~B8~~ ✅、~~B5~~ ✅(403 死键)、~~B6~~ ✅(34 符号普查)、~~B7~~ ✅(删包 3651 行);~~I2~~ ✅(删专用分发通道);~~B3 尾巴~~ ✅ + ~~T4~~ ✅(`946ccb04`);~~T2~~ ✅(删 88 份 / 14,616 行)、~~T3~~ ✅、~~T5~~ ✅(新增 dangling-refs 硬闸) | KT-DEC-0016 的 supersede decision 已 propose 进 pending 待审;I3 已裁决不做 / I4 已完成 | ✅ 收口(2026-08-11) |
-| **W5 结构化** | B10-B15 择量 + steal P2 三条(#6/#10/#18*) | 无 | 按需分段 |
+| **W5 结构化** | steal P2 三条 ✅ 全完成: ~~#18*~~(`19b18fec` 多窗口 sidecar 隔离)、~~B15~~(`c2e97ab0` 去重工具路由)、~~#10~~(`92ff70fa` 根因词汇表)、~~#6~~(`0e3bcc30` 子代理注入)。**剩 B10-B14 结构重构择量** | 无 | 进行中 |
 | **(条件批)** | 需重议档案 §3.1/§3.2 若开禁,各自单独立项走完整 brainstorm | 你的裁决 | — |
 
 依赖关系(**已兑现**): W1 先行 → 实际是 W0 先行解钉 W1;W2 与 W3 可并行 → W2 已单独收口;W4 里 B8/B9 排在 W2 之后 → 均已在 W2 收口后完成。**剩余顺序: W5(当前)**;W3 / W4 均已收口。
