@@ -17,7 +17,7 @@
 // pure-function primitives without a second migration.
 
 // Vivid truecolor (24-bit) foreground codes. Picked for high-contrast legibility
-// on both dark and light terminals — the "鲜明多色" palette locked in NS-00.
+// on both dark and light terminals — the "鲜明多色" palette this file locks in.
 // Each value is the SGR escape that opens the colour; RESET closes any of them.
 export const ANSI = {
   reset: "[0m",

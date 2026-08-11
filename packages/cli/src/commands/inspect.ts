@@ -12,7 +12,7 @@ import { groupDot, headerRule } from "../tui/structure.js";
 
 // ---------------------------------------------------------------------------
 // Block 5 (Option X) / W3-F — `fabric inspect [--render human|ai] [--explain]`
-// (renamed from `fabric context`; NS-01 §1: "context of what?" was unintuitive).
+// (renamed from `fabric context`, which read as "context of what?").
 //
 // D5-3 shared knowledge read path: inspect reuses SessionStart's
 // plan-context / store resolver pipeline (createStoreResolver via

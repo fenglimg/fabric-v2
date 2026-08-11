@@ -641,7 +641,7 @@ export const enMessages: Messages = {
   "doctor.check.skill_description.message.plural":
     "{count} SKILL.md description structural issues: {list}. The description field is the host's primary auto-invoke matching signal.",
   "doctor.check.skill_description.remediation":
-    "Edit the `description:` field in `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter: (1) non-empty; (2) <60 tokens (chars/3 estimate, ~180 chars); (3) at least one Chinese trigger phrase; (4) at least one English trigger phrase; (5) an explicit anti-trigger such as `NOT PR review` / `NOT code review` / `不是...`. See W1 description rewrite style. Re-run `fabric install` to sync both client subtrees. For recall verification, run the W1 gemini delegate (see .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md).",
+    "Edit the `description:` field in `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter: (1) non-empty; (2) <60 tokens (chars/3 estimate, ~180 chars); (3) at least one Chinese trigger phrase; (4) at least one English trigger phrase; (5) an explicit anti-trigger such as `NOT PR review` / `NOT code review` / `不是...`. Re-run `fabric install` to sync both client subtrees.",
   "doctor.check.skill_contract.name": "Skill contract integrity",
   "doctor.check.skill_contract.ok":
     "Fabric SKILL.md contracts are intact: hard-rule anchors, MCP-only write paths, thin shims, and ref entry points are present.",

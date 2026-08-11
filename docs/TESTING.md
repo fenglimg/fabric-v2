@@ -135,9 +135,8 @@ Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--ver
 
 ## Appendix
 
-1. [test-methodology-v6.md](../.workflow/.maestro/20260602-test-methodology-optimize/scratchpad/test-methodology-v6.md) — 四赛道 × 认识论  
-2. [e2e-methodology-FINAL.md](../.workflow/.scratchpad/e2e-methodology-FINAL.md) — 旅程 / 交互轴 / T1–T3  
-3. 调研材料：同目录 `mainstream-research.md` / `samespace-research.md` / `trackd-research.md` / `backtest-answer-set.md` / `discovery-rubric.md`  
-4. 瘦身决策上下文：`.workflow/scratch/20260712-analyze-test-strategy/SLIM-TESTING-SKELETON.md`
+1. [test-methodology-v6.md](methodology/test-methodology-v6.md) — 四赛道 × 认识论  
+2. [e2e-methodology-FINAL.md](methodology/e2e-methodology-FINAL.md) — 旅程 / 交互轴 / T1–T3  
+3. 调研材料：`docs/methodology/` 下的 `mainstream-research.md` / `samespace-research.md` / `trackd-research.md` / `backtest-answer-set.md` / `discovery-rubric.md`
 
 Coverage 仍是下限信号；跨写读边界优先 round-trip / store-only 断言。  

@@ -27,9 +27,8 @@ import {
 //
 //   The remaining `import_*`, `archive_max_*`, `archive_digest_*`,
 //   `review_topic_*`, `review_stale_*` keys are Group D (skill-internal
-//   tuning, 10 keys) and explicitly out of panel scope per
-//   .workflow/.lite-plan/rc16-config-i18n-closure-2026-05-15/planning-context.md
-//   ("Anti-scope: Group D / Group E config keys in panel — power users edit JSON").
+//   tuning, 10 keys) and explicitly out of panel scope: power users edit the
+//   JSON directly rather than going through the panel.
 //
 // Group C: only `audit_mode` is panel-scoped. The remaining schema fields
 // (`clientPaths`, `scanIgnores`, `mcpPayloadLimits`)

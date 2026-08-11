@@ -584,7 +584,7 @@ export const zhCNMessages: Messages = {
   "doctor.check.skill_description.message.plural":
     "{count} 个 SKILL.md description 结构问题: {list}。description 是 host 端 auto-invoke 的主要匹配信号。",
   "doctor.check.skill_description.remediation":
-    "编辑 `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter `description:` 字段: (1) 非空; (2) <60 token (chars/3 估算, 约 180 字符); (3) 至少 1 个中文 trigger 短语; (4) 至少 1 个英文 trigger 短语; (5) 明确 anti-trigger,如 `NOT PR review` / `NOT code review` / `不是...`。参考 W1 description rewrite 风格。重新跑 `fabric install` 同步两端。如需验证 recall, 跑 W1 的 gemini delegate (见 .workflow/.scratchpad/rc33-plan/W1-VERIFY-RESULT.md)。",
+    "编辑 `packages/cli/templates/skills/<slug>/SKILL.md` frontmatter `description:` 字段: (1) 非空; (2) <60 token (chars/3 估算, 约 180 字符); (3) 至少 1 个中文 trigger 短语; (4) 至少 1 个英文 trigger 短语; (5) 明确 anti-trigger,如 `NOT PR review` / `NOT code review` / `不是...`。重新跑 `fabric install` 同步两端。",
   "doctor.check.skill_contract.name": "Skill contract 完整性",
   "doctor.check.skill_contract.ok":
     "Fabric SKILL.md contract 完整: hard-rule anchors、MCP-only write path、thin shim 与 ref 入口均存在。",

@@ -3,7 +3,8 @@
 //
 // Keeps the testing strategy entry anchored to real package scripts and CI
 // gates. Does NOT re-litigate methodology keyword coverage — deep docs live
-// under .workflow/ and are linked from TESTING.md Appendix.
+// under docs/methodology/ (pinned by `methodologyArtifacts` below) and are
+// linked from the TESTING.md Appendix.
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
