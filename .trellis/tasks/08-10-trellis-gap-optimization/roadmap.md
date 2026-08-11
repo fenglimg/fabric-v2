@@ -11,7 +11,7 @@
 | **任务轴(§3.1)** | **暂不开禁**, W3 落地并跑一段后再评 | 维持 KT-DEC-0078 封印;W3 后重新评估 |
 | **会话历史检索(§3.2)** | **不做** | 理由: 本仓已装 Trellis 自带 `trellis mem`, fabric 再做=重复建设+扩隐私面;正是 KT-PIT-0058 false-friend 警告的典型场景。建议归档为新 decision 防复议 |
 | **分批顺序** | 按 §5 执行(W1 先行) | — |
-| **44 会话归档积压** | 排在 W3 之后跑, 兼作 W3 验收实测 | 积压不丢(事件账本+transcript 都在) |
+| **44 会话归档积压** | 排在 W3 之后跑, 兼作 W3 验收实测 | 积压不丢(事件账本+transcript 都在)。**2026-08-11 已涨到 46** |
 | **⚠️ 新增原则(用户主动提出)** | 「尽量保证代码就是真源, 文档能删就删, 代码要对 AI 足够清晰明确」 | 立为**轨T 文档瘦身**, 见 §4.5;并改变 B4 的修法 |
 
 W1 前置确认已自查完成: 三个 worktree 的提交全部有分支保管(`646831a3` 已在 main / `daa83d84` 在 `feat/sync-readme-version` / `8ba8dc1b` 在 `worktree-fabric-observability-fixes` 且已推远端), 脏文件仅 maestro 运行时状态 —— **B1 删除无条件安全**。
@@ -99,8 +99,8 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | 提案 | 证据 | 风险 |
 |---|---|---|
 | **B1 清 .claude/worktrees 910MB**(1 个已合并纯尸体 + 2 个落后 12-13 commit)⚠️ 删 worktree 不删分支,但 2 个未合 worktree 若有未提交改动需先确认 | complexity-shared-misc.md §4;实证喂养 flaky 假红(ISS-003 家族) | 低(分支保留) |
-| **B2 cli 死代码一刀删 1,961 行(src 的 8.1%)**: install v1 尸体簇 9 文件(含 commands/install.ts 1,092 行——退休后仍被顺手维护!)+ ignores.ts + tree-sitter-probe(全仓 0 消费但仍是 dist 构建入口) | complexity-cli.md §6,可达性分析实锤 | 低(不可达已证) |
-| **B3 server 死代码**: unarchive-knowledge.ts 整文件 309 行 0 引用;doctor-knowledge-checks 6 个双胞胎 builder ~190 行(registry 只用其一);doctor-test-helpers.ts 115 行移出 src;4 个死 export | complexity-server.md §4 | 低;⚠️ barrel 修剪须防 quarantine 包与离线 cold-eval 两类静态 grep 假阴性 |
+| ~~**B2 cli 死代码一刀删 1,961 行(src 的 8.1%)**~~ ✅ **已完成**(commit ecef80f5):W0 的 T-2 把 `runInit`/`runScaffoldOnly` 迁进 install-v2 管线解钉测试后,v1 安装器 8 文件 2,049 行删除,**CLI 不可达代码归零** | complexity-cli.md §6,可达性分析实锤 | — |
+| **B3 server 死代码** ⚠️ **剩尾巴**: unarchive-knowledge.ts / 双胞胎 builder / 死 export 已随 W1 清掉;**`doctor-test-helpers.ts` 115 行仍在 `src/` 未移出** | complexity-server.md §4 | 低;⚠️ barrel 修剪须防 quarantine 包与离线 cold-eval 两类静态 grep 假阴性 |
 | **B4 修 ISS-001 归档全量扫**(需你二选一: (a) backlog 可达优先→改文档语义 (b) all 应显式 opt-in→改 Phase 0)⚠️ 产品决策 | issues.jsonl ISS-20260806-001(high);archive-scan.ts:75 vs ref 文档矛盾 | 中(改主链路) |
 
 ### P1(小手术,需回归验证)
@@ -110,7 +110,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **B5 i18n 死键清理**: 348 键(27.8%)确认无引用,其中 dashboard.* 201 键是 v1.8 尸体;补 census ratchet 防回涨;顺手删烂尾的 scripts/i18n-audit.mjs | complexity-shared-misc.md §3(20-key 抽样全仓 0 命中;保守下界) | 低-中(动态 key 假阴性已做两轮修正,删前再跑一次 locale-parity) |
 | **B6 shared 死区**: 6 个死/test-only 模块(KnowledgeEntryFrontmatterSchema 0 消费者、events.ts、human-lock、api-contracts §10 等) | complexity-shared-misc.md §2(69 模块全量普查) | 低 |
 | **B7 删 server-http-experimental 包(2,603 行)**⚠️ 需 supersede KT-DEC-0016(quarantine-not-delete)——代码已烂(http.ts:23 import 不存在的导出,typecheck 从不跑),隔离的"以后可能复活"前提已不成立;删除进 git 历史可随时找回;需同步改 census 测试 :109-111 | complexity-shared-misc.md §1 | 低(git 历史可回);决策成本>技术成本 |
-| **B8 templates CJS 孪生迁生成通道**: 3 个手写孪生(cite-line-parser/theme/high-value-predicate,靠 4 个 parity 测试压住)+ config 读取 5 处 3 实现 → 迁入既有生成 bundle 通道后删手写份 | complexity-cli.md §5 | 中(动分发链,parity 测试是安全网) |
+| ~~**B8 templates CJS 孪生迁生成通道**~~ ✅ **已完成**(随 W0 的 T-5 一并做掉):3 个手写 `.cjs` 孪生改为编译生成,随之删 4 个 parity 测试文件(−382 行)。经复核**真正的手写孪生只有 4 组而非 10 个文件**;`store-config-reader-parity` 判定不做、`render-backlog-line-parity` 的真问题是测试卫生而非重复实现(见 test-architecture-proposal.md §12) | complexity-cli.md §5 | — |
 | ~~**B9 拆 skills-and-hooks.ts 五合一**~~ ✅ **已完成**(2026-08-10, commit f82fa3b3):1517 行 → 7 个单职责模块(step-result 34 / distribution-targets 329 / template-io 76 / install-skills 307 / install-hook-scripts 255 / hook-config-merge 275 / bootstrap-propagation 273)。拆分顺带清出 5 处死面:`InstallOptions` 空类型 + 19 处 `_options` 形参(零调用点传参)、`readFabricLanguagePreference` export(零 import,env.stage 有私有同名副本)、`BOOTSTRAP_MARKER_*` 再导出(零消费者)、`buildManagedBlockBody`/`FABRIC_HOOK_SCRIPT_BASENAMES` 过度导出、未用 `rm` import。**行为保持用真实 install 双跑比对证明**(158 文件 sha256 全集 + 完整 InstallStepResult 行流逐字节相同),不只靠测试绿 | complexity-cli.md §2 | — |
 
 ### P2(结构化,分批慢做)
@@ -163,15 +163,17 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 
 | 批次 | 内容 | 前置决策 | 预估量级 |
 |---|---|---|---|
-| **W1 埋尸体** | ⚠️ **部分完成 + 部分受阻**(2026-08-10)。已完成: 911MB worktree 清理 + 811 行零引用死代码(commit bc636bcf/6bac073c)。**受阻**: install.ts 死件簇 1,961 行删不掉——测试基础设施钉住(详见 test-architecture-proposal.md §2 病根一),需先做 T-2 解耦 | ✅ 已拍板 | 已开工 |
-| **W0 测试架构** | ⬅️ **新增,应前置于 W1 剩余部分**。见 `test-architecture-proposal.md`: T-1 量化 → T-2 解耦死代码 → T-3 切 AI/代码线 → T-4 提速 → T-5 消重 | 待用户评审提案 | 2-3 个会话 |
+| **W1 埋尸体** | ✅ **全部完成**(2026-08-10): 911MB worktree 清理 + 811 行零引用死代码(commit bc636bcf/6bac073c);原受阻的 install.ts 死件簇经 W0 的 T-2 解钉后删除 2,049 行(commit ecef80f5),**CLI 不可达代码归零**。**剩一个尾巴**: `doctor-test-helpers.ts` 115 行仍在 `src/`(见 B3) | ✅ 已拍板 | ✅ 收口 |
+| **W0 测试架构** | ✅ **全部完成**。T-1 量化(证伪「竞态」归因,落并行+超时 102.7s→46.4s)→ T-2 解耦死代码(**解锁 W1**)+ T-2b fixture 降频(46.4s→**26.4s**)→ T-3 切 AI/代码线(判据写进 `docs/TESTING.md`,措辞锁移 `PROMPT_WORDING=1`)→ T-4 提速(CI 门禁 10 步→9 步)→ T-5 消重(**吃掉 B8**,−382 行)。两处经实测**否决**: 档 B 拆分不做、撤 70% 覆盖率阈值不做 | 待用户评审提案 | ✅ 收口 |
 | **W2 配置防御** | ✅ **全部完成**(2026-08-10): #2 hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);#16 安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only,守 KT-PIT-0016);#9 MCP root-pin repair 从「造好没人调」接进检查 + `--fix`,逻辑移进 shared 打通 server↔cli 边界(commit ea134c91)。doctor 检查数 51→53 | 无 | ✅ 收口 |
-| **W3 沉淀减负** | steal #11 群: 归档快速通道 + 收口仪式 + review age-nudge + T4 ref 树瘦身;**跑完后**处置 44 会话积压并复评任务轴 | 无 | 1-2 个会话 |
-| **W4 瘦身(代码+文档)** | ~~B9~~ ✅ 已完成(commit f82fa3b3);剩 B5+B6+B7+B8 + 轨T 的 T2/T3/T5 + **轨I 的 I2**(I2 与 B8 同族:都是手写孪生/分发链错位) | B7 已拍板删;需同批 supersede KT-DEC-0016;I3/I4 待裁决后决定是否并入本批 | 2 个会话 |
+| **W3 沉淀减负** | ⬅️ **当前批次(2026-08-11 开工)**。steal #11 群: 归档快速通道 + 收口仪式 + review age-nudge + T4 ref 树瘦身;**连带两个同链尾巴 B4 + T1**(ISS-001 归档全量扫按已裁决走代码侧修,并直接删掉矛盾的 `ref/phase-0-range-resolution.md`);**跑完后**处置 46 会话积压并复评任务轴 §3.1 | 无 | 1-2 个会话 |
+| **W4 瘦身(代码+文档)** | ~~B9~~ ✅(f82fa3b3)、~~B8~~ ✅(随 T-5);**剩 B5 + B6 + B7 + 轨I 的 I2 + 轨T 的 T2/T3/T5** | B7 已拍板删;需同批 supersede KT-DEC-0016;I3 已裁决不做 / I4 已完成 | 2 个会话 |
 | **W5 结构化** | B10-B15 择量 + steal P2 三条(#6/#10/#18*) | 无 | 按需分段 |
 | **(条件批)** | 需重议档案 §3.1/§3.2 若开禁,各自单独立项走完整 brainstorm | 你的裁决 | — |
 
-依赖关系: W1 先行(否则后续每批的测试验证都被 flaky/假红拖累);W2/W3 可并行;W4 里 B8/B9 建议排在 W2 之后(动分发链前先有漂移检测兜底)。
+依赖关系(**已兑现**): W1 先行 → 实际是 W0 先行解钉 W1;W2 与 W3 可并行 → W2 已单独收口;W4 里 B8/B9 排在 W2 之后 → 均已在 W2 收口后完成。**剩余顺序: W3(当前)→ W4 → W5**。
+
+> **回填说明(2026-08-11)**: 本节此前长期停留在 08-10 的时点状态(W1 标"受阻"、W0 标"待评审"、W4 列 B8 未做),与磁盘实况不符。本次按 `packages/` 实际内容与 git log 逐条核实后回填。**教训: 批次表是给下一个会话读的唯一状态源,不回填等于给自己埋假信号。**
 
 ---
 
