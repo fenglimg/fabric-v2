@@ -1087,7 +1087,7 @@ export const enMessages: Messages = {
   "cli.install.preflight.label.global-root": "Global Fabric root",
   "cli.install.preflight.label.global-root-parent": "Global Fabric root parent",
   "cli.install.guidance.more":
-    "More: docs/surfaces.md explains when to use CLI vs Skill vs MCP.",
+    "More: CLI = install and ops, Skills = archive and review flows, MCP = in-session recall.",
   "cli.install.validate.failed": "Validation failed: {count} error(s)",
   "cli.install.validate.failed-item": "  - {error}",
   "cli.install.hooks.installed": "installed skill×{skills} + hook×{hooks}",

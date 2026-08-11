@@ -4,7 +4,7 @@ description: 审 store-backed pending+canonical knowledge (NOT PR review):pendin
 allowed-tools: Read, Glob, Grep, Bash, Edit, mcp__fabric__fab_recall, mcp__fabric__fab_pending, mcp__fabric__fab_review
 ---
 
-> **Surface**: Skill (AI-driven, per-entry human-judgment routing). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
+> **Surface**: Skill (AI-driven, per-entry human-judgment routing).
 
 ## Precondition
 

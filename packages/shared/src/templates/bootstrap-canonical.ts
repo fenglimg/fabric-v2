@@ -38,7 +38,7 @@ export const BOOTSTRAP_MARKER_END = "<!-- fabric:bootstrap:end -->";
  * with an optional preceding blank-line separator (so re-install / uninstall
  * don't leave orphan blank lines). Non-greedy body matches any content
  * between the begin/end markers, including newlines. Mirrors the shape of
- * the existing `FABRIC_SECTION_REGEX` in `packages/cli/src/install/skills-and-hooks.ts`.
+ * `FABRIC_SECTION_REGEX`, which lives beside it in this file.
  */
 export const BOOTSTRAP_REGEX =
   /(?:\r?\n){0,2}<!-- fabric:bootstrap:begin -->[\s\S]*?<!-- fabric:bootstrap:end -->/;

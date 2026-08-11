@@ -90,6 +90,7 @@ for (const scriptName of [
   "test:strategy",
   "test:store-only-e2e",
   "test:upgrade-e2e",
+  "test:dangling-refs",
   "lint",
   "typecheck",
 ]) {
@@ -106,6 +107,7 @@ for (const command of [
   "pnpm test:strategy",
   "pnpm test:store-only-e2e",
   "pnpm test:upgrade-e2e",
+  "pnpm test:dangling-refs",
   "node scripts/perf-benchmark.mjs",
 ]) {
   requireIncludes(".github/workflows/reusable-validate.yml", reusableValidate, command);

@@ -26,7 +26,7 @@ export type SelectionTokenState = {
 // fabric-config.selection_token_ttl_ms.
 export const SELECTION_TOKEN_TTL_DEFAULT_MS = 30 * 60 * 1000;
 // v2.0-rc.7 T9: degenerate-mode threshold removed — the API is now symmetric
-// across all candidate counts. See docs/decisions/rc5-a3-superseded.md.
+// across all candidate counts.
 const selectionTokenCache = new Map<string, SelectionTokenState>();
 
 // ISS-027: the cache was unbounded — one entry per plan-context call lived up to

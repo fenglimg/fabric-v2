@@ -61,6 +61,9 @@ jobs:
       - name: Lint protected tokens
         run: node --experimental-strip-types scripts/lint-protected-tokens.ts
 
+      - name: Lint dangling path references
+        run: pnpm test:dangling-refs
+
       - name: Perf benchmark (CLI + hook cold start p95 gate)
         run: node scripts/perf-benchmark.mjs > perf-report.json
 

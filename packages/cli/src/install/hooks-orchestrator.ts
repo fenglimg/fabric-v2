@@ -34,12 +34,11 @@ import { writeFabricAgentsSnapshot } from "./write-bootstrap-snapshot.js";
 // ---------------------------------------------------------------------------
 // rc.15 relocation rationale:
 //
-// Pure orchestrator for hook + skill installation. Previously lived in
-// `packages/cli/src/commands/hooks.ts`; relocated in rc.15 because
-// `commands/` is reserved for citty command wrappers and the `fabric hooks`
-// top-level command was deleted in TASK-004 (C5) while these helpers
+// Pure orchestrator for hook + skill installation. Relocated here in rc.15
+// because `commands/` is reserved for citty command wrappers: the `fabric
+// hooks` top-level command was deleted (TASK-004 / C5) while these helpers
 // survive as install-stage infrastructure. Callers:
-//   - `fabric install` (packages/cli/src/commands/install.ts) — primary entry
+//   - the `fabric install` pipeline — primary entry
 //   - `installHooks` integration + unit tests
 //
 // The neighbour file the `install-*.ts` writers provides the lower-level

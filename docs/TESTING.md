@@ -32,6 +32,7 @@
 | `pnpm test:strategy` | 本文件 ↔ scripts ↔ CI 锚点 |
 | `pnpm test:store-only-e2e` | 装/绑/写/审/召回黑盒（需先 build） |
 | `pnpm test:upgrade-e2e` | install 升级刷新 stale hook/skill（需先 build） |
+| `pnpm test:dangling-refs` | 散文/注释引用的仓内路径是否还存在 |
 
 包级脚本见各 `package.json`。
 
@@ -49,7 +50,8 @@
 6. `pnpm test:store-only-e2e`
 7. `pnpm test:upgrade-e2e`
 8. `node --experimental-strip-types scripts/lint-protected-tokens.ts`
-9. `node scripts/perf-benchmark.mjs`
+9. `pnpm test:dangling-refs`
+10. `node scripts/perf-benchmark.mjs`
 
 > **T-4:曾经的第 9 步「`NO_COLOR=1` + scoped reskin/i18n 快照」已删。** 那 4 个快照文件
 > 自身就 stub 了 `NO_COLOR`(`vi.stubEnv` / 直接赋值),实测在 `NO_COLOR` 未设与
@@ -89,7 +91,6 @@ Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--ver
 | --- | --- |
 | `scripts/habit-funnel.mjs` | 看真实 dogfood 习惯漏斗是否「活着」 |
 | `scripts/nofake-audit.mjs` | 真实 cite 是否幻觉 id |
-| `scripts/measure-injection.mjs` | 真 corpus 注入/recall payload |
 | `DOGFOOD_BASELINE=1` + recall dogfood baseline | 调排序质量时 |
 | `PROMPT_WORDING=1` + `*.wording.test.ts` | 有意重写 prompt 正文时(措辞/排序/篇幅断言) |
 | `scripts/red-team-safety.mjs` | 安全对抗（注意脚本路径可复现性） |

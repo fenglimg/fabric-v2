@@ -129,7 +129,7 @@ const _requirementProfileSchema = z.object({
 
 // v2.0-rc.5 A1: `_selectionPolicySchema` retired with the L0/L1/L2 protocol.
 // v2.0-rc.7 T9: `_candidateFullContentSchema` retired with the degenerate
-// single-stage mode. See docs/decisions/rc5-a3-superseded.md.
+// single-stage mode.
 export const planContextInputSchema = z.object({
   paths: z
     .array(z.string())
@@ -195,8 +195,8 @@ export const planContextInputSchema = z.object({
 // counts. `selection_token` is REQUIRED on every successful response and the
 // Agent must follow up with `fab_get_knowledge_sections` to load bodies (that
 // tool emits the `knowledge_consumed` event needed for rc.5 C5 closure). The
-// inline `candidates_full_content` degenerate-mode field is gone. See
-// docs/decisions/rc5-a3-superseded.md. The per-entry `.passthrough()` escape
+// inline `candidates_full_content` degenerate-mode field is gone. The
+// per-entry `.passthrough()` escape
 // from TASK-005 is removed — entries now have a fixed shape.
 // v2.0.0-rc.38 UX-1 (D-MCP fold ①): `entries[].description_index` is gone.
 // Since rc.37 A1 removed server-side relevance filtering every per-path index
@@ -589,7 +589,7 @@ const _recallEntrySchema = z.object({
 });
 
 export const recallOutputSchema = z.object({
-  // Retained: client hook cache key (packages/cli/.claude/hooks/knowledge-hint-narrow.cjs)
+  // Retained: client hook cache key (templates/hooks/lib/knowledge-hint-narrow.cjs)
   revision_hash: z.string(),
   // ux-w2-4: single unified entry list (was candidates[] + paths[] + per-path
   // requirement-profile entries[]). Each item carries description + read_path +
@@ -882,7 +882,7 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     .string()
     .optional()
     .describe(
-      "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/commands/hooks.ts'). Optional — omit when no single strong trigger fits.",
+      "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/install/'). Optional — omit when no single strong trigger fits.",
     ),
   // v2.0.0-rc.37 NEW-37 (werewolf dogfood remediation): optional tags array.
   // Werewolf实测发现 100% canonical entries 的 `tags: []` 为空,主题聚类与

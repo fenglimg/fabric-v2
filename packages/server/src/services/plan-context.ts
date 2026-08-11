@@ -147,8 +147,7 @@ export type RequirementProfile = {
 // candidate counts: every response returns `description_index` + a
 // `selection_token`, and the Agent follows up with `fab_get_knowledge_sections`
 // to fetch bodies. Rationale: the inline-body branch silently bypassed
-// `knowledge_consumed` event emission, breaking rc.5 C5 closure. See
-// docs/decisions/rc5-a3-superseded.md.
+// `knowledge_consumed` event emission, breaking rc.5 C5 closure.
 // v2.0.0-rc.38 UX-1 (D-MCP fold ①): per-path `description_index` removed. Since
 // rc.37 A1 dropped server-side relevance filtering it was identical to the
 // shared index for every path — N paths shipped N+1 copies. The candidate list

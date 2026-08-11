@@ -4,7 +4,7 @@ description: 归档对话洞察 + 冷启动从 git/docs 回灌到 pending knowle
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_archive_scan, mcp__fabric__fab_propose, mcp__fabric__fab_pending, mcp__fabric__fab_review
 ---
 
-> **Surface**: Skill (LLM judgment over session digests). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
+> **Surface**: Skill (LLM judgment over session digests).
 
 ## Precondition
 

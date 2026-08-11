@@ -179,7 +179,7 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         "type": "array",
       },
       "must_read_if": {
-        "description": "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/commands/hooks.ts'). Optional — omit when no single strong trigger fits.",
+        "description": "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/install/'). Optional — omit when no single strong trigger fits.",
         "type": "string",
       },
       "onboard_slot": {

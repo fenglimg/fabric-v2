@@ -71,8 +71,7 @@ const config: KnipConfig = {
     // CLI commands: citty pattern exports both named const and `export default`.
     // Both forms are intentional (named for potential programmatic use, default for citty).
     'packages/cli/src/commands/config.ts': ['duplicates'],
-    'packages/cli/src/commands/doctor.ts': ['duplicates'],
-    'packages/cli/src/commands/install.ts': ['duplicates']
+    'packages/cli/src/commands/doctor.ts': ['duplicates']
   },
   workspaces: {
     'packages/cli': {

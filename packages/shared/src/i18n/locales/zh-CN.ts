@@ -1016,7 +1016,7 @@ export const zhCNMessages: Messages = {
   "cli.install.preflight.label.global-root": "全局 Fabric root",
   "cli.install.preflight.label.global-root-parent": "全局 Fabric root 的父目录",
   "cli.install.guidance.more":
-    "更多: docs/surfaces.md 说明何时用 CLI / Skill / MCP。",
+    "更多: CLI 管安装与运维, Skill 管归档与审核流程, MCP 管会话内召回。",
   "cli.install.validate.failed": "安装校验失败:{count} 个问题",
   "cli.install.validate.failed-item": "  - {error}",
   "cli.install.hooks.installed": "已装 skill×{skills} + hook×{hooks}",

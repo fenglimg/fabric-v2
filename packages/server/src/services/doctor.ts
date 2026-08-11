@@ -1533,9 +1533,8 @@ async function* iterateCanonicalFilenames(projectRoot: string): AsyncGenerator<C
 // from the install-side writers (TASK-003) in packages/cli rather than imported
 // to preserve the cross-package boundary (packages/server has zero dep on
 // packages/cli). Cross-reference: keep this logic byte-aligned with
-// packages/cli/src/install/skills-and-hooks.ts writers when those land in
-// TASK-003 — integration tests assert post-install and post-doctor-fix states
-// are byte-equal.
+// the packages/cli/src/install/ bootstrap + skill writers — integration tests
+// assert post-install and post-doctor-fix states are byte-equal.
 //
 // Behavior summary per target:
 //   - AGENTS.md: locate-or-append a managed block via BOOTSTRAP_REGEX; body is
