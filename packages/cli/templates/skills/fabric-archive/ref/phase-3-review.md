@@ -16,8 +16,36 @@
 - **model** — A reusable mental abstraction or domain object schema. Worth-archive signal: the user names something ("the X pattern", "the Y phase"). Skip-it signal: ad-hoc terminology used once. Positive: "Wave-1/Wave-2 task DAG decomposition for parallel-safe planning". Negative: "the thing we did just now" (too thin, no reusable abstraction).
 - **decision** — A choice between alternatives with rationale. Worth-archive signal: ≥2 options were weighed AND a rationale was given. Skip-it signal: the choice was forced by external constraint with no real alternative. Positive: "Single .cjs hook script over three per-client scripts — rationale: identical stdout JSON shape across Claude/Codex". Negative: "Used the existing fab_propose schema" (no alternative was considered).
 - **guideline** — A normative rule for future similar situations. Worth-archive signal: the user said "always" / "never" / "from now on". Skip-it signal: a one-off preference that won't generalize. Positive: "Slug naming: kebab-case, 2-5 words, 20-40 chars, semantic core only". Negative: "Use 4-space indent in this one file" (too narrow).
-- **pitfall** — A trap that wasted time and is non-obvious. Worth-archive signal: a bug took >15 min to diagnose AND is repeatable. Skip-it signal: a typo or one-time API quirk. Positive: "deepMerge replaces arrays — hooks.Stop[] needs special-case append-with-dedupe". Negative: "Forgot a comma in JSON" (too obvious).
+- **pitfall** — A trap that wasted time and is non-obvious. Worth-archive signal: a bug took >15 min to diagnose AND is repeatable. Skip-it signal: a typo or one-time API quirk. Positive: "deepMerge replaces arrays — hooks.Stop[] needs special-case append-with-dedupe". Negative: "Forgot a comma in JSON" (too obvious). **Name the root cause with a label from the vocabulary below** — a symptom-only pitfall is unretrievable.
 - **process** — A multi-step procedure with a stable shape. Worth-archive signal: the steps were executed in a specific order AND the order matters. Skip-it signal: a one-shot script with no reusable structure. Positive: "fab_review approve = counter++ → frontmatter inject → git mv → meta rebuild → event append (5 atomic steps)". Negative: "Ran the tests, then committed" (trivial, no reusable shape).
+
+### Pitfall root-cause vocabulary (closed list — pick exactly one)
+
+A pitfall entry whose body only narrates the symptom is unretrievable: the next agent hits the same trap wearing different clothes and no keyword matches. Name the **root cause** in the summary using one of these seven labels, then describe the symptom. The labels are not invented — they are the clusters that actually appear across the 83 pitfalls in the corpus (2026-08-11 census). If a candidate genuinely fits none of them, that is a signal worth flagging in `session_context`, not a licence to coin an eighth on the spot.
+
+| Label | The root cause | Corpus shape |
+|---|---|---|
+| `dual-truth` | One fact is maintained in two places, so it drifts. Includes "the comment/schema says X, the code does Y". | runtime default vs schema default; CLI and hook rendering the same thing separately; a lock whose comment claims coverage it doesn't have |
+| `built-not-wired` | The capability exists and is reachable-looking, but nothing calls it — or a schema declares a field the implementation never reads. Green tests, dead feature. | detection restored while the `--fix` arm stayed empty; zod `strip` silently dropping an undeclared field; declared escape hatch never read |
+| `oracle-lied` | The test or metric is itself broken, so it reports the wrong colour. The failure is in the judge, not the subject. | mutation range that scores itself; property test aimed at the value axis instead of the failure axis; wrong denominator; wall-clock flake |
+| `probe-lied` | The survey/search tool under- or over-reports, so the *judgement* built on it is wrong. Distinct from `oracle-lied`: the measurement is fine, the enumeration isn't. | NUL byte making grep treat a file as binary; substring match mistaken for a reference; a stale census snapshot read as current fact |
+| `stale-artifact` | The thing running is not the thing you edited — an installed copy, a global CLI, a long-lived process, an old path. | MCP server running the published copy; install timestamp predating the fix; lint script pointing at a moved path |
+| `scope-mismatch` | State or a path root is resolved at the wrong scope: global vs per-session, workspace vs store, cwd vs project root. | a global counter cached in a per-workspace snapshot; hook using `process.cwd()`; single-slot sidecar under concurrent windows |
+| `name-smuggled-premise` | A name carries an unexamined claim — "rename to Y" assumes X and Y are the same thing; a field name implies semantics it doesn't have. | `installed[]` read as "created this run"; an alias whose literal value equals a category word; false-friend alignment |
+
+Two labels are legitimate on one entry only when the pitfall is genuinely the *interaction* (e.g. a `stale-artifact` that only bites because a `probe-lied` hid it). Prefer one.
+
+### The repeat question — ask it on every pitfall
+
+Before proposing, ask: **是不是同一个坑的第二次?上次的修复为什么没盖住这次?**
+
+A meaningful share of the corpus is second-hits: an earlier fix corrected one instance of a class and the class re-fired somewhere else (anchor counting fixed while the value gate stayed global; a swallowed field fixed in one action and still swallowed in another). When the answer is yes:
+
+- Put the **gap in the previous fix** in the summary, not just the new symptom — "上次只修了 X 面,Y 面同因未覆盖" is the reusable content; the second symptom alone is noise.
+- Record the earlier entry as a `related` edge in Phase 3.6 rather than filing an independent lookalike. Two entries describing one class is how a KB stops being searchable.
+- If the previous fix was correct but never propagated, the label is usually `dual-truth` or `built-not-wired`, not whatever the new symptom looks like.
+
+When the answer is no, one line of `session_context` saying so is enough — the point is that the question gets asked, not that it gets a long answer.
 
 ### Slug Naming — examples
 
