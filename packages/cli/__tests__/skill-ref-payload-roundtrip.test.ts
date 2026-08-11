@@ -5,15 +5,15 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { SKILL_DESTINATIONS } from "../src/install/distribution-targets.ts";
 import {
-  SKILL_DESTINATIONS,
   installFabricArchiveSkill,
   installFabricConfigSkill,
   installFabricRecallPlaybookSkill,
   installFabricReviewSkill,
   installFabricStoreSkill,
   installFabricSyncSkill,
-} from "../src/install/skills-and-hooks.ts";
+} from "../src/install/install-skills.ts";
 
 // Producer-consumer round-trip over the skill payload: the SKILL.md a user gets
 // is the CONSUMER of its ref/ companions, and `fabric install` is the PRODUCER.

@@ -53,7 +53,7 @@ interface HookRenderer {
 
 // Walk up from this module for `templates/hooks/<rel>` — works in dev (src),
 // under vitest (src), and bundled (dist), since `templates/` always sits at the
-// CLI package root. Mirrors install/skills-and-hooks.ts#findTemplatePath.
+// CLI package root. Mirrors install/template-io.ts#findTemplatePath.
 function findTemplatePath(relativePath: string): string {
   const startDir = dirname(fileURLToPath(import.meta.url));
   let current = resolve(startDir);

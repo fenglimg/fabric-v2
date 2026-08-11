@@ -13,7 +13,7 @@ import {
   HOOK_SCRIPT_DESTINATIONS,
   SKILL_DESTINATIONS,
   SKILL_LIB_DESTINATIONS,
-} from "./skills-and-hooks.js";
+} from "./distribution-targets.js";
 
 declare const __CLI_VERSION__: string | undefined;
 

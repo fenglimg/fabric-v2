@@ -13,7 +13,7 @@ import {
   type HookClient,
 } from "@fenglimg/fabric-shared";
 
-import { HOOK_CONFIG_ARRAY_PATHS, HOOK_CONFIG_TARGETS } from "../src/install/skills-and-hooks.ts";
+import { HOOK_CONFIG_ARRAY_PATHS, HOOK_CONFIG_TARGETS } from "../src/install/distribution-targets.ts";
 
 // `HOOK_REGISTRATIONS` is what doctor checks for; these JSON files are what
 // install actually ships. If they drift, doctor certifies a config it never

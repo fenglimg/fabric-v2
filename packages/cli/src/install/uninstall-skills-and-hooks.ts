@@ -13,12 +13,12 @@ import {
   HOOK_SCRIPT_DESTINATIONS,
   SKILL_DESTINATIONS,
   SKILL_LIB_DESTINATIONS,
-} from "./skills-and-hooks.js";
+} from "./distribution-targets.js";
 import { fabricAgentsSnapshotPath } from "./write-bootstrap-snapshot.js";
 
 /**
  * Uninstall helpers — symmetric inverse of the install pipeline shipped in
- * {@link ./skills-and-hooks.ts}. Each helper is idempotent + best-effort:
+ * the `install-*.ts` writers under this directory. Each helper is idempotent + best-effort:
  *   - Missing artifacts produce `status: 'skipped'` (never throw).
  *   - Hook-config un-merge filters fabric entries out by `command`-path match
  *     against {@link FABRIC_HOOK_COMMAND_PATHS}; user-authored entries are

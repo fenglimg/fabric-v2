@@ -24,7 +24,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   installFabricArchiveSkill,
   installFabricReviewSkill,
-} from "../src/install/skills-and-hooks.ts";
+} from "../src/install/install-skills.ts";
 import {
   uninstallFabricArchiveSkill,
   uninstallFabricReviewSkill,

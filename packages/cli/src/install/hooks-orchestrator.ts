@@ -3,27 +3,33 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { t } from "../i18n.js";
 import {
-  installArchiveHintHook,
   installFabricArchiveSkill,
-  installFabricReviewSkill,
-  installFabricStoreSkill,
   installFabricConfigSkill,
   installFabricRecallPlaybookSkill,
+  installFabricReviewSkill,
+  installFabricStoreSkill,
   installFabricSyncSkill,
   installSharedSkillLib,
+} from "./install-skills.js";
+import {
+  installArchiveHintHook,
+  installCitePolicyEvictHook,
   installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
   installKnowledgePretoolUseHook,
-  installCitePolicyEvictHook,
-  installSessionEndMarkerHook,
   installPostTooluseMutationHook,
+  installSessionEndMarkerHook,
+} from "./install-hook-scripts.js";
+import {
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
+} from "./hook-config-merge.js";
+import {
   writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock,
-  type InstallStepResult,
-} from "./skills-and-hooks.js";
+} from "./bootstrap-propagation.js";
+import type { InstallStepResult } from "./step-result.js";
 import { writeFabricAgentsSnapshot } from "./write-bootstrap-snapshot.js";
 
 // ---------------------------------------------------------------------------
@@ -37,7 +43,7 @@ import { writeFabricAgentsSnapshot } from "./write-bootstrap-snapshot.js";
 //   - `fabric install` (packages/cli/src/commands/install.ts) — primary entry
 //   - `installHooks` integration + unit tests
 //
-// The neighbour file `skills-and-hooks.ts` provides the lower-level
+// The neighbour file the `install-*.ts` writers provides the lower-level
 // per-client copy/merge primitives that this orchestrator composes.
 // ---------------------------------------------------------------------------
 

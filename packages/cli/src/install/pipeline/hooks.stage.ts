@@ -3,26 +3,32 @@ import { stageFailed, stageRan, stageSkipped, stageFailedFromError } from "./pip
 import { installHooks, validateHookPaths } from "../hooks-orchestrator.js";
 import {
   installFabricArchiveSkill,
-  installFabricReviewSkill,
-  installFabricSyncSkill,
-  installFabricStoreSkill,
   installFabricConfigSkill,
   installFabricRecallPlaybookSkill,
+  installFabricReviewSkill,
+  installFabricStoreSkill,
+  installFabricSyncSkill,
   installSharedSkillLib,
+} from "../install-skills.js";
+import {
   installArchiveHintHook,
+  installCitePolicyEvictHook,
+  installHookLibs,
   installKnowledgeHintBroadHook,
   installKnowledgeHintNarrowHook,
   installKnowledgePretoolUseHook,
-  installCitePolicyEvictHook,
-  installSessionEndMarkerHook,
   installPostTooluseMutationHook,
-  installHookLibs,
+  installSessionEndMarkerHook,
+} from "../install-hook-scripts.js";
+import {
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
+} from "../hook-config-merge.js";
+import {
   writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock,
-  type InstallStepResult,
-} from "../skills-and-hooks.js";
+} from "../bootstrap-propagation.js";
+import type { InstallStepResult } from "../step-result.js";
 import { writeFabricAgentsSnapshot } from "../write-bootstrap-snapshot.js";
 import { t } from "../../i18n.js";
 import { paint } from "../../colors.js";

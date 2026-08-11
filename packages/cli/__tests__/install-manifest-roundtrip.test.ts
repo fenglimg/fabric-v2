@@ -11,7 +11,8 @@ import {
   parseInstallManifest,
 } from "@fenglimg/fabric-shared";
 
-import { installArchiveHintHook, installFabricStoreSkill } from "../src/install/skills-and-hooks.ts";
+import { installArchiveHintHook } from "../src/install/install-hook-scripts.ts";
+import { installFabricStoreSkill } from "../src/install/install-skills.ts";
 import { buildInstallManifest, writeInstallManifest } from "../src/install/write-install-manifest.ts";
 
 // Producer-consumer round-trip: `fabric install` is the PRODUCER of the
