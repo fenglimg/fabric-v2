@@ -4,10 +4,21 @@ import { readdir, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { join as posixJoin } from "node:path/posix";
 
-/** Days after which a session-hints-* cache file is considered stale (lint #27). */
+/** Days after which a per-session cache file is considered stale (lint #27). */
 export const SESSION_HINTS_STALE_DAYS = 7;
 export const SESSION_HINTS_FILE_PREFIX = "session-hints-";
 export const SESSION_HINTS_FILE_SUFFIX = ".json";
+
+// Every `<name>-<session_id>.json` sidecar under .fabric/.cache/ is swept by
+// this one lint. Sweeping matters more now that these are per-session: a single
+// shared slot was self-limiting at one file, whereas one file per session grows
+// without bound across weeks of windows. Adding a per-session sidecar without
+// adding its prefix here leaks files forever.
+export const STALE_SWEEP_PREFIXES = [
+  SESSION_HINTS_FILE_PREFIX,
+  "narrow-dedup-window-",
+  "active-session-",
+];
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -38,7 +49,7 @@ export async function inspectSessionHintsStale(
   const candidates: SessionHintsStaleCandidate[] = [];
   for (const entry of entries) {
     if (!entry.isFile()) continue;
-    if (!entry.name.startsWith(SESSION_HINTS_FILE_PREFIX)) continue;
+    if (!STALE_SWEEP_PREFIXES.some((prefix) => entry.name.startsWith(prefix))) continue;
     if (!entry.name.endsWith(SESSION_HINTS_FILE_SUFFIX)) continue;
     const absPath = join(cacheDir, entry.name);
     let mtimeMs = 0;

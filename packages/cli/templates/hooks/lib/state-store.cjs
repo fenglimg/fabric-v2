@@ -149,14 +149,39 @@ async function writeTextStateAsync(projectRoot, fileName, text) {
 
 // Active-session sidecar — SessionStart / edit hooks stamp the client
 // session_id so MCP fab_recall can fall back when the agent omits the arg.
-// File: .fabric/.cache/active-session.json  Shape: { session_id, ts }.
-const ACTIVE_SESSION_FILE = "active-session.json";
+// File: .fabric/.cache/active-session-<session_id>.json  Shape: { session_id, ts }.
+//
+// ONE FILE PER SESSION, not one shared slot. The user runs several client
+// windows against the same repo concurrently, and a single slot is
+// last-writer-wins: window B's stamp silently becomes window A's answer, so A's
+// knowledge_context_planned events get attributed to B's session and cite
+// coverage joins recalls to the wrong window's edits. Per-session files make the
+// ambiguity VISIBLE to the reader (see readActiveSessionId, which refuses to
+// guess when several sessions are live) instead of resolving it wrongly.
+const ACTIVE_SESSION_FILE_PREFIX = "active-session-";
+const ACTIVE_SESSION_FILE_SUFFIX = ".json";
+
+// Untrusted session ids must not introduce path separators or traversal
+// segments into .fabric/.cache/ (mirrors sessionHintsCachePath in
+// knowledge-hint-narrow.cjs — same threat, same normalization).
+function sanitizeSessionIdForFileName(sessionId) {
+  return (
+    String(sessionId || "anonymous")
+      .replace(/[^A-Za-z0-9_.-]/g, "-")
+      .replace(/^[.-]+/, "")
+      .slice(0, 128) || "anonymous"
+  );
+}
+
+function activeSessionFileName(sessionId) {
+  return `${ACTIVE_SESSION_FILE_PREFIX}${sanitizeSessionIdForFileName(sessionId)}${ACTIVE_SESSION_FILE_SUFFIX}`;
+}
 
 function writeActiveSession(projectRoot, sessionId, nowMs) {
   if (typeof sessionId !== "string" || sessionId.length === 0) return false;
   const ts =
     typeof nowMs === "number" && Number.isFinite(nowMs) ? nowMs : Date.now();
-  return writeJsonState(projectRoot, ACTIVE_SESSION_FILE, {
+  return writeJsonState(projectRoot, activeSessionFileName(sessionId), {
     session_id: sessionId,
     ts,
   });
@@ -173,7 +198,9 @@ module.exports = {
   writeTextState,
   writeTextStateAsync,
   writeActiveSession,
-  ACTIVE_SESSION_FILE,
+  activeSessionFileName,
+  ACTIVE_SESSION_FILE_PREFIX,
+  ACTIVE_SESSION_FILE_SUFFIX,
   atomicWrite,
   atomicWriteAsync,
   CACHE_DIR_REL,

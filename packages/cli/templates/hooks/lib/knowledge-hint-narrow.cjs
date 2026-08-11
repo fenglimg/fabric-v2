@@ -210,11 +210,19 @@ const DEFAULT_HINT_NARROW_TOP_K = 5;
 // to ignore them. Distinct sidecar from session-hints (E3) so window-only
 // suppression doesn't poison cross-session dedupe semantics.
 const DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS = 5;
-const NARROW_DEDUP_WINDOW_FILE = join(
-  ".fabric",
-  ".cache",
-  "narrow-dedup-window.json",
-);
+// ONE FILE PER SESSION. This sidecar's `counter` is a TURN counter, and a turn
+// is a property of one conversation — a counter shared across concurrently open
+// client windows makes "within the last N turns" meaningless, and the unlocked
+// read-modify-write loses whichever window writes first.
+//
+// The original comment called the global scope deliberate ("workspace-level"
+// suppression so a hot file's repeated hints don't train the agent to ignore
+// them). That rationale does not survive multi-window: the agent being trained
+// is per-session, and window B's agent has never seen the hint window A saw, so
+// suppressing it for B does not prevent any training — it just silently costs B
+// the hint.
+const NARROW_DEDUP_WINDOW_FILE_PREFIX = "narrow-dedup-window-";
+const NARROW_DEDUP_WINDOW_FILE_SUFFIX = ".json";
 // Cap the recent-emission ring buffer at this many records so the sidecar
 // stays bounded on long-running workspaces. The window check only needs the
 // last `window` entries per (path, entry_id) so a 4x safety multiplier is
@@ -1023,9 +1031,25 @@ function writeNarrowLastEmit(projectRoot, nowMs) {
  * Read failures and shape mismatches both return a fresh zero-state — the
  * window degrades to "no dedup" rather than blocking the hint.
  */
-function readNarrowDedupWindow(projectRoot) {
+function narrowDedupWindowPath(projectRoot, sessionId) {
+  // Same sanitization as sessionHintsCachePath (ISS-20260711-259): untrusted
+  // session ids must not introduce path separators into .fabric/.cache/.
+  const safe =
+    String(sessionId || "anonymous")
+      .replace(/[^A-Za-z0-9_.-]/g, "-")
+      .replace(/^[.-]+/, "")
+      .slice(0, 128) || "anonymous";
+  return join(
+    projectRoot,
+    ".fabric",
+    ".cache",
+    `${NARROW_DEDUP_WINDOW_FILE_PREFIX}${safe}${NARROW_DEDUP_WINDOW_FILE_SUFFIX}`,
+  );
+}
+
+function readNarrowDedupWindow(projectRoot, sessionId) {
   const empty = { revision_hash: "", counter: 0, recent: [] };
-  const p = join(projectRoot, NARROW_DEDUP_WINDOW_FILE);
+  const p = narrowDedupWindowPath(projectRoot, sessionId);
   if (!existsSync(p)) return empty;
   try {
     const raw = readFileSync(p, "utf8");
@@ -1059,8 +1083,8 @@ function readNarrowDedupWindow(projectRoot) {
   }
 }
 
-function writeNarrowDedupWindow(projectRoot, state) {
-  const p = join(projectRoot, NARROW_DEDUP_WINDOW_FILE);
+function writeNarrowDedupWindow(projectRoot, sessionId, state) {
+  const p = narrowDedupWindowPath(projectRoot, sessionId);
   try {
     if (!existsSync(dirname(p))) {
       mkdirSync(dirname(p), { recursive: true });
@@ -1468,7 +1492,7 @@ async function main(env, stdio) {
     const windowState =
       env && env.dedupWindowSeed !== undefined
         ? env.dedupWindowSeed
-        : readNarrowDedupWindow(cwd);
+        : readNarrowDedupWindow(cwd, sessionId);
     const dedupDecision = applyNarrowDedupWindow(
       windowState,
       gateDecision.narrow,
@@ -1484,7 +1508,7 @@ async function main(env, stdio) {
       // the window, and keep suppressing. Now: counter ticks on every fire,
       // window-naturally expires after `windowTurns` PreToolUse events.
       if (!(env && env.skipCacheWrite === true)) {
-        writeNarrowDedupWindow(cwd, dedupDecision.nextState);
+        writeNarrowDedupWindow(cwd, sessionId, dedupDecision.nextState);
       }
       if (!(env && env.skipSilenceCounter === true)) {
         appendHintSilenceCounter(cwd, now);
@@ -1506,7 +1530,7 @@ async function main(env, stdio) {
         ...gateDecision.cache,
         session_id: sessionId,
       });
-      writeNarrowDedupWindow(cwd, dedupDecision.nextState);
+      writeNarrowDedupWindow(cwd, sessionId, dedupDecision.nextState);
     }
 
     const summaryMaxLen = readSummaryMaxLen(cwd);
@@ -1650,6 +1674,7 @@ module.exports = {
   readReminderToContext,
   readNarrowLastEmit,
   writeNarrowLastEmit,
+  narrowDedupWindowPath,
   readNarrowDedupWindow,
   writeNarrowDedupWindow,
   applyNarrowDedupWindow,
@@ -1678,7 +1703,8 @@ module.exports = {
     DEFAULT_HINT_NARROW_DEDUP_WINDOW_TURNS,
     DEFAULT_HINT_NARROW_COOLDOWN_HOURS,
     DEFAULT_HINT_REMINDER_TO_CONTEXT,
-    NARROW_DEDUP_WINDOW_FILE,
+    NARROW_DEDUP_WINDOW_FILE_PREFIX,
+    NARROW_DEDUP_WINDOW_FILE_SUFFIX,
     NARROW_DEDUP_RING_CAP,
     HINT_NARROW_LAST_EMIT_FILE,
   },
