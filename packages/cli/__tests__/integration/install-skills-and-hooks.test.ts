@@ -274,7 +274,7 @@ describe("TASK-006 install-skills-and-hooks: settings preservation", () => {
   // (archive/review/import); sync/store/audit/connect + the shared skill lib
   // came only from the downstream hooks stage. A bootstrap-only install must
   // ship the complete 7-skill set.
-  it("bootstrap-only install ships all 5 skills + shared skill lib (W3-C+S2: 0 router)", async () => {
+  it("install ships all 6 skills + shared skill lib (0 router)", async () => {
     const target = await createInstalledFixtureRoot("itg-install-bootstrap-only-skills");
     tempRoots.push(target);
 

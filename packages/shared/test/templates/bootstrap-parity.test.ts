@@ -53,9 +53,18 @@ const PROTECTED_TOKENS: readonly string[] = [
   "fabric-hint.cjs",
   "archive_edit_threshold",
   "atlas.premultiplyAlpha",
-  // skills (4) — W3-C: import→archive source, audit/connect→review retire/relate
+  // Skill names, asserted present in BOTH bodies — this file can only check ZH/EN
+  // parity, because packages/shared cannot see packages/cli/templates/skills/.
+  // The guard that the list matches what `fabric install` actually SHIPS lives in
+  // packages/cli/__tests__/bootstrap-skill-coverage.test.ts, which can read both.
+  // That guard exists because this list drifted: the bodies said "Skills (4)"
+  // while install shipped six, leaving fabric-config and fabric-recall-playbook
+  // dead on arrival — the bootstrap is injected straight into the assistant's
+  // context, so a skill it fails to name is one the assistant never reaches for.
   "fabric-archive",
   "fabric-review",
+  "fabric-recall-playbook",
+  "fabric-config",
   "fabric-store",
   "fabric-sync",
   // cite syntax + vocabulary — v2.2 C1 (W2): the cite contract is internalised.
