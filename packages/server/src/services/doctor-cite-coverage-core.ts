@@ -47,7 +47,10 @@ import { readOrphanDemoteThresholdDays, readPayloadLimits } from "../config-load
 import { contextCache } from "../cache.js";
 import { atomicWriteJson, atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { ensureParentDirectory, getEventLedgerPath, getMetricsLedgerPath, sha256 } from "./_shared.js";
-import { collectStoreCanonicalEntries } from "./cross-store-recall.js";
+import {
+  collectStoreCanonicalEntries,
+  type StoreCanonicalEntry,
+} from "./cross-store-recall.js";
 import {
   appendEventLedgerEvent,
   dropEventsFromLedger,
@@ -259,6 +262,37 @@ function parseNoneSentinel(kbLineRaw: string | null | undefined): string {
 // normalized to the rc.37 NEW-1 2-state vocab — citeTagSchema's preprocess
 // remaps legacy planned/recalled/chained-from → `applied` on read, so the legacy
 // categories can never appear here. `applied` is the single qualifying category.
+// Ledger event narrowings used across the cite-coverage phases.
+//
+// These were declared INSIDE runDoctorCiteCoverage, which is a large part of why
+// that function could not be decomposed: every phase that touches an event array
+// needed a type that did not exist outside the function body. Hoisting them is
+// purely mechanical and unblocks the extraction below.
+type TurnEvent = Extract<EventLedgerEvent, { event_type: "assistant_turn_observed" }>;
+type EditEvent = Extract<EventLedgerEvent, { event_type: "edit_intent_checked" }>;
+// KT-DEC-0030: the [applied] verification signal is now the native-Read
+// knowledge_body_read marker (the retired knowledge_sections_fetched MCP event
+// is no longer emitted). Old ledgers still parse it; this report stops reading
+// it. `FetchEvent` keeps its name for blast-radius minimalism — it now carries
+// the body-read shape.
+type FetchEvent = Extract<EventLedgerEvent, { event_type: "knowledge_body_read" }>;
+// v2.1 ⑤ cite-redesign (P5): knowledge_context_planned is the recall event
+// (target_paths + final_stable_ids + session_id) — the recall→edit overlap
+// is the recall-based citation.
+type PlannedEvent = Extract<EventLedgerEvent, { event_type: "knowledge_context_planned" }>;
+// v2.2.0-rc.1 W1-T3: narrow PreToolUse surface events feed the WEAK
+// exposed_and_mutated signal (condition 1).
+type HookSurfaceEvent = Extract<EventLedgerEvent, { event_type: "hook_surface_emitted" }>;
+// lifecycle-refactor W2-T4 (§5 row7/row2): PostToolUse `file_mutated` (the
+// authoritative mutation-completed marker) + SessionEnd `session_ended`
+// (funnel-closed boundary). New events, zero prior consumers — see plan.
+type FileMutatedEvent = Extract<EventLedgerEvent, { event_type: "file_mutated" }>;
+type SessionEndedEvent = Extract<EventLedgerEvent, { event_type: "session_ended" }>;
+
+// Relevance metadata for one canonical knowledge entry, keyed in the kb index
+// under both its bare stable_id and its store-qualified id.
+type KbEntry = { relevance_paths: readonly string[]; relevance_scope: "narrow" | "broad" };
+
 type CiteTagCategory = "applied" | "dismissed" | "none";
 
 function categorizeCiteTag(tag: string): { category: CiteTagCategory; reason?: string } {
@@ -465,6 +499,897 @@ export function sumFoldedTurnCounters(
 // Performance: O(N events + M turns × cite_ids + E edits × K narrow_kbs).
 // For typical ledgers (<10k events, <100 narrow kbs) this stays well under
 // 100ms — matches the buildLastActiveIndex envelope.
+// Phase: PostToolUse mutation funnel (W1-T3 exposed_and_mutated + W2-T4
+// file_mutated attribution).
+//
+// Extracted from runDoctorCiteCoverage verbatim. It is the most detachable phase
+// in that function: it reads six already-built collections and produces four
+// derived counts, touching none of the compliance numerator/denominator state
+// around it — the comments below already said it "stands ALONGSIDE" everything
+// else, so the coupling was documented long before it was expressed in code.
+function computeMutationFunnel(input: {
+  hookSurfaceEvents: readonly HookSurfaceEvent[];
+  fileMutatedEvents: readonly FileMutatedEvent[];
+  dismissedBySession: Map<string, Set<string>>;
+  sessionEditPaths: Map<string, string[]>;
+  kbIndex: Map<string, KbEntry>;
+  idTypeMap: Map<string, string>;
+}): {
+  exposedAndMutated: ReturnType<typeof computeExposedAndMutated>;
+  mutationsObserved: number;
+  mutationPoolAttributed: number;
+  unattributedWorkspaceDirty: number;
+} {
+  const { hookSurfaceEvents, fileMutatedEvents, dismissedBySession, sessionEditPaths, kbIndex, idTypeMap } =
+    input;
+  // Build narrowSurfacedBySession from the narrow PreToolUse hook_surface_emitted
+  // events (condition 1), then delegate the three-condition filter to
+  // computeExposedAndMutated. This object is attached to metrics as its OWN field
+  // and never feeds the compliance numerator/denominator above.
+  const narrowSurfacedBySession = new Map<string, Set<string>>();
+  for (const surface of hookSurfaceEvents) {
+    if (surface.hook_name !== "knowledge-hint-narrow") continue;
+    if (surface.delivery_status !== "delivered") continue;
+    const sid = surface.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const set = narrowSurfacedBySession.get(sid) ?? new Set<string>();
+    for (const id of surface.rendered_ids) {
+      if (typeof id === "string" && id.length > 0) set.add(id);
+    }
+    narrowSurfacedBySession.set(sid, set);
+  }
+  const exposedAndMutated = computeExposedAndMutated({
+    narrowSurfacedBySession,
+    dismissedBySession,
+    editPathsBySession: sessionEditPaths,
+    kbIndex,
+    idTypeMap,
+  });
+
+  // lifecycle-refactor W2-T4 (§5 row7 PostToolUse mutation funnel + mutation_pool
+  // downgrade / §0 下沉 doctor): consume the new `file_mutated` PostToolUse marker
+  // OFFLINE here (前台 hook only O(1)-appended it). This rebuild is strictly
+  // ADDITIVE — it stands ALONGSIDE the W1-T3 exposed_and_mutated join and the
+  // edit_intent_checked `edits_touched` count, touching NEITHER. Three derived
+  // signals:
+  //   - mutations_observed.count: distinct `file_mutated` events (dedup on
+  //     tool_call_id, the per-call key that pairs Pre/Post and guards the
+  //     PostToolUse parallel-fire race). This is the AUTHORITATIVE
+  //     mutation-COMPLETED count, vs the PreToolUse edit-INTENT `edits_touched`.
+  //   - mutation_pool.attributed: a file_mutated whose `source_event_id` resolves
+  //     to a `hook_surface_emitted` (surfaced knowledge) in window. Attribution
+  //     key = store_id + stable_id + source_event_id (distinct-dedup'd so
+  //     multi-store never double-counts the same surfaced id).
+  //   - mutation_pool.unattributed_workspace_dirty: every file_mutated that does
+  //     NOT attribute (no source_event_id, or a source_event_id that resolves to
+  //     no surfaced event). §9 git-diff fallback to upgrade these via a session
+  //     shell event + baseline is SPECULATIVE and deliberately NOT implemented —
+  //     doctor stays read-only (no git diff / no disk write); the events.jsonl
+  //     source_event_id link is the sole attribution path here.
+  //     TODO(§9 future): git-diff + session shell baseline fallback to reclaim
+  //     unattributed_workspace_dirty into fallback-attributed. Out of scope (W2-T4
+  //     keeps doctor read-only).
+  // surfacedEventIds: the envelope `id` of every hook_surface_emitted in window —
+  // the link target of file_mutated.source_event_id. surfacedIdsByEvent maps that
+  // event id → its rendered_ids (the stable_ids surfaced), used to build the
+  // distinct attribution key.
+  const surfacedIdsByEvent = new Map<string, readonly string[]>();
+  for (const surface of hookSurfaceEvents) {
+    surfacedIdsByEvent.set(surface.id, surface.rendered_ids);
+  }
+  const seenMutationKeys = new Set<string>(); // tool_call_id dedup
+  const attributionKeys = new Set<string>(); // store_id|stable_id|source_event_id
+  let mutationsObserved = 0;
+  let unattributedWorkspaceDirty = 0;
+  for (const mutation of fileMutatedEvents) {
+    // Distinct mutation count keyed by tool_call_id (per-call key). A repeated
+    // tool_call_id (e.g. a duplicated append on retry) collapses to one.
+    if (seenMutationKeys.has(mutation.tool_call_id)) continue;
+    seenMutationKeys.add(mutation.tool_call_id);
+    mutationsObserved += 1;
+
+    const sourceEventId = mutation.source_event_id;
+    const surfacedRenderedIds =
+      typeof sourceEventId === "string" && sourceEventId.length > 0
+        ? surfacedIdsByEvent.get(sourceEventId)
+        : undefined;
+    if (surfacedRenderedIds === undefined || surfacedRenderedIds.length === 0) {
+      // No source_event_id, or it links to no surfaced event → low confidence.
+      unattributedWorkspaceDirty += 1;
+      continue;
+    }
+    // Attributed: register one distinct attribution key per surfaced stable_id.
+    // store_id is optional (single-store default) — collapse undefined to "" so
+    // the key stays stable; the triple still prevents cross-store double-count
+    // when store_id IS present.
+    const storeId = mutation.store_id ?? "";
+    for (const stableId of surfacedRenderedIds) {
+      if (typeof stableId !== "string" || stableId.length === 0) continue;
+      attributionKeys.add(`${storeId}|${stableId}|${sourceEventId}`);
+    }
+  }
+  const mutationPoolAttributed = attributionKeys.size;
+  return { exposedAndMutated, mutationsObserved, mutationPoolAttributed, unattributedWorkspaceDirty };
+}
+
+// Phase: partition one ledger read into its per-event-type arrays.
+//
+// The single ledger pass is deliberate — every downstream phase consumes a
+// different slice of the same window, and re-reading per type would multiply
+// I/O by seven for no gain.
+function partitionLedgerEvents(ledgerEvents: readonly EventLedgerEvent[]): {
+  assistantTurns: TurnEvent[];
+  editEvents: EditEvent[];
+  fetchEvents: FetchEvent[];
+  plannedEvents: PlannedEvent[];
+  hookSurfaceEvents: HookSurfaceEvent[];
+  fileMutatedEvents: FileMutatedEvent[];
+  sessionEndedEvents: SessionEndedEvent[];
+} {
+  const assistantTurns: TurnEvent[] = [];
+  const editEvents: EditEvent[] = [];
+  const fetchEvents: FetchEvent[] = [];
+  const plannedEvents: PlannedEvent[] = [];
+  const hookSurfaceEvents: HookSurfaceEvent[] = [];
+  const fileMutatedEvents: FileMutatedEvent[] = [];
+  const sessionEndedEvents: SessionEndedEvent[] = [];
+  for (const event of ledgerEvents) {
+    switch (event.event_type) {
+      case "assistant_turn_observed":
+        assistantTurns.push(event);
+        break;
+      case "edit_intent_checked":
+        editEvents.push(event);
+        break;
+      case "knowledge_body_read":
+        fetchEvents.push(event);
+        break;
+      case "knowledge_context_planned":
+        plannedEvents.push(event);
+        break;
+      case "hook_surface_emitted":
+        hookSurfaceEvents.push(event);
+        break;
+      case "file_mutated":
+        fileMutatedEvents.push(event);
+        break;
+      case "session_ended":
+        sessionEndedEvents.push(event);
+        break;
+      default:
+        break;
+    }
+  }
+  return {
+    assistantTurns,
+    editEvents,
+    fetchEvents,
+    plannedEvents,
+    hookSurfaceEvents,
+    fileMutatedEvents,
+    sessionEndedEvents,
+  };
+}
+
+// Phase: per-session recall index. Each session maps to its
+// knowledge_context_planned events (ts + target_paths), ts-ascending.
+function indexPlannedBySession(
+  plannedEvents: readonly PlannedEvent[],
+): Map<string, { ts: number; target_paths: readonly string[] }[]> {
+  const plannedBySession = new Map<string, { ts: number; target_paths: readonly string[] }[]>();
+  for (const planned of plannedEvents) {
+    const sid = planned.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const list = plannedBySession.get(sid) ?? [];
+    list.push({ ts: planned.ts, target_paths: planned.target_paths ?? [] });
+    plannedBySession.set(sid, list);
+  }
+  for (const list of plannedBySession.values()) {
+    list.sort((a, b) => a.ts - b.ts);
+  }
+  return plannedBySession;
+}
+
+// Phase: client filter + cross-client denominator guard.
+//
+// Edit/fetch events are not client-scoped — they originate from the hook layer
+// regardless of which assistant produced the upstream turn. Edit events also
+// carry no `client` field, so a naive walk would let codex-session edits inflate
+// edits_touched and trigger expected_but_missed against a cc-filtered cited-kb
+// map that never had a chance to populate (its source turns were filtered out).
+// The guard rebuilds the set of session_ids whose turns include at least one
+// matching-client turn from the UNFILTERED list; the edit loop gates on it. With
+// client === 'all' the set stays null and every edit counts.
+function applyClientFilter(
+  assistantTurns: readonly TurnEvent[],
+  client: string,
+): { filteredTurns: readonly TurnEvent[]; clientSessionIds: Set<string> | null } {
+  const filteredTurns =
+    client === "all" ? assistantTurns : assistantTurns.filter((t) => t.client === client);
+  let clientSessionIds: Set<string> | null = null;
+  if (client !== "all") {
+    clientSessionIds = new Set<string>();
+    for (const turn of assistantTurns) {
+      if (turn.client === client) {
+        const sid = turn.session_id;
+        if (typeof sid === "string" && sid.length > 0) {
+          clientSessionIds.add(sid);
+        }
+      }
+    }
+  }
+  return { filteredTurns, clientSessionIds };
+}
+
+// Phase: kb relevance index.
+//
+// v2.2 W5 R6 (读侧 cutover): built from the read-set STORES (cross-store, on the
+// fly) rather than the retired co-location agents.meta nodes. Each entry is
+// indexed under BOTH its local stable_id and its store-qualified id
+// (`<alias>:<id>`), so a cite line in either form — bare or qualified per the
+// v2.1 multi-store cite policy — resolves to the same relevance metadata.
+//
+// `kbEntryKeys` is the reverse map: distinct KbEntry → the index keys pointing
+// at it. The expected_but_missed walk needs it to treat one entry as a single
+// unit — count it once, and suppress it when a cite used EITHER key.
+//
+// An empty read-set collapses to an empty index: the narrow denominator becomes
+// zero and the broad logic still functions on turn data alone.
+function buildKbRelevanceIndex(canonicalEntries: readonly StoreCanonicalEntry[]): {
+  kbIndex: Map<string, KbEntry>;
+  kbEntryKeys: Map<KbEntry, string[]>;
+} {
+  const kbIndex = new Map<string, KbEntry>();
+  const kbEntryKeys = new Map<KbEntry, string[]>();
+  for (const entry of canonicalEntries) {
+    const paths = entry.description.relevance_paths ?? [];
+    const scope = entry.description.relevance_scope ?? "broad";
+    const kbEntry: KbEntry = {
+      relevance_paths: paths,
+      // A broad entry with no paths is the safe default. A narrow entry must
+      // carry at least one path; an empty-paths narrow is treated as broad.
+      relevance_scope: scope === "narrow" && paths.length > 0 ? "narrow" : "broad",
+    };
+    kbIndex.set(entry.stableId, kbEntry);
+    kbIndex.set(entry.qualifiedId, kbEntry);
+    kbEntryKeys.set(kbEntry, [entry.stableId, entry.qualifiedId]);
+  }
+  return { kbIndex, kbEntryKeys };
+}
+
+/** Correlation window between a fetch event and the turn that cited from it. */
+const RECALL_WINDOW_MS = 60_000;
+
+// Phase: recall verification (the recalled_unverified denominator).
+//
+// A turn counts as recall-verified when its own session produced a fetch event
+// within RECALL_WINDOW_MS of the turn. Timestamps are bucketed per session and
+// sorted once up front so the per-turn check is a scan over one small list
+// rather than a walk of every fetch event in the ledger.
+function createRecallVerifier(
+  fetchEvents: readonly FetchEvent[],
+): (turn: TurnEvent) => boolean {
+  const fetchesBySession = new Map<string, number[]>();
+  for (const fetch of fetchEvents) {
+    const sid = fetch.session_id;
+    if (typeof sid !== "string" || sid.length === 0) continue;
+    const list = fetchesBySession.get(sid) ?? [];
+    list.push(fetch.ts);
+    fetchesBySession.set(sid, list);
+  }
+  for (const list of fetchesBySession.values()) {
+    list.sort((a, b) => a - b);
+  }
+  return (turn: TurnEvent): boolean => {
+    const sid = turn.session_id;
+    if (typeof sid !== "string" || sid.length === 0) return false;
+    const fetches = fetchesBySession.get(sid);
+    if (fetches === undefined || fetches.length === 0) return false;
+    for (const ft of fetches) {
+      if (Math.abs(ft - turn.ts) <= RECALL_WINDOW_MS) return true;
+    }
+    return false;
+  };
+}
+
+// Phase: layer filter.
+//
+// Decides whether a cite_id contributes to the top-level rc.20 metrics
+// (qualifying_cites etc.) AND to the contract accumulators. Edits are NOT
+// layer-filtered — they describe filesystem paths, not knowledge entries, and
+// carry no layer. Cites with neither a KP- nor a KT- prefix (rare/legacy) pass
+// through under 'all' but are dropped under any narrowed filter: conservative,
+// because counting an unclassifiable cite toward a specific layer would inflate
+// that layer's numerator on a guess.
+function createLayerFilter(layerFilter: string): (citeId: string) => boolean {
+  return (citeId: string): boolean => {
+    if (layerFilter === "all") return true;
+    if (layerFilter === "team") return citeId.startsWith("KT-");
+    return citeId.startsWith("KP-");
+  };
+}
+
+// Phase: contract-operator vs observed-edits comparator.
+//
+// A session_id is required to evaluate edits; a turn without one is treated as
+// having NO observable edits, so `edit:` operators violate and `not_edit:`
+// operators pass. That is the conservative "no evidence the edit happened"
+// reading — the alternative would clear a contract on missing data.
+//
+// `require:` / `forbid:` are deliberately SCOPED to the changed file PATHS, not
+// to diff content: the edit_intent_checked ledger event carries path /
+// compliant / intent / optional numeric diff_stat / optional annotation and no
+// textual diff. This is a strict downgrade from the planned diff-content match,
+// kept explicit so the i18n surface can label it honestly rather than implying a
+// content check happened. If a future rc widens the ledger schema to carry the
+// diff text, this function is the only place that changes.
+function createOperatorEvaluator(
+  sessionEditPaths: ReadonlyMap<string, readonly string[]>,
+): (
+  sessionId: string | undefined,
+  operators: ReadonlyArray<{ kind: "edit" | "not_edit" | "require" | "forbid"; target: string }>,
+) => boolean {
+  return (sessionId, operators): boolean => {
+    const editPaths =
+      typeof sessionId === "string" && sessionId.length > 0
+        ? (sessionEditPaths.get(sessionId) ?? [])
+        : [];
+    for (const op of operators) {
+      switch (op.kind) {
+        case "edit": {
+          let matched = false;
+          for (const path of editPaths) {
+            if (minimatch(path, op.target, { dot: true, matchBase: false })) {
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) return true;
+          break;
+        }
+        case "not_edit": {
+          for (const path of editPaths) {
+            if (minimatch(path, op.target, { dot: true, matchBase: false })) return true;
+          }
+          break;
+        }
+        case "require": {
+          let found = false;
+          for (const path of editPaths) {
+            if (path.includes(op.target)) {
+              found = true;
+              break;
+            }
+          }
+          if (!found) return true;
+          break;
+        }
+        case "forbid": {
+          for (const path of editPaths) {
+            if (path.includes(op.target)) return true;
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    return false;
+  };
+}
+
+// Phase: edit correlation — everything derived by walking the edit events.
+//
+// Six outputs come out of one walk because they share the same population
+// decisions (client attribution, session_id presence) and splitting them into
+// separate passes would let those decisions drift apart:
+//
+//   * editsTouched / expectedButMissed — the narrow-cite discipline signal;
+//   * uncorrelatableEdits — edits with no session_id. They can never reach
+//     expected_but_missed, so counting them turns a SILENT undercount into a
+//     visible one; a stale pre-session_id hook emitting session-less edits is
+//     exactly what pinned compliance at a misleading 100% twice before;
+//   * recallBackedEdits — the v2.1 ⑤ recall-based coverage 口径;
+//   * recallsInWindow / recallSessionsCorrelated — the self-diagnostic that
+//     tells a 0 recall_coverage caused by a session_id mismatch (recalls
+//     happened, but in sessions that produced no edits) apart from a real
+//     recall-discipline gap.
+function computeEditCorrelation(input: {
+  editEvents: readonly EditEvent[];
+  clientSessionIds: ReadonlySet<string> | null;
+  plannedBySession: ReadonlyMap<string, { ts: number; target_paths: readonly string[] }[]>;
+  recallWindowMs: number;
+  sessionCitedKbs: ReadonlyMap<string, Set<string>>;
+  kbIndex: ReadonlyMap<string, KbEntry>;
+  kbEntryKeys: ReadonlyMap<KbEntry, string[]>;
+}): {
+  editsTouched: number;
+  expectedButMissed: number;
+  uncorrelatableEdits: number;
+  recallBackedEdits: number;
+  recallsInWindow: number;
+  recallSessionsCorrelated: number;
+} {
+  const {
+    editEvents,
+    clientSessionIds,
+    plannedBySession,
+    recallWindowMs,
+    sessionCitedKbs,
+    kbIndex,
+    kbEntryKeys,
+  } = input;
+    // expected_but_missed: walk edit events, for each one find narrow kbs whose
+    // relevance_paths cover the edit's path; if no assistant_turn in the same
+    // session cited that kb, increment. Edits without a session_id cannot be
+    // correlated and are skipped (conservative — better to under-count than to
+    // raise false positives).
+    let editsTouched = 0;
+    let expectedButMissed = 0;
+    // v2.0.0-rc.38 UX-8 (C, hardening): edits with no session_id can never be
+    // correlated against assistant_turn cite lines, so they silently never reach
+    // expected_but_missed. Surfacing the count turns the previous SILENT
+    // undercount (a stale pre-session_id hook emits edits without session_id)
+    // into a visible signal — exactly the confound that pinned compliance at a
+    // misleading 100% for two prior closure attempts.
+    let uncorrelatableEdits = 0;
+    // v2.1 ⑤ cite-redesign (P5): recall-based coverage口径. An edit is
+    // "recall-backed" when an in-session knowledge_context_planned with
+    // overlapping target_paths preceded it within the recall window. Counted over
+    // the SAME population as edits_touched (post client-filter, with session_id).
+    let recallBackedEdits = 0;
+    for (const edit of editEvents) {
+      // Edit events have no `client` field; per-client edits_touched stays at 0
+      // (per_client only tabulates assistant-side metrics — see comment block).
+      // When a client filter is active, skip edits whose session never produced
+      // a matching-client turn — otherwise cross-client edits pollute both the
+      // edits_touched denominator and expected_but_missed (the session's
+      // cited-kb map is empty under the filter, so every narrow match would
+      // false-positive). Edits whose session_id is missing fall through to the
+      // legacy conservative count when the filter is 'all', and are likewise
+      // skipped under a narrowed filter (no way to attribute them).
+      const sid = edit.session_id;
+      const hasSid = typeof sid === "string" && sid.length > 0;
+      // No session_id → uncorrelatable under ANY client filter. Count once.
+      if (!hasSid) uncorrelatableEdits += 1;
+      if (clientSessionIds !== null) {
+        if (!hasSid) continue;
+        if (!clientSessionIds.has(sid)) continue;
+      }
+      editsTouched += 1;
+      if (!hasSid) continue;
+
+      // v2.1 ⑤: recall-backed check. Scan this session's recalls for one that
+      // (a) happened at-or-before this edit, (b) within the recall window
+      // (recallWindowMs <= 0 = unbounded), and (c) targeted an overlapping path.
+      const recalls = plannedBySession.get(sid);
+      if (recalls !== undefined) {
+        for (const recall of recalls) {
+          if (recall.ts > edit.ts) break; // ts-ascending — no earlier match past here
+          if (recallWindowMs > 0 && edit.ts - recall.ts > recallWindowMs) continue;
+          if (recallPathOverlaps(edit.path, recall.target_paths)) {
+            recallBackedEdits += 1;
+            break;
+          }
+        }
+      }
+
+      const citedSet = sessionCitedKbs.get(sid) ?? new Set<string>();
+      // v2.2 W5 R6/R2 (agents.meta decolo): the kb index keys every store entry
+      // under BOTH its local stable_id and its store-qualified id (`<alias>:<id>`)
+      // — both pointing at the SAME KbEntry object — so a cite line in either form
+      // resolves. The expected_but_missed walk must therefore count each distinct
+      // kb entry once per edit, not once per index key; track counted entries by
+      // object identity to avoid the dual-key double-count. A cite in EITHER form
+      // (citedSet may hold either key) suppresses the miss.
+      const countedThisEdit = new Set<KbEntry>();
+      for (const [, kb] of kbIndex) {
+        if (kb.relevance_scope !== "narrow") continue;
+        if (!matchesRelevancePath(edit.path, kb.relevance_paths)) continue;
+        if (countedThisEdit.has(kb)) continue;
+        countedThisEdit.add(kb);
+        // Suppress the miss when a cite used EITHER of this entry's keys (local
+        // stable_id or store-qualified id).
+        const keys = kbEntryKeys.get(kb) ?? [];
+        const citedInAnyForm = keys.some((k) => citedSet.has(k));
+        if (!citedInAnyForm) {
+          expectedButMissed += 1;
+        }
+      }
+    }
+
+    // recall→edit session-mismatch diagnostics: count in-window recalls, their
+    // distinct sessions, and how many of those sessions also produced an edit. When
+    // recalls happened but none share an edit session, recall_coverage's 0 is a
+    // session_id-mismatch artifact (recall caller passed a non-client session_id),
+    // not a recall-discipline gap — the surface uses this to self-diagnose.
+    const editSessionIds = new Set<string>();
+    for (const edit of editEvents) {
+      if (typeof edit.session_id === "string" && edit.session_id.length > 0) {
+        editSessionIds.add(edit.session_id);
+      }
+    }
+    let recallsInWindow = 0;
+    for (const list of plannedBySession.values()) recallsInWindow += list.length;
+    let recallSessionsCorrelated = 0;
+    for (const sid of plannedBySession.keys()) {
+      if (editSessionIds.has(sid)) recallSessionsCorrelated += 1;
+    }
+  return {
+    editsTouched,
+    expectedButMissed,
+    uncorrelatableEdits,
+    recallBackedEdits,
+    recallsInWindow,
+    recallSessionsCorrelated,
+  };
+}
+
+// Phase: merge the cite-audit rollup days and the folded empty-shell turns into
+// the live metrics, MUTATING `metrics` in place.
+//
+// Rolled-up turns were physically dropped from the raw ledger, so rollup rows
+// and the raw metrics are temporally DISJOINT — summing is exact, with no
+// double-count. Everything here is gated on `until === undefined` so the
+// per-day rollup-COMPUTATION calls (which always set `until`) never recursively
+// merge prior rollup rows into themselves. With the default 7d window no rollup
+// row qualifies (cutoff ≥ 7d), so the common-case report is byte-for-byte
+// unchanged.
+//
+// Folded empty-shell turns carry zero cite signal, so they touch ONLY
+// total_turns; compliance and every other metric are unchanged. per_client stays
+// raw-event-only on purpose, mirroring the rollup merge above it.
+async function mergeRollupAndFoldedTurns(
+  metrics: CiteCoverageReport["metrics"],
+  opts: {
+    projectRoot: string;
+    effectiveSince: number;
+    client: "all" | "cc" | "codex";
+    until: number | undefined;
+  },
+): Promise<{ rollupDaysMerged: number; rollupTrend: CiteRollupRow[] | undefined }> {
+    // rc.39: merge cite-audit rollup days into the totals. Rolled-up turns were
+    // physically dropped from the raw ledger, so rollup rows and the raw metrics
+    // above are temporally DISJOINT — summing is exact, no double-count. Gated on
+    // `opts.until === undefined` so the per-day rollup-computation calls (which
+    // always set `until`) never recursively merge prior rollup rows into
+    // themselves. With the default 7d window no rollup row qualifies (cutoff ≥ 7d),
+    // so the common-case report stays byte-for-byte identical.
+    let rollupDaysMerged = 0;
+    let rollupTrend: CiteRollupRow[] | undefined;
+    if (opts.until === undefined) {
+      let rollupRows: CiteRollupRow[] = [];
+      try {
+        rollupRows = await readCiteRollup(opts.projectRoot);
+      } catch {
+        rollupRows = [];
+      }
+      const inWindow = rollupRows.filter((r) => utcDayBounds(r.date).end > opts.effectiveSince);
+      if (inWindow.length > 0) {
+        rollupTrend = inWindow;
+        rollupDaysMerged = inWindow.length;
+        for (const r of inWindow) {
+          metrics.total_turns += r.metrics.total_turns;
+          metrics.qualifying_cites += r.metrics.qualifying_cites;
+          metrics.recalled_unverified += r.metrics.recalled_unverified;
+          metrics.expected_but_missed += r.metrics.expected_but_missed;
+          metrics.edits_touched += r.metrics.edits_touched;
+          metrics.compliant_cites = (metrics.compliant_cites ?? 0) + (r.metrics.compliant_cites ?? 0);
+          metrics.noncompliant_cites =
+            (metrics.noncompliant_cites ?? 0) + (r.metrics.noncompliant_cites ?? 0);
+          metrics.uncorrelatable_edits =
+            (metrics.uncorrelatable_edits ?? 0) + (r.metrics.uncorrelatable_edits ?? 0);
+          // v2.1 ⑤: recall-backed edits are disjoint per day, so summing is exact.
+          metrics.recall_backed_edits =
+            (metrics.recall_backed_edits ?? 0) + (r.metrics.recall_backed_edits ?? 0);
+        }
+        const mergedDenom = (metrics.compliant_cites ?? 0) + (metrics.noncompliant_cites ?? 0);
+        metrics.cite_compliance_rate = mergedDenom > 0 ? (metrics.compliant_cites ?? 0) / mergedDenom : null;
+        // v2.1 ⑤: recompute recall coverage over the merged edit population.
+        metrics.recall_coverage_rate =
+          metrics.edits_touched > 0 ? (metrics.recall_backed_edits ?? 0) / metrics.edits_touched : null;
+      }
+
+      // rc.39 emit-fold: add the folded empty-shell turns back into total_turns.
+      // Same gate as the rollup merge (only the live report, never the per-day
+      // until-bounded rollup-computation calls — those aggregate raw events only,
+      // and the live reader adds the folded counters once). Empty shells carry
+      // zero cite signal, so they touch ONLY total_turns: compliance
+      // (compliant/(compliant+noncompliant)) and every other metric are unchanged.
+      // per_client is intentionally left raw-event-only here, mirroring the rollup
+      // merge above which also updates top-level metrics only.
+      try {
+        const metricsRows = await readMetrics(opts.projectRoot);
+        const foldedTurns = sumFoldedTurnCounters(metricsRows, {
+          since: opts.effectiveSince,
+          client: opts.client,
+        });
+        metrics.total_turns += foldedTurns;
+      } catch {
+        // metrics.jsonl is best-effort observability — a read failure degrades to
+        // "no folded turns" rather than throwing (consistent with readCiteRollup).
+      }
+    }
+  return { rollupDaysMerged, rollupTrend };
+}
+
+// Phase: the aggregation sweep — ONE walk over the client-filtered assistant
+// turns that produces every turn-derived counter.
+//
+// The eighteen outputs share a single loop on purpose. They all hinge on the
+// same per-turn decisions (does this cite pass the layer filter, is the turn
+// inside the contract window, which client bucket does it belong to), and
+// splitting them into separate passes is exactly how those decisions drift
+// apart — one pass gets a filter fix and the next silently does not, and the
+// resulting numbers no longer describe the same population.
+//
+// The return type is inferred rather than spelled out: eighteen hand-written
+// field types would be a second copy of the accumulator declarations below, and
+// a copy is what goes stale.
+function aggregateTurnMetrics(input: {
+  filteredTurns: readonly TurnEvent[];
+  editEvents: readonly EditEvent[];
+  layerFilter: string;
+  idTypeMap: ReadonlyMap<string, string>;
+  contractStatus: "ok" | "skipped:bootstrap_drift" | "awaiting_marker";
+  contractEffectiveSince: number;
+  isRecallVerified: (turn: TurnEvent) => boolean;
+}) {
+  const {
+    filteredTurns,
+    editEvents,
+    layerFilter,
+    idTypeMap,
+    contractStatus,
+    contractEffectiveSince,
+    isRecallVerified,
+  } = input;
+    // Aggregation pass — single sweep over filtered turns. Build both the
+    // top-level metrics and per-client buckets in one walk.
+    const dismissedHistogram: Record<string, number> = {};
+    // v2.0.0-rc.23 TASK-08(c): `KB: none` sentinel breakdown. Keyed by
+    // 'no-relevant' / 'not-applicable' / 'unspecified'.
+    const noneHistogram: Record<string, number> = {};
+    const perClientAccum = new Map<string, CiteCoverageReport["metrics"]>();
+    const emptyMetrics = (): CiteCoverageReport["metrics"] => ({
+      edits_touched: 0,
+      qualifying_cites: 0,
+      recalled_unverified: 0,
+      expected_but_missed: 0,
+      total_turns: 0,
+    });
+    const bumpClient = (client: string | undefined, mut: (m: CiteCoverageReport["metrics"]) => void): void => {
+      if (typeof client !== "string" || client.length === 0) return;
+      const existing = perClientAccum.get(client) ?? emptyMetrics();
+      mut(existing);
+      perClientAccum.set(client, existing);
+    };
+
+    // session_id → Set<cite_id> for expected_but_missed correlation.
+    const sessionCitedKbs = new Map<string, Set<string>>();
+
+    // v2.2.0-rc.1 W1-T3: session_id → Set<cite_id> that were [dismissed] this
+    // session — condition (3) of the WEAK exposed_and_mutated signal. Populated
+    // index-aligned (cite_tags[i] ⋈ cite_ids[i]) in the turn loop below.
+    const dismissedBySession = new Map<string, Set<string>>();
+
+    // v2.0.0-rc.24 TASK-08: per-session edit-path index for contract operator
+    // evaluation. Built once from the edit events partition; reused across the
+    // turn loop. Each session maps to its observed edit paths (normalized).
+    const sessionEditPaths = new Map<string, string[]>();
+    for (const edit of editEvents) {
+      const sid = edit.session_id;
+      if (typeof sid !== "string" || sid.length === 0) continue;
+      const list = sessionEditPaths.get(sid) ?? [];
+      list.push(normalizePath(edit.path));
+      sessionEditPaths.set(sid, list);
+    }
+
+    // v2.0.0-rc.24 TASK-08: contract accumulators.
+    let decisionsCited = 0;
+    let pitfallsCited = 0;
+    let contractWith = 0;
+    let contractMissing = 0;
+    let hardViolated = 0;
+    let citeIdUnresolved = 0;
+    const skipCount: Record<string, number> = {};
+    const layerTypeAccum: CiteLayerTypeBreakdown = { team: {}, personal: {} };
+    const bumpLayerType = (citeId: string, type: string): void => {
+      const layer = citeId.startsWith("KP-") ? "personal" : citeId.startsWith("KT-") ? "team" : null;
+      if (layer === null) return;
+      layerTypeAccum[layer][type] = (layerTypeAccum[layer][type] ?? 0) + 1;
+    };
+    const passesLayerFilter = createLayerFilter(layerFilter);
+    const evaluateOperatorViolation = createOperatorEvaluator(sessionEditPaths);
+
+    let totalTurns = 0;
+    let qualifyingCites = 0;
+    let recalledUnverified = 0;
+
+    // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-store
+    // qualifying-cite accumulator. Keyed by the cite's `cite_stores[i]` qualifier;
+    // a null/absent qualifier (project-local cite) buckets under "local". STRICTLY
+    // a diagnostic split of qualifying_cites — it is built ALONGSIDE the qualifying
+    // count and NEVER feeds the compliance numerator/denominator (honesty 铁律).
+    const STORE_LOCAL_KEY = "local";
+    const byStoreQualifying: Record<string, number> = {};
+
+    for (const turn of filteredTurns) {
+      totalTurns += 1;
+      bumpClient(turn.client, (m) => {
+        m.total_turns += 1;
+      });
+
+      const sid = turn.session_id;
+      if (typeof sid === "string" && sid.length > 0) {
+        const set = sessionCitedKbs.get(sid) ?? new Set<string>();
+        for (const id of turn.cite_ids) {
+          set.add(id);
+        }
+        sessionCitedKbs.set(sid, set);
+
+        // v2.2.0-rc.1 W1-T3: record dismissed ids for the WEAK exposed_and_mutated
+        // signal (condition 3). cite_tags[i] is index-aligned with cite_ids[i]
+        // (same parallel-array convention the contract walk relies on). A
+        // `dismissed`/`dismissed:<reason>` tag on a real id marks that id dismissed
+        // this session. Bounds-checked: a trailing `KB: none` sentinel tag has no
+        // matching cite_ids slot and is skipped.
+        for (let i = 0; i < turn.cite_tags.length; i += 1) {
+          const id = turn.cite_ids[i];
+          if (typeof id !== "string" || id.length === 0) continue;
+          if (categorizeCiteTag(turn.cite_tags[i]).category === "dismissed") {
+            const dset = dismissedBySession.get(sid) ?? new Set<string>();
+            dset.add(id);
+            dismissedBySession.set(sid, dset);
+          }
+        }
+      }
+
+      // -------------------------------------------------------------------
+      // rc.20 cite_tags walk (unchanged behavior — touch only if the
+      // categorize/dismissed/none shape needs widening).
+      // -------------------------------------------------------------------
+      let turnHadApplied = false;
+      for (const tag of turn.cite_tags) {
+        const { category, reason } = categorizeCiteTag(tag);
+        switch (category) {
+          case "applied":
+            qualifyingCites += 1;
+            bumpClient(turn.client, (m) => {
+              m.qualifying_cites += 1;
+            });
+            turnHadApplied = true;
+            break;
+          case "dismissed": {
+            const key = reason ?? "unspecified";
+            dismissedHistogram[key] = (dismissedHistogram[key] ?? 0) + 1;
+            break;
+          }
+          case "none": {
+            // v2.0.0-rc.23 TASK-08(c): parse sentinel tail from kb_line_raw and
+            // bump the breakdown bucket. Bare `KB: none` → 'unspecified'.
+            const sentinel = parseNoneSentinel(turn.kb_line_raw);
+            noneHistogram[sentinel] = (noneHistogram[sentinel] ?? 0) + 1;
+            break;
+          }
+          default:
+            break;
+        }
+      }
+
+      // lifecycle-refactor W3-T4 (§2 store 轴): per-store qualifying-cite split.
+      // Walk cite_ids[i] ⋈ cite_tags[i] ⋈ cite_stores[i] (index-aligned by
+      // construction — the cite-line-parser builds all three from the same primary
+      // id group). An `applied` cite bumps its store bucket; a missing/ null
+      // qualifier (local cite) buckets under "local". This stays SEPARATE from the
+      // qualifying_cites total above and is never folded into compliance.
+      const turnCiteStores = turn.cite_stores ?? [];
+      for (let i = 0; i < turn.cite_ids.length; i += 1) {
+        const tag = turn.cite_tags[i];
+        if (categorizeCiteTag(typeof tag === "string" ? tag : "none").category !== "applied") continue;
+        const rawStore = turnCiteStores[i];
+        const storeKey = typeof rawStore === "string" && rawStore.length > 0 ? rawStore : STORE_LOCAL_KEY;
+        byStoreQualifying[storeKey] = (byStoreQualifying[storeKey] ?? 0) + 1;
+      }
+
+      // v2.1.0-rc.1 (ADJ-P4-1): `recalled_unverified` retains its report-contract
+      // name but now measures the rc.37 NEW-1 `[applied]` verification obligation
+      // directly — an `applied` cite with no knowledge_body_read in the same
+      // session within ±60s (KT-DEC-0030; legacy `recalled` is remapped to
+      // `applied` on read).
+      if (turnHadApplied && !isRecallVerified(turn)) {
+        recalledUnverified += 1;
+        bumpClient(turn.client, (m) => {
+          m.recalled_unverified += 1;
+        });
+      }
+
+      // -------------------------------------------------------------------
+      // v2.0.0-rc.24 TASK-08: per-cite contract walk. Iterates index-aligned
+      // (cite_ids[i], cite_commitments[i]). cite_tags is NOT index-aligned
+      // with cite_ids (sentinel `KB: none` produces a cite_tags entry but no
+      // cite_ids entry — see plan B3 and the cite_commitments parallel-array
+      // doc on event-ledger.ts L424). Skipped entirely when the contract
+      // marker has not been emitted (contractStatus !== 'ok').
+      // -------------------------------------------------------------------
+      if (contractStatus === "ok" && turn.ts >= contractEffectiveSince) {
+        const commitments = turn.cite_commitments ?? [];
+        for (let i = 0; i < turn.cite_ids.length; i += 1) {
+          const citeId = turn.cite_ids[i];
+          if (typeof citeId !== "string" || citeId.length === 0) continue;
+          if (!passesLayerFilter(citeId)) continue;
+
+          const kbType = idTypeMap.get(citeId);
+          if (kbType === undefined) {
+            // Hallucinated or pre-meta id — dedicated bucket so the user can
+            // distinguish "AI made up an id" from "AI cited a real id without
+            // an operator".
+            citeIdUnresolved += 1;
+            bumpLayerType(citeId, "unresolved");
+            continue;
+          }
+
+          // Cross-tab by (layer, type) for every resolved cite, regardless of
+          // bucket — this is the breakdown TASK-09's i18n renderer surfaces.
+          bumpLayerType(citeId, kbType);
+
+          // Plural knowledge_type enum (rc.29 BUG-C1 unification). Matching
+          // against the canonical plural literals.
+          if (kbType === "decisions" || kbType === "pitfalls") {
+            if (kbType === "decisions") decisionsCited += 1;
+            else pitfallsCited += 1;
+
+            const commitment = commitments[i];
+            // Missing commitment slot is equivalent to "lazy default" — no
+            // operators, no skip. Counts as contract_missing.
+            const operators = commitment?.operators ?? [];
+            const skipReason = commitment?.skip_reason ?? null;
+
+            if (skipReason !== null) {
+              skipCount[skipReason] = (skipCount[skipReason] ?? 0) + 1;
+              // skip:<reason> exits the contract_with/contract_missing
+              // partition — operator is explicitly waived.
+              continue;
+            }
+
+            if (operators.length === 0) {
+              contractMissing += 1;
+              continue;
+            }
+
+            contractWith += 1;
+            if (evaluateOperatorViolation(sid, operators)) {
+              hardViolated += 1;
+            }
+          }
+          // model → reference-only (no contract check), already cross-tabbed.
+          // guideline / process → deferred to rc.25 LLM-judge (no contract
+          // check), already cross-tabbed.
+        }
+      }
+    }
+  return {
+    dismissedHistogram,
+    noneHistogram,
+    perClientAccum,
+    sessionCitedKbs,
+    dismissedBySession,
+    sessionEditPaths,
+    decisionsCited,
+    pitfallsCited,
+    contractWith,
+    contractMissing,
+    hardViolated,
+    citeIdUnresolved,
+    skipCount,
+    layerTypeAccum,
+    totalTurns,
+    qualifyingCites,
+    recalledUnverified,
+    byStoreQualifying,
+  };
+}
+
 export async function runDoctorCiteCoverage(
   projectRoot: string,
   options: {
@@ -606,560 +1531,70 @@ export async function runDoctorCiteCoverage(
     };
   }
 
-  type TurnEvent = Extract<EventLedgerEvent, { event_type: "assistant_turn_observed" }>;
-  type EditEvent = Extract<EventLedgerEvent, { event_type: "edit_intent_checked" }>;
-  // KT-DEC-0030: the [applied] verification signal is now the native-Read
-  // knowledge_body_read marker (the retired knowledge_sections_fetched MCP event
-  // is no longer emitted). Old ledgers still parse it; this report stops reading
-  // it. `FetchEvent` keeps its name for blast-radius minimalism — it now carries
-  // the body-read shape.
-  type FetchEvent = Extract<EventLedgerEvent, { event_type: "knowledge_body_read" }>;
-  // v2.1 ⑤ cite-redesign (P5): knowledge_context_planned is the recall event
-  // (target_paths + final_stable_ids + session_id) — the recall→edit overlap
-  // is the recall-based citation.
-  type PlannedEvent = Extract<EventLedgerEvent, { event_type: "knowledge_context_planned" }>;
-  // v2.2.0-rc.1 W1-T3: narrow PreToolUse surface events feed the WEAK
-  // exposed_and_mutated signal (condition 1).
-  type HookSurfaceEvent = Extract<EventLedgerEvent, { event_type: "hook_surface_emitted" }>;
-  // lifecycle-refactor W2-T4 (§5 row7/row2): PostToolUse `file_mutated` (the
-  // authoritative mutation-completed marker) + SessionEnd `session_ended`
-  // (funnel-closed boundary). New events, zero prior consumers — see plan.
-  type FileMutatedEvent = Extract<EventLedgerEvent, { event_type: "file_mutated" }>;
-  type SessionEndedEvent = Extract<EventLedgerEvent, { event_type: "session_ended" }>;
-  const assistantTurns: TurnEvent[] = [];
-  const editEvents: EditEvent[] = [];
-  const fetchEvents: FetchEvent[] = [];
-  const plannedEvents: PlannedEvent[] = [];
-  const hookSurfaceEvents: HookSurfaceEvent[] = [];
-  const fileMutatedEvents: FileMutatedEvent[] = [];
-  const sessionEndedEvents: SessionEndedEvent[] = [];
-  for (const event of ledgerEvents) {
-    switch (event.event_type) {
-      case "assistant_turn_observed":
-        assistantTurns.push(event);
-        break;
-      case "edit_intent_checked":
-        editEvents.push(event);
-        break;
-      case "knowledge_body_read":
-        fetchEvents.push(event);
-        break;
-      case "knowledge_context_planned":
-        plannedEvents.push(event);
-        break;
-      case "hook_surface_emitted":
-        hookSurfaceEvents.push(event);
-        break;
-      case "file_mutated":
-        fileMutatedEvents.push(event);
-        break;
-      case "session_ended":
-        sessionEndedEvents.push(event);
-        break;
-      default:
-        break;
-    }
-  }
+  const {
+    assistantTurns,
+    editEvents,
+    fetchEvents,
+    plannedEvents,
+    hookSurfaceEvents,
+    fileMutatedEvents,
+    sessionEndedEvents,
+  } = partitionLedgerEvents(ledgerEvents);
 
-  // v2.1 ⑤: per-session recall index for the recall-based口径. Each session maps
-  // to its knowledge_context_planned events (ts + target_paths), ts-ascending.
-  const plannedBySession = new Map<string, { ts: number; target_paths: readonly string[] }[]>();
-  for (const planned of plannedEvents) {
-    const sid = planned.session_id;
-    if (typeof sid !== "string" || sid.length === 0) continue;
-    const list = plannedBySession.get(sid) ?? [];
-    list.push({ ts: planned.ts, target_paths: planned.target_paths ?? [] });
-    plannedBySession.set(sid, list);
-  }
-  for (const list of plannedBySession.values()) {
-    list.sort((a, b) => a.ts - b.ts);
-  }
+  // v2.1 ⑤: per-session recall index for the recall-based口径.
+  const plannedBySession = indexPlannedBySession(plannedEvents);
 
-  // Apply client filter to assistant turns (edit/fetch events are not
-  // client-scoped — they originate from the hook layer regardless of which
-  // assistant produced the upstream turn).
-  const filteredTurns = options.client === "all"
-    ? assistantTurns
-    : assistantTurns.filter((t) => t.client === options.client);
+  const { filteredTurns, clientSessionIds } = applyClientFilter(assistantTurns, options.client);
 
-  // Cross-client denominator guard. Edit events carry no `client` field, so a
-  // naive walk would let codex-session edits inflate edits_touched and trigger
-  // expected_but_missed against a cc-filtered cited-kb map that never had a
-  // chance to populate (its source turns were filtered out). We rebuild a set
-  // of session_ids whose turns include at least one matching-client turn from
-  // the UNFILTERED assistant turn list, then gate the edit loop on it. When
-  // the client filter is 'all', this set stays null and every edit counts.
-  let clientSessionIds: Set<string> | null = null;
-  if (options.client !== "all") {
-    clientSessionIds = new Set<string>();
-    for (const turn of assistantTurns) {
-      if (turn.client === options.client) {
-        const sid = turn.session_id;
-        if (typeof sid === "string" && sid.length > 0) {
-          clientSessionIds.add(sid);
-        }
-      }
-    }
-  }
+  const { kbIndex, kbEntryKeys } = buildKbRelevanceIndex(canonicalEntries);
+  const isRecallVerified = createRecallVerifier(fetchEvents);
 
-  // Build kb index from agents.meta.json. Map stable_id → relevance metadata.
-  // A missing meta file (fresh project, doctor pre-init) collapses to an empty
-  // index — narrow denominator becomes zero, broad logic still functions on
-  // turn data alone.
-  type KbEntry = { relevance_paths: readonly string[]; relevance_scope: "narrow" | "broad" };
-  const kbIndex = new Map<string, KbEntry>();
-  // v2.2 W5 R6 (读侧 cutover): build the kb relevance index from the read-set
-  // STORES (cross-store on-the-fly) instead of the retired co-location
-  // agents.meta nodes. Index under BOTH the local stable_id and the
-  // store-qualified id (`<alias>:<id>`) so a cite line in either form (bare or
-  // store-qualified per the v2.1 multi-store cite policy) resolves to the same
-  // relevance metadata. An empty read-set collapses to an empty index — the
-  // narrow denominator becomes zero, broad logic still functions on turn data.
-  // Reverse map: each distinct KbEntry → the set of index keys (local +
-  // qualified) that point at it. Lets the expected_but_missed walk treat the
-  // entry as a single unit — count it once and suppress when a cite used EITHER
-  // of its keys.
-  const kbEntryKeys = new Map<KbEntry, string[]>();
-  for (const entry of canonicalEntries) {
-    const paths = entry.description.relevance_paths ?? [];
-    const scope = entry.description.relevance_scope ?? "broad";
-    const kbEntry: KbEntry = {
-      relevance_paths: paths,
-      // A broad entry with no paths is the safe default. A narrow entry must
-      // carry at least one path; an empty-paths narrow is treated as broad.
-      relevance_scope: scope === "narrow" && paths.length > 0 ? "narrow" : "broad",
-    };
-    kbIndex.set(entry.stableId, kbEntry);
-    kbIndex.set(entry.qualifiedId, kbEntry);
-    kbEntryKeys.set(kbEntry, [entry.stableId, entry.qualifiedId]);
-  }
-
-  // Per-session lookup of fetch events for recalled_unverified correlation.
-  // Key: session_id, Value: sorted timestamps of fetch events in that session.
-  const fetchesBySession = new Map<string, number[]>();
-  for (const fetch of fetchEvents) {
-    const sid = fetch.session_id;
-    if (typeof sid !== "string" || sid.length === 0) continue;
-    const list = fetchesBySession.get(sid) ?? [];
-    list.push(fetch.ts);
-    fetchesBySession.set(sid, list);
-  }
-  for (const list of fetchesBySession.values()) {
-    list.sort((a, b) => a - b);
-  }
-  const RECALL_WINDOW_MS = 60_000;
-  const isRecallVerified = (turn: TurnEvent): boolean => {
-    const sid = turn.session_id;
-    if (typeof sid !== "string" || sid.length === 0) return false;
-    const fetches = fetchesBySession.get(sid);
-    if (fetches === undefined || fetches.length === 0) return false;
-    for (const ft of fetches) {
-      if (Math.abs(ft - turn.ts) <= RECALL_WINDOW_MS) return true;
-    }
-    return false;
-  };
-
-  // Aggregation pass — single sweep over filtered turns. Build both the
-  // top-level metrics and per-client buckets in one walk.
-  const dismissedHistogram: Record<string, number> = {};
-  // v2.0.0-rc.23 TASK-08(c): `KB: none` sentinel breakdown. Keyed by
-  // 'no-relevant' / 'not-applicable' / 'unspecified'.
-  const noneHistogram: Record<string, number> = {};
-  const perClientAccum = new Map<string, CiteCoverageReport["metrics"]>();
-  const emptyMetrics = (): CiteCoverageReport["metrics"] => ({
-    edits_touched: 0,
-    qualifying_cites: 0,
-    recalled_unverified: 0,
-    expected_but_missed: 0,
-    total_turns: 0,
+  const {
+    dismissedHistogram,
+    noneHistogram,
+    perClientAccum,
+    sessionCitedKbs,
+    dismissedBySession,
+    sessionEditPaths,
+    decisionsCited,
+    pitfallsCited,
+    contractWith,
+    contractMissing,
+    hardViolated,
+    citeIdUnresolved,
+    skipCount,
+    layerTypeAccum,
+    totalTurns,
+    qualifyingCites,
+    recalledUnverified,
+    byStoreQualifying,
+  } = aggregateTurnMetrics({
+    filteredTurns,
+    editEvents,
+    layerFilter,
+    idTypeMap,
+    contractStatus,
+    contractEffectiveSince,
+    isRecallVerified,
   });
-  const bumpClient = (client: string | undefined, mut: (m: CiteCoverageReport["metrics"]) => void): void => {
-    if (typeof client !== "string" || client.length === 0) return;
-    const existing = perClientAccum.get(client) ?? emptyMetrics();
-    mut(existing);
-    perClientAccum.set(client, existing);
-  };
 
-  // session_id → Set<cite_id> for expected_but_missed correlation.
-  const sessionCitedKbs = new Map<string, Set<string>>();
+  const {
+    editsTouched,
+    expectedButMissed,
+    uncorrelatableEdits,
+    recallBackedEdits,
+    recallsInWindow,
+    recallSessionsCorrelated,
+  } = computeEditCorrelation({
+    editEvents,
+    clientSessionIds,
+    plannedBySession,
+    recallWindowMs,
+    sessionCitedKbs,
+    kbIndex,
+    kbEntryKeys,
+  });
 
-  // v2.2.0-rc.1 W1-T3: session_id → Set<cite_id> that were [dismissed] this
-  // session — condition (3) of the WEAK exposed_and_mutated signal. Populated
-  // index-aligned (cite_tags[i] ⋈ cite_ids[i]) in the turn loop below.
-  const dismissedBySession = new Map<string, Set<string>>();
-
-  // v2.0.0-rc.24 TASK-08: per-session edit-path index for contract operator
-  // evaluation. Built once from the edit events partition; reused across the
-  // turn loop. Each session maps to its observed edit paths (normalized).
-  const sessionEditPaths = new Map<string, string[]>();
-  for (const edit of editEvents) {
-    const sid = edit.session_id;
-    if (typeof sid !== "string" || sid.length === 0) continue;
-    const list = sessionEditPaths.get(sid) ?? [];
-    list.push(normalizePath(edit.path));
-    sessionEditPaths.set(sid, list);
-  }
-
-  // v2.0.0-rc.24 TASK-08: contract accumulators.
-  let decisionsCited = 0;
-  let pitfallsCited = 0;
-  let contractWith = 0;
-  let contractMissing = 0;
-  let hardViolated = 0;
-  let citeIdUnresolved = 0;
-  const skipCount: Record<string, number> = {};
-  const layerTypeAccum: CiteLayerTypeBreakdown = { team: {}, personal: {} };
-  const bumpLayerType = (citeId: string, type: string): void => {
-    const layer = citeId.startsWith("KP-") ? "personal" : citeId.startsWith("KT-") ? "team" : null;
-    if (layer === null) return;
-    layerTypeAccum[layer][type] = (layerTypeAccum[layer][type] ?? 0) + 1;
-  };
-  // Layer filter helper — decides whether a cite_id contributes to the
-  // top-level rc.20 metrics (qualifying_cites etc.) AND to the contract
-  // accumulators. Edits don't carry layer info (they describe filesystem
-  // paths, not knowledge entries) so edits are NOT layer-filtered. Cites
-  // with neither KP-/KT- prefix (rare/legacy) pass through under 'all' but
-  // are dropped under any narrowed filter — conservative.
-  const passesLayerFilter = (citeId: string): boolean => {
-    if (layerFilter === "all") return true;
-    if (layerFilter === "team") return citeId.startsWith("KT-");
-    return citeId.startsWith("KP-");
-  };
-
-  // Operator-vs-edits comparator. session_id is required to evaluate edits;
-  // a turn lacking a session_id is treated as having NO observable edits,
-  // which means edit:/not_edit: operators violate on edit: and pass on
-  // not_edit:. This matches the conservative "no evidence the edit
-  // happened" interpretation.
-  //
-  // require:/forbid: operator vs diff content: the edit_intent_checked
-  // event schema (event-ledger.ts L53-L68) carries no full diff content —
-  // only path / compliant / intent / optional diff_stat (numeric summary)
-  // / optional annotation. We therefore SCOPE the require:/forbid: check
-  // to "<symbol present in any changed file PATH>" — a strict downgrade
-  // from the planned diff-content match, documented in TASK-08 summary so
-  // TASK-09 i18n can label this honestly. If a future rc widens the
-  // ledger schema to carry the textual diff, only this comparator function
-  // changes.
-  const evaluateOperatorViolation = (
-    sessionId: string | undefined,
-    operators: ReadonlyArray<{ kind: "edit" | "not_edit" | "require" | "forbid"; target: string }>,
-  ): boolean => {
-    const editPaths = (typeof sessionId === "string" && sessionId.length > 0)
-      ? (sessionEditPaths.get(sessionId) ?? [])
-      : [];
-    for (const op of operators) {
-      switch (op.kind) {
-        case "edit": {
-          let matched = false;
-          for (const p of editPaths) {
-            if (minimatch(p, op.target, { dot: true, matchBase: false })) {
-              matched = true;
-              break;
-            }
-          }
-          if (!matched) return true;
-          break;
-        }
-        case "not_edit": {
-          for (const p of editPaths) {
-            if (minimatch(p, op.target, { dot: true, matchBase: false })) {
-              return true;
-            }
-          }
-          break;
-        }
-        case "require": {
-          // Scoped to file-path symbol match (substring) — diff content not
-          // available in ledger. Documented in TASK-08 summary.
-          let found = false;
-          for (const p of editPaths) {
-            if (p.includes(op.target)) {
-              found = true;
-              break;
-            }
-          }
-          if (!found) return true;
-          break;
-        }
-        case "forbid": {
-          for (const p of editPaths) {
-            if (p.includes(op.target)) {
-              return true;
-            }
-          }
-          break;
-        }
-        default:
-          break;
-      }
-    }
-    return false;
-  };
-
-  let totalTurns = 0;
-  let qualifyingCites = 0;
-  let recalledUnverified = 0;
-
-  // lifecycle-refactor W3-T4 (§2 store 轴 / store-qualified 观测): per-store
-  // qualifying-cite accumulator. Keyed by the cite's `cite_stores[i]` qualifier;
-  // a null/absent qualifier (project-local cite) buckets under "local". STRICTLY
-  // a diagnostic split of qualifying_cites — it is built ALONGSIDE the qualifying
-  // count and NEVER feeds the compliance numerator/denominator (honesty 铁律).
-  const STORE_LOCAL_KEY = "local";
-  const byStoreQualifying: Record<string, number> = {};
-
-  for (const turn of filteredTurns) {
-    totalTurns += 1;
-    bumpClient(turn.client, (m) => {
-      m.total_turns += 1;
-    });
-
-    const sid = turn.session_id;
-    if (typeof sid === "string" && sid.length > 0) {
-      const set = sessionCitedKbs.get(sid) ?? new Set<string>();
-      for (const id of turn.cite_ids) {
-        set.add(id);
-      }
-      sessionCitedKbs.set(sid, set);
-
-      // v2.2.0-rc.1 W1-T3: record dismissed ids for the WEAK exposed_and_mutated
-      // signal (condition 3). cite_tags[i] is index-aligned with cite_ids[i]
-      // (same parallel-array convention the contract walk relies on). A
-      // `dismissed`/`dismissed:<reason>` tag on a real id marks that id dismissed
-      // this session. Bounds-checked: a trailing `KB: none` sentinel tag has no
-      // matching cite_ids slot and is skipped.
-      for (let i = 0; i < turn.cite_tags.length; i += 1) {
-        const id = turn.cite_ids[i];
-        if (typeof id !== "string" || id.length === 0) continue;
-        if (categorizeCiteTag(turn.cite_tags[i]).category === "dismissed") {
-          const dset = dismissedBySession.get(sid) ?? new Set<string>();
-          dset.add(id);
-          dismissedBySession.set(sid, dset);
-        }
-      }
-    }
-
-    // -------------------------------------------------------------------
-    // rc.20 cite_tags walk (unchanged behavior — touch only if the
-    // categorize/dismissed/none shape needs widening).
-    // -------------------------------------------------------------------
-    let turnHadApplied = false;
-    for (const tag of turn.cite_tags) {
-      const { category, reason } = categorizeCiteTag(tag);
-      switch (category) {
-        case "applied":
-          qualifyingCites += 1;
-          bumpClient(turn.client, (m) => {
-            m.qualifying_cites += 1;
-          });
-          turnHadApplied = true;
-          break;
-        case "dismissed": {
-          const key = reason ?? "unspecified";
-          dismissedHistogram[key] = (dismissedHistogram[key] ?? 0) + 1;
-          break;
-        }
-        case "none": {
-          // v2.0.0-rc.23 TASK-08(c): parse sentinel tail from kb_line_raw and
-          // bump the breakdown bucket. Bare `KB: none` → 'unspecified'.
-          const sentinel = parseNoneSentinel(turn.kb_line_raw);
-          noneHistogram[sentinel] = (noneHistogram[sentinel] ?? 0) + 1;
-          break;
-        }
-        default:
-          break;
-      }
-    }
-
-    // lifecycle-refactor W3-T4 (§2 store 轴): per-store qualifying-cite split.
-    // Walk cite_ids[i] ⋈ cite_tags[i] ⋈ cite_stores[i] (index-aligned by
-    // construction — the cite-line-parser builds all three from the same primary
-    // id group). An `applied` cite bumps its store bucket; a missing/ null
-    // qualifier (local cite) buckets under "local". This stays SEPARATE from the
-    // qualifying_cites total above and is never folded into compliance.
-    const turnCiteStores = turn.cite_stores ?? [];
-    for (let i = 0; i < turn.cite_ids.length; i += 1) {
-      const tag = turn.cite_tags[i];
-      if (categorizeCiteTag(typeof tag === "string" ? tag : "none").category !== "applied") continue;
-      const rawStore = turnCiteStores[i];
-      const storeKey = typeof rawStore === "string" && rawStore.length > 0 ? rawStore : STORE_LOCAL_KEY;
-      byStoreQualifying[storeKey] = (byStoreQualifying[storeKey] ?? 0) + 1;
-    }
-
-    // v2.1.0-rc.1 (ADJ-P4-1): `recalled_unverified` retains its report-contract
-    // name but now measures the rc.37 NEW-1 `[applied]` verification obligation
-    // directly — an `applied` cite with no knowledge_body_read in the same
-    // session within ±60s (KT-DEC-0030; legacy `recalled` is remapped to
-    // `applied` on read).
-    if (turnHadApplied && !isRecallVerified(turn)) {
-      recalledUnverified += 1;
-      bumpClient(turn.client, (m) => {
-        m.recalled_unverified += 1;
-      });
-    }
-
-    // -------------------------------------------------------------------
-    // v2.0.0-rc.24 TASK-08: per-cite contract walk. Iterates index-aligned
-    // (cite_ids[i], cite_commitments[i]). cite_tags is NOT index-aligned
-    // with cite_ids (sentinel `KB: none` produces a cite_tags entry but no
-    // cite_ids entry — see plan B3 and the cite_commitments parallel-array
-    // doc on event-ledger.ts L424). Skipped entirely when the contract
-    // marker has not been emitted (contractStatus !== 'ok').
-    // -------------------------------------------------------------------
-    if (contractStatus === "ok" && turn.ts >= contractEffectiveSince) {
-      const commitments = turn.cite_commitments ?? [];
-      for (let i = 0; i < turn.cite_ids.length; i += 1) {
-        const citeId = turn.cite_ids[i];
-        if (typeof citeId !== "string" || citeId.length === 0) continue;
-        if (!passesLayerFilter(citeId)) continue;
-
-        const kbType = idTypeMap.get(citeId);
-        if (kbType === undefined) {
-          // Hallucinated or pre-meta id — dedicated bucket so the user can
-          // distinguish "AI made up an id" from "AI cited a real id without
-          // an operator".
-          citeIdUnresolved += 1;
-          bumpLayerType(citeId, "unresolved");
-          continue;
-        }
-
-        // Cross-tab by (layer, type) for every resolved cite, regardless of
-        // bucket — this is the breakdown TASK-09's i18n renderer surfaces.
-        bumpLayerType(citeId, kbType);
-
-        // Plural knowledge_type enum (rc.29 BUG-C1 unification). Matching
-        // against the canonical plural literals.
-        if (kbType === "decisions" || kbType === "pitfalls") {
-          if (kbType === "decisions") decisionsCited += 1;
-          else pitfallsCited += 1;
-
-          const commitment = commitments[i];
-          // Missing commitment slot is equivalent to "lazy default" — no
-          // operators, no skip. Counts as contract_missing.
-          const operators = commitment?.operators ?? [];
-          const skipReason = commitment?.skip_reason ?? null;
-
-          if (skipReason !== null) {
-            skipCount[skipReason] = (skipCount[skipReason] ?? 0) + 1;
-            // skip:<reason> exits the contract_with/contract_missing
-            // partition — operator is explicitly waived.
-            continue;
-          }
-
-          if (operators.length === 0) {
-            contractMissing += 1;
-            continue;
-          }
-
-          contractWith += 1;
-          if (evaluateOperatorViolation(sid, operators)) {
-            hardViolated += 1;
-          }
-        }
-        // model → reference-only (no contract check), already cross-tabbed.
-        // guideline / process → deferred to rc.25 LLM-judge (no contract
-        // check), already cross-tabbed.
-      }
-    }
-  }
-
-  // expected_but_missed: walk edit events, for each one find narrow kbs whose
-  // relevance_paths cover the edit's path; if no assistant_turn in the same
-  // session cited that kb, increment. Edits without a session_id cannot be
-  // correlated and are skipped (conservative — better to under-count than to
-  // raise false positives).
-  let editsTouched = 0;
-  let expectedButMissed = 0;
-  // v2.0.0-rc.38 UX-8 (C, hardening): edits with no session_id can never be
-  // correlated against assistant_turn cite lines, so they silently never reach
-  // expected_but_missed. Surfacing the count turns the previous SILENT
-  // undercount (a stale pre-session_id hook emits edits without session_id)
-  // into a visible signal — exactly the confound that pinned compliance at a
-  // misleading 100% for two prior closure attempts.
-  let uncorrelatableEdits = 0;
-  // v2.1 ⑤ cite-redesign (P5): recall-based coverage口径. An edit is
-  // "recall-backed" when an in-session knowledge_context_planned with
-  // overlapping target_paths preceded it within the recall window. Counted over
-  // the SAME population as edits_touched (post client-filter, with session_id).
-  let recallBackedEdits = 0;
-  for (const edit of editEvents) {
-    // Edit events have no `client` field; per-client edits_touched stays at 0
-    // (per_client only tabulates assistant-side metrics — see comment block).
-    // When a client filter is active, skip edits whose session never produced
-    // a matching-client turn — otherwise cross-client edits pollute both the
-    // edits_touched denominator and expected_but_missed (the session's
-    // cited-kb map is empty under the filter, so every narrow match would
-    // false-positive). Edits whose session_id is missing fall through to the
-    // legacy conservative count when the filter is 'all', and are likewise
-    // skipped under a narrowed filter (no way to attribute them).
-    const sid = edit.session_id;
-    const hasSid = typeof sid === "string" && sid.length > 0;
-    // No session_id → uncorrelatable under ANY client filter. Count once.
-    if (!hasSid) uncorrelatableEdits += 1;
-    if (clientSessionIds !== null) {
-      if (!hasSid) continue;
-      if (!clientSessionIds.has(sid)) continue;
-    }
-    editsTouched += 1;
-    if (!hasSid) continue;
-
-    // v2.1 ⑤: recall-backed check. Scan this session's recalls for one that
-    // (a) happened at-or-before this edit, (b) within the recall window
-    // (recallWindowMs <= 0 = unbounded), and (c) targeted an overlapping path.
-    const recalls = plannedBySession.get(sid);
-    if (recalls !== undefined) {
-      for (const recall of recalls) {
-        if (recall.ts > edit.ts) break; // ts-ascending — no earlier match past here
-        if (recallWindowMs > 0 && edit.ts - recall.ts > recallWindowMs) continue;
-        if (recallPathOverlaps(edit.path, recall.target_paths)) {
-          recallBackedEdits += 1;
-          break;
-        }
-      }
-    }
-
-    const citedSet = sessionCitedKbs.get(sid) ?? new Set<string>();
-    // v2.2 W5 R6/R2 (agents.meta decolo): the kb index keys every store entry
-    // under BOTH its local stable_id and its store-qualified id (`<alias>:<id>`)
-    // — both pointing at the SAME KbEntry object — so a cite line in either form
-    // resolves. The expected_but_missed walk must therefore count each distinct
-    // kb entry once per edit, not once per index key; track counted entries by
-    // object identity to avoid the dual-key double-count. A cite in EITHER form
-    // (citedSet may hold either key) suppresses the miss.
-    const countedThisEdit = new Set<KbEntry>();
-    for (const [, kb] of kbIndex) {
-      if (kb.relevance_scope !== "narrow") continue;
-      if (!matchesRelevancePath(edit.path, kb.relevance_paths)) continue;
-      if (countedThisEdit.has(kb)) continue;
-      countedThisEdit.add(kb);
-      // Suppress the miss when a cite used EITHER of this entry's keys (local
-      // stable_id or store-qualified id).
-      const keys = kbEntryKeys.get(kb) ?? [];
-      const citedInAnyForm = keys.some((k) => citedSet.has(k));
-      if (!citedInAnyForm) {
-        expectedButMissed += 1;
-      }
-    }
-  }
-
-  // recall→edit session-mismatch diagnostics: count in-window recalls, their
-  // distinct sessions, and how many of those sessions also produced an edit. When
-  // recalls happened but none share an edit session, recall_coverage's 0 is a
-  // session_id-mismatch artifact (recall caller passed a non-client session_id),
-  // not a recall-discipline gap — the surface uses this to self-diagnose.
-  const editSessionIds = new Set<string>();
-  for (const edit of editEvents) {
-    if (typeof edit.session_id === "string" && edit.session_id.length > 0) {
-      editSessionIds.add(edit.session_id);
-    }
-  }
-  let recallsInWindow = 0;
-  for (const list of plannedBySession.values()) recallsInWindow += list.length;
-  let recallSessionsCorrelated = 0;
-  for (const sid of plannedBySession.keys()) {
-    if (editSessionIds.has(sid)) recallSessionsCorrelated += 1;
-  }
 
   // v2.0.0-rc.38 UX-8 (C): cite-policy COMPLIANCE rate. Compliant = every valid
   // cite line: qualifying id-cites + ALL `KB: none [reason]` sentinels (the
@@ -1178,93 +1613,15 @@ export async function runDoctorCiteCoverage(
 
   // v2.2.0-rc.1 W1-T3 (cite 诚实拆分 / lifecycle §3): compute the WEAK
   // exposed_and_mutated signal — STRICTLY SEPARATE from cite_compliance_rate.
-  // Build narrowSurfacedBySession from the narrow PreToolUse hook_surface_emitted
-  // events (condition 1), then delegate the three-condition filter to
-  // computeExposedAndMutated. This object is attached to metrics as its OWN field
-  // and never feeds the compliance numerator/denominator above.
-  const narrowSurfacedBySession = new Map<string, Set<string>>();
-  for (const surface of hookSurfaceEvents) {
-    if (surface.hook_name !== "knowledge-hint-narrow") continue;
-    if (surface.delivery_status !== "delivered") continue;
-    const sid = surface.session_id;
-    if (typeof sid !== "string" || sid.length === 0) continue;
-    const set = narrowSurfacedBySession.get(sid) ?? new Set<string>();
-    for (const id of surface.rendered_ids) {
-      if (typeof id === "string" && id.length > 0) set.add(id);
-    }
-    narrowSurfacedBySession.set(sid, set);
-  }
-  const exposedAndMutated = computeExposedAndMutated({
-    narrowSurfacedBySession,
-    dismissedBySession,
-    editPathsBySession: sessionEditPaths,
-    kbIndex,
-    idTypeMap,
-  });
-
-  // lifecycle-refactor W2-T4 (§5 row7 PostToolUse mutation funnel + mutation_pool
-  // downgrade / §0 下沉 doctor): consume the new `file_mutated` PostToolUse marker
-  // OFFLINE here (前台 hook only O(1)-appended it). This rebuild is strictly
-  // ADDITIVE — it stands ALONGSIDE the W1-T3 exposed_and_mutated join and the
-  // edit_intent_checked `edits_touched` count, touching NEITHER. Three derived
-  // signals:
-  //   - mutations_observed.count: distinct `file_mutated` events (dedup on
-  //     tool_call_id, the per-call key that pairs Pre/Post and guards the
-  //     PostToolUse parallel-fire race). This is the AUTHORITATIVE
-  //     mutation-COMPLETED count, vs the PreToolUse edit-INTENT `edits_touched`.
-  //   - mutation_pool.attributed: a file_mutated whose `source_event_id` resolves
-  //     to a `hook_surface_emitted` (surfaced knowledge) in window. Attribution
-  //     key = store_id + stable_id + source_event_id (distinct-dedup'd so
-  //     multi-store never double-counts the same surfaced id).
-  //   - mutation_pool.unattributed_workspace_dirty: every file_mutated that does
-  //     NOT attribute (no source_event_id, or a source_event_id that resolves to
-  //     no surfaced event). §9 git-diff fallback to upgrade these via a session
-  //     shell event + baseline is SPECULATIVE and deliberately NOT implemented —
-  //     doctor stays read-only (no git diff / no disk write); the events.jsonl
-  //     source_event_id link is the sole attribution path here.
-  //     TODO(§9 future): git-diff + session shell baseline fallback to reclaim
-  //     unattributed_workspace_dirty into fallback-attributed. Out of scope (W2-T4
-  //     keeps doctor read-only).
-  // surfacedEventIds: the envelope `id` of every hook_surface_emitted in window —
-  // the link target of file_mutated.source_event_id. surfacedIdsByEvent maps that
-  // event id → its rendered_ids (the stable_ids surfaced), used to build the
-  // distinct attribution key.
-  const surfacedIdsByEvent = new Map<string, readonly string[]>();
-  for (const surface of hookSurfaceEvents) {
-    surfacedIdsByEvent.set(surface.id, surface.rendered_ids);
-  }
-  const seenMutationKeys = new Set<string>(); // tool_call_id dedup
-  const attributionKeys = new Set<string>(); // store_id|stable_id|source_event_id
-  let mutationsObserved = 0;
-  let unattributedWorkspaceDirty = 0;
-  for (const mutation of fileMutatedEvents) {
-    // Distinct mutation count keyed by tool_call_id (per-call key). A repeated
-    // tool_call_id (e.g. a duplicated append on retry) collapses to one.
-    if (seenMutationKeys.has(mutation.tool_call_id)) continue;
-    seenMutationKeys.add(mutation.tool_call_id);
-    mutationsObserved += 1;
-
-    const sourceEventId = mutation.source_event_id;
-    const surfacedRenderedIds =
-      typeof sourceEventId === "string" && sourceEventId.length > 0
-        ? surfacedIdsByEvent.get(sourceEventId)
-        : undefined;
-    if (surfacedRenderedIds === undefined || surfacedRenderedIds.length === 0) {
-      // No source_event_id, or it links to no surfaced event → low confidence.
-      unattributedWorkspaceDirty += 1;
-      continue;
-    }
-    // Attributed: register one distinct attribution key per surfaced stable_id.
-    // store_id is optional (single-store default) — collapse undefined to "" so
-    // the key stays stable; the triple still prevents cross-store double-count
-    // when store_id IS present.
-    const storeId = mutation.store_id ?? "";
-    for (const stableId of surfacedRenderedIds) {
-      if (typeof stableId !== "string" || stableId.length === 0) continue;
-      attributionKeys.add(`${storeId}|${stableId}|${sourceEventId}`);
-    }
-  }
-  const mutationPoolAttributed = attributionKeys.size;
+  const { exposedAndMutated, mutationsObserved, mutationPoolAttributed, unattributedWorkspaceDirty } =
+    computeMutationFunnel({
+      hookSurfaceEvents,
+      fileMutatedEvents,
+      dismissedBySession,
+      sessionEditPaths,
+      kbIndex,
+      idTypeMap,
+    });
 
   // lifecycle-refactor W2-T4 (§5 row2 SessionEnd funnel-closed boundary): count
   // distinct sessions that appended a `session_ended` marker. Pure observability
@@ -1320,68 +1677,13 @@ export async function runDoctorCiteCoverage(
       : {}),
   };
 
-  // rc.39: merge cite-audit rollup days into the totals. Rolled-up turns were
-  // physically dropped from the raw ledger, so rollup rows and the raw metrics
-  // above are temporally DISJOINT — summing is exact, no double-count. Gated on
-  // `options.until === undefined` so the per-day rollup-computation calls (which
-  // always set `until`) never recursively merge prior rollup rows into
-  // themselves. With the default 7d window no rollup row qualifies (cutoff ≥ 7d),
-  // so the common-case report stays byte-for-byte identical.
-  let rollupDaysMerged = 0;
-  let rollupTrend: CiteRollupRow[] | undefined;
-  if (options.until === undefined) {
-    let rollupRows: CiteRollupRow[] = [];
-    try {
-      rollupRows = await readCiteRollup(projectRoot);
-    } catch {
-      rollupRows = [];
-    }
-    const inWindow = rollupRows.filter((r) => utcDayBounds(r.date).end > effectiveSince);
-    if (inWindow.length > 0) {
-      rollupTrend = inWindow;
-      rollupDaysMerged = inWindow.length;
-      for (const r of inWindow) {
-        metrics.total_turns += r.metrics.total_turns;
-        metrics.qualifying_cites += r.metrics.qualifying_cites;
-        metrics.recalled_unverified += r.metrics.recalled_unverified;
-        metrics.expected_but_missed += r.metrics.expected_but_missed;
-        metrics.edits_touched += r.metrics.edits_touched;
-        metrics.compliant_cites = (metrics.compliant_cites ?? 0) + (r.metrics.compliant_cites ?? 0);
-        metrics.noncompliant_cites =
-          (metrics.noncompliant_cites ?? 0) + (r.metrics.noncompliant_cites ?? 0);
-        metrics.uncorrelatable_edits =
-          (metrics.uncorrelatable_edits ?? 0) + (r.metrics.uncorrelatable_edits ?? 0);
-        // v2.1 ⑤: recall-backed edits are disjoint per day, so summing is exact.
-        metrics.recall_backed_edits =
-          (metrics.recall_backed_edits ?? 0) + (r.metrics.recall_backed_edits ?? 0);
-      }
-      const mergedDenom = (metrics.compliant_cites ?? 0) + (metrics.noncompliant_cites ?? 0);
-      metrics.cite_compliance_rate = mergedDenom > 0 ? (metrics.compliant_cites ?? 0) / mergedDenom : null;
-      // v2.1 ⑤: recompute recall coverage over the merged edit population.
-      metrics.recall_coverage_rate =
-        metrics.edits_touched > 0 ? (metrics.recall_backed_edits ?? 0) / metrics.edits_touched : null;
-    }
+  const { rollupDaysMerged, rollupTrend } = await mergeRollupAndFoldedTurns(metrics, {
+    projectRoot,
+    effectiveSince,
+    client: options.client,
+    until: options.until,
+  });
 
-    // rc.39 emit-fold: add the folded empty-shell turns back into total_turns.
-    // Same gate as the rollup merge (only the live report, never the per-day
-    // until-bounded rollup-computation calls — those aggregate raw events only,
-    // and the live reader adds the folded counters once). Empty shells carry
-    // zero cite signal, so they touch ONLY total_turns: compliance
-    // (compliant/(compliant+noncompliant)) and every other metric are unchanged.
-    // per_client is intentionally left raw-event-only here, mirroring the rollup
-    // merge above which also updates top-level metrics only.
-    try {
-      const metricsRows = await readMetrics(projectRoot);
-      const foldedTurns = sumFoldedTurnCounters(metricsRows, {
-        since: effectiveSince,
-        client: options.client,
-      });
-      metrics.total_turns += foldedTurns;
-    } catch {
-      // metrics.jsonl is best-effort observability — a read failure degrades to
-      // "no folded turns" rather than throwing (consistent with readCiteRollup).
-    }
-  }
 
   // per_client breakdown is only emitted when client filter is 'all' — for a
   // narrowed query the top-level metrics already represent that client and a
