@@ -1,6 +1,6 @@
 # Semantic Check Guidance — fabric-review
 
-LLM-assisted duplicate / contradiction / subsumption detection plus activation/actionability review during `pending` mode (and on demand during `topic` mode).
+LLM-assisted duplicate / contradiction / subsumption detection plus activation/actionability review during `pending` mode (and on demand during the `maintain`/browse sub-flow).
 
 > Boundary B (locked): "extraction classification / layer inference / slug naming / mode inference / **semantic dedup** → Skill (LLM); pending file write / frontmatter assembly / idempotency check / counter mgmt / layer-flip transaction / atomic promote → MCP (deterministic)"
 

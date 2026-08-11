@@ -33,7 +33,7 @@ import {
   createV2KnowledgeProject,
   tempRoots,
   writeFile,
-} from "./doctor-test-helpers.js";
+} from "./__testing__/doctor-test-helpers.js";
 
 describe("runDoctorReport", () => {
   it("reports target-state fixable and manual errors", async () => {

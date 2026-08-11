@@ -25,7 +25,7 @@ import {
   createProject,
   tempRoots,
   writeFile,
-} from "./doctor-test-helpers.js";
+} from "./__testing__/doctor-test-helpers.js";
 
 describe("enrichDescriptions", () => {
   const ENRICH_STORE_UUID = "77777777-7777-4777-8777-777777777777";

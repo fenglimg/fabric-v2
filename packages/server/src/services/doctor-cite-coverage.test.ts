@@ -24,7 +24,7 @@ import { readCiteRollup } from "./cite-rollup.js";
 import {
   createInitializedProject,
   writeFile,
-} from "./doctor-test-helpers.js";
+} from "./__testing__/doctor-test-helpers.js";
 
 describe("rollupCiteAuditIfNeeded", () => {
   function appendLedgerLines(target: string, lines: Record<string, unknown>[]): void {

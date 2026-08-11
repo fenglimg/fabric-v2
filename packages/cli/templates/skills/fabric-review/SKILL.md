@@ -21,7 +21,7 @@ If none hold, stop the skill and tell the user:
 
 This skill is `Infer-not-Ask` for mode and `Ask-when-genuine` for per-item actions:
 
-- Mode (pending / topic / health / revisit) is INFERRED from context — NEVER surfaced via AskUserQuestion
+- Mode (pending / maintain) is INFERRED from context — NEVER surfaced via AskUserQuestion
 - Per-item action (approve / reject / modify / defer) IS surfaced via AskUserQuestion — the user must judge
 - Layer-flip target (team vs personal) IS surfaced via AskUserQuestion when modify includes layer change
 
@@ -33,8 +33,8 @@ Read `.fabric/fabric-config.json`; resolve:
 
 | Config field | Default | Used by |
 |---|---|---|
-| `review_topic_result_cap` | 8 | topic mode top-N cap |
-| `review_stale_pending_days` | 14 | health mode stale threshold (days) |
+| `review_topic_result_cap` | 8 | maintain/browse top-N cap |
+| `review_stale_pending_days` | 14 | maintain/health stale threshold (days) |
 | `review_hint_pending_count` | 10 | precondition overflow signal (count) |
 | `review_hint_pending_age_days` | 7 | precondition overflow signal (age) |
 
@@ -105,7 +105,7 @@ Each mode produces user-facing output, then routes per-item or per-batch decisio
 
 > Boundary B (locked): "extraction / classification / layer / slug / mode / **semantic dedup** → Skill (LLM); file write / frontmatter / idempotency / counter / layer-flip / atomic promote → MCP (deterministic)"
 
-Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run during `pending` mode (and on demand during `topic`): for each pending entry, `fab_pending action="search"` scoped by `filters.type` → LLM judges semantically against returned canonical entries → surface semantic flags and activation/actionability flags as informational:
+Semantic check is the LLM's job — the MCP tool does NOT compare meaning. Run during `pending` mode (and on demand during `maintain`/browse): for each pending entry, `fab_pending action="search"` scoped by `filters.type` → LLM judges semantically against returned canonical entries → surface semantic flags and activation/actionability flags as informational:
 
 - `⚠ Possible duplicate of <stable_id> (overlap: high)` — same essential claim
 - `⚠ Contradicts <stable_id> (overlap: high)` — opposing claims, same scope
@@ -168,7 +168,7 @@ Route `reached-but-inert` to `modify-content` (rewrite summary/body) or reject i
 
 **DO NOT ask**: mode picking (inferred) · whether to invoke skill (Stop-hook/explicit decides) · whether duplicate (LLM judges) · frontmatter parsing (deterministic) · next id allocation (deterministic via KnowledgeIdAllocator).
 
-`Read ref/askuserquestion-policy.md` for full DO/DO NOT lists + bilingual per-item question phrasing templates (pending action / layer-flip target).
+`header` + `question` translate; `options[]` stay English routing keys. Bilingual call shapes live where they are used — `ref/per-mode-flows.md` (per-item action, stale triage) and `ref/modify-flow.md` (layer-flip target, modify-extended).
 
 ## Decision Tree — Is This Entry Approvable?
 
@@ -215,8 +215,4 @@ After each invocation, produce a bilingual `# Review Summary` (en) / `# Review �
 
 events.jsonl appends MUST stay single-line + ≤4KB (POSIX `PIPE_BUF` atomicity).
 
-`Read ref/output-contract.md` for full bilingual rollup templates + per-field self-truncate caps (`session_context` 500 chars; `source_sessions` 5 entries; `recent_paths` 20 entries; `user_messages_summary` 500 chars).
-
-## Worked Examples (ref-only)
-
-Four worked examples (pending-mode dedupe / revisit layer-flip / health mode / narrowing imported entries) live in `ref/worked-examples.md`. Load when you want to see how Mode + AskUserQuestion + MCP-call shape composes on real candidate sets.
+`Read ref/per-mode-flows.md` §Output Contract for the full bilingual rollup templates + per-field self-truncate caps (`session_context` 500 chars; `source_sessions` 5 entries; `recent_paths` 20 entries; `user_messages_summary` 500 chars).

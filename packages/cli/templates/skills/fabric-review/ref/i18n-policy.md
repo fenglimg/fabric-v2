@@ -8,16 +8,29 @@
 
 > **Loaded on demand.** Only consult when you need to disambiguate which of the 5 classes a given string belongs to. SKILL.md gives the operative rule.
 
-## UX i18n Policy (5-class bilingualization)
+## Language resolution
 
-The skill consults `fabric_language` from `.fabric/fabric-config.json`
-(固化于 init 时，via `lib/detect-language.ts:detectExistingLanguage`; default `"en"` when no
-CJK signal is detected in README + docs/; may resolve to `"match-existing"`,
-`"zh-CN"`, `"en"`, or `"zh-CN-hybrid"`). All user-facing text in the
-following 5 categories MUST be rendered in the resolved language:
+The effective language is the **machine-wide base tone** in
+`~/.fabric/fabric-global.json` → `language`, resolved by
+`resolveGlobalLocale()`. Only two values are legal: `zh-CN` and `en`
+(ISS-20260712-016).
 
-1. **Roll-up templates** — the `# Review Summary — mode={...}` final block,
-   the `## Health Overview` dashboard in health mode, and any per-item
+The per-project `fabric_language` field and the README/docs content-detection
+path are **retired for skill rendering** — `resolveFabricLocale(projectRoot)`
+ignores its argument and delegates straight to `resolveGlobalLocale()`. Do not
+branch on `fabric_language`, `match-existing`, or `zh-CN-hybrid` here; they no
+longer reach this surface.
+
+Rendering rule: emit the variant matching the resolved language, **pure
+monolingual** — no language mixing inside a single user-facing block.
+Protected tokens are the sole exception (see below).
+
+## The 5 bilingualized classes
+
+All user-facing text in these 5 categories MUST be rendered in the resolved language:
+
+1. **Roll-up templates** — the `# Review Summary — mode={pending|maintain}` final block,
+   the `## Health Overview` dashboard in the maintain/health sub-flow, and any per-item
    display blocks (`## [type=...] [layer=...] pending_path=...` lines).
    zh-CN ↔ en mirror.
 2. **Errors / Preconditions warnings** — abort + trigger-miss messages
@@ -27,7 +40,7 @@ following 5 categories MUST be rendered in the resolved language:
    "Type relevance_paths (comma-separated globs, …)" narrow-scope
    follow-up, and any other free-text prompts. zh-CN ↔ en mirror.
 4. **Dry-run table headers** — fabric-review does not currently expose
-   a dry-run mode; this slot is reserved for parity with fabric-import.
+   a dry-run mode; this slot is reserved for parity with the other skills.
    IF a future revision adds dry-run, the table header MUST be
    bilingualized per this policy. zh-CN ↔ en mirror.
 5. **AskUserQuestion** — `header` + `question` fields (NOT `options[]`).
@@ -35,76 +48,36 @@ following 5 categories MUST be rendered in the resolved language:
    consumer (per-item action, layer-flip target, stale-item action,
    modify-extended option set), so this class applies broadly.
 
-Rendering rule:
+## Protected tokens (NEVER translated)
 
-- `fabric_language === "zh-CN"` → emit the zh-CN variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "en"` → emit the en variant; pure monolingual, no language mixing inside a single user-facing block.
-- `fabric_language === "zh-CN-hybrid"` → emit Chinese narrative prose with English technical terms preserved. Protected tokens (always EN): MCP tool names (e.g. `fab_recall`), CLI command names (e.g. `fabric install`), file paths, technical concepts (`Skill`, `SessionStart`, `hook`, `MCP`, `revision_hash`, `pending`, `proven`, `verified`, `draft`).
-- `fabric_language === "match-existing"` or any other value → emit the en variant; pure monolingual.
-
-Protected tokens (`fab_review`, `relevance_scope`, `relevance_paths`,
+`fab_review`, `fab_pending`, `fab_propose`, `relevance_scope`, `relevance_paths`,
 `narrow`, `broad`, `source_sessions`, `proposed_reason`, `session_context`,
-`pending_path`, `layer`, `team`, `personal`, `knowledge_scope_degraded`,
-`MUST`, `NEVER`, `knowledge/pending`, etc.) are NEVER translated — they
-appear verbatim in both language variants. The bilingualization scope is
-prose ONLY.
+`pending_path`, `stable_id`, `layer`, `team`, `personal`,
+`knowledge_scope_degraded`, `MUST`, `NEVER`, `knowledge/pending`, and every MCP
+tool / CLI command / file path — these appear verbatim in both language
+variants. The bilingualization scope is prose ONLY.
 
-### AskUserQuestion i18n Policy (value vs label)
+## `options[]` stay English — the routing-key rule
 
-When this skill issues an `AskUserQuestion`, the `header` and `question`
-strings are user-facing prose → translated per `fabric_language`. The
-`options[]` array entries are **routing keys** consumed by the skill
-state machine — they MUST remain English regardless of `fabric_language`.
+`AskUserQuestion` `header` + `question` are user-facing prose → translated.
+The `options[]` entries are **routing keys** consumed by the skill's own
+`switch` over `choice` — they MUST remain English regardless of language.
 
-Canonical options arrays used by this skill (every value below stays
-English in BOTH language variants):
+Canonical option arrays used by this skill (every value stays English in BOTH variants):
 
 - Per-item action: `["approve", "reject", "modify", "defer", "skip"]`
-- Per-stale-item action (health mode): `["defer", "demote", "skip"]`
+- Per-stale-item action (maintain/health): `["defer", "demote", "skip"]`
 - Layer-flip target: `["team", "personal"]`
 - Modify-extended (import-origin narrow-scope nudge):
   `["narrow scope", "edit summary", "change layer", "change maturity", "skip"]`
 
-Worked example — per-item action (the most common AskUserQuestion in this skill):
-
-```ts
-// EN (fabric_language === "en")
-AskUserQuestion({
-  header: "Review pending entry",
-  question: "What action for '{title}'?  ({pending_path})",
-  options: ["approve", "reject", "modify", "defer", "skip"]
-})
-
-// zh-CN (fabric_language === "zh-CN")
-AskUserQuestion({
-  header: "审核 pending 条目",
-  question: "对 '{title}' 执行什么操作？({pending_path})",
-  options: ["approve", "reject", "modify", "defer", "skip"]   // 不翻译 — routing key
-})
-```
-
-Worked example — layer-flip target:
-
-```ts
-// EN
-AskUserQuestion({
-  header: "Layer-flip target",
-  question: "Move '{title}' to which layer?  (current: {current_layer})",
-  options: ["team", "personal"]
-})
-
-// zh-CN
-AskUserQuestion({
-  header: "Layer 切换目标",
-  question: "将 '{title}' 切换到哪一层？(当前: {current_layer})",
-  options: ["team", "personal"]   // 不翻译 — routing key
-})
-```
-
 Rationale: localizing routing keys would force every routing branch to
 dual-string match (e.g. `if (choice === "approve" || choice === "通过")`),
 which doubles the surface area for protected-token regressions and breaks
-the option-list invariants that downstream tooling (the Skill's own
-`switch` statements over `choice`, plus any future MCP-level audit lint
-that scans for these specific string literals) depends on. Keeping
-`options[]` English-only is contract-locked across all three skills.
+the option-list invariants that downstream tooling depends on. Keeping
+`options[]` English-only is contract-locked across all skills.
+
+> Concrete bilingual AskUserQuestion call shapes live where they are used —
+> `ref/per-mode-flows.md` (per-item action, stale triage) and
+> `ref/modify-flow.md` (layer-flip target, modify-extended). They are not
+> duplicated here.
