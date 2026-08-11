@@ -131,10 +131,10 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | 提案 | 内容 | 优先级 |
 |---|---|---|
 | ~~**T1**~~ ✅ **已完成**(随 W3 B4, `5e42db62`)。**部分偏离原计划**: 没整份删 `ref/phase-0-range-resolution.md` —— 其 Step 2-5(双语时间窗解析表 / 关键词抽取 / session_id 解析算法 / AskUserQuestion 兜底)是纯 LLM 行为规约,代码里没有对应物,删了就真丢。删的是**真矛盾的那部分**: Step 6 carry-forward contract 整段 + Step 5 落到 `"all"` 的兜底 + 3 个复述表格的 worked example(157→107 行),权威契约收敛到 zod `describe` | 随 B4(W1) |
-| **T2** | **文档 census 三分类**: 全仓 prose(docs/*.md、README、.workflow/ 文档、skill ref 树)逐份判 **活契约 / 已漂移 / 尸体**;尸体删、漂移的要么修代码让其自明要么删、活契约留 | W4 |
-| **T3** | **凡是复述代码的文档一律删**: 判据 = 「这段话的信息代码里已经有(类型/schema/错误信息/默认值),读代码就能知道」→ 删文档,必要时补强代码自解释性(更好的类型名、更明确的错误文案) | W4 |
+| ~~**T2**~~ ✅ **已完成**(随 W4,`56228d51` + `b3adff95`)。全仓 prose 三分类后删 **88 份 / 14,616 行**,并修 8 处悬空引用。**census 三条实测教训**:① 「有没有 md 链接指向它」是弱信号 —— `e5-cron-recap.md` md-in 计数为 0,实际从 `SKILL.md:269` 可达,差点误删;② 自引用的尸体会互相背书成假阳性 `code=PATH`,每个声称的消费者都要回查;③ `.workflow/state.json` / `worktrees.json` 这类看着像残留的其实是 maestro **运行时账本**,已保留 6 份。删前按 KT-GLD-0016 做了 rescue —— `.workflow/` 里唯一有价值的散文(记 *为什么* 而非 *是什么*)已抢救进 KB | W4 |
+| ~~**T3**~~ ✅ **已完成**(随 W4,`4968a81a`)。`ARCHITECTURE.md` / `RUNTIME-CONTRACTS.md` 里的手抄清单全部改指权威源(`allCommands` / `templates/skills/` 目录名 / `install-v2.ts` 的 `.addStage` 链 / `uninstall.ts`)。**判据在实践中要加一条**:不是「代码里有」就删,而是「代码里有 **且形状可读**」—— `.addStage` 那串连续调用本身就是顺序表,指过去比抄一遍强;反过来,uninstall 的 store 阶段**默认跳过**、全局 store **永不删**这两条是策略语义,代码形状读不出来,留在文档里。**漂移实锤**:文档白纸黑字写「9 human-facing」并逐条列举时 registry 里已有 13 个;skill 表里还留着已退休的 `fabric-import`;还引了一个不存在的分支 | W4 |
 | ~~**T4**~~ ✅ **全部完成**。fabric-archive 21 → 11(`68c60cf7`): source-* 6 合 1 / phase-3-* 4 合 1 / 删 rc-history / dry-run 折进 SKILL.md。fabric-review 10 → 7、784→613 行(`946ccb04`): 删 `askuserquestion-policy.md`(DO/DON'T 已在 SKILL.md 全文,两个模板在另两份 ref 里各有一份 —— 净新增信息为零)+ `worked-examples.md`(4 例中 2 例用的是已废除的模式名);`output-contract.md` 折进 `per-mode-flows.md`(roll-up 本就是流程第 7 步的产物)。合并仍按「读者带着什么问题来」切。**真正的收获不是行数**:瘦身普查暴露两类活的漂移 —— ① rc.37 NEW-12 的 **4→2 模式收敛从没传导进 ref 树**,SKILL.md 说 2 个模式而三份 ref 还在教 topic/health/revisit;② ref 树通篇按 per-project `fabric_language` 分支,而 `resolve-fabric-locale.ts` 早已 delegate 到 machine-wide `resolveGlobalLocale()`,`i18n-policy.md` 还列着 `zh-CN-hybrid`/`match-existing` 两个到不了这层的值。**教训: SKILL.md 改了不等于 ref 跟着改,ref 树是「主文档改版后没人回访的下游」** —— 这正是 T2 census 要逐份判的形态,只是这次在 T4 里先撞见了 | W3+W4 |
-| **T5** | **止漂机制**: 版本号等确定性事实由代码/构建产出注入文档,而非人工同步(README 版本漂移的根治);无法自动化的加 census ratchet | W4 |
+| ~~**T5**~~ ✅ **已完成**(随 W4,`9adcdaf7` + `3a52c895`)。**原定靶子(版本号漂移)是无靶** —— `sync-versions.mjs` 早已在 CI 里带 tag 一致性校验,README 版本已由构建注入。改打 T2 刚刚证明**真实存在且完全无闸**的漂移类:**悬空路径引用**。新增 `scripts/lint-dangling-refs.mjs` 进 PR 硬闸,一次查出并修掉 18 处。**口径必须试出来不是想出来**:粗筛 1445 命中 → 四轮收窄到 32 → 0,最终只认两种**可判定**形式(markdown 链接目标;锚在真实顶层**源码**目录上的路径)。两个反例值得记:runtime 目录(`.fabric/` / `.claude/` / `.codex/`)**不能当锚** —— 那里的路径是用户项目里运行时才生成的产物,在本仓天然不存在,锚上去多 ~90 条修不掉的噪声,而噪声闸门等于没闸门;allowlist 的键必须是 `<文件>::<引用>` 而非裸路径 —— 同一个 `commands/hooks.ts` 既是 skill 例子里的虚构路径,又是活代码里的真陈旧引用,裸键会把后者一起压掉。另:门禁自身 untracked 期间对 `git ls-files` 不可见,静默跳过了自己 | W4 |
 
 ### 4.6 轨I · 安装物件必要性(用户 2026-08-10 新增原则)
 
@@ -168,11 +168,11 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **W0 测试架构** | ✅ **全部完成**。T-1 量化(证伪「竞态」归因,落并行+超时 102.7s→46.4s)→ T-2 解耦死代码(**解锁 W1**)+ T-2b fixture 降频(46.4s→**26.4s**)→ T-3 切 AI/代码线(判据写进 `docs/TESTING.md`,措辞锁移 `PROMPT_WORDING=1`)→ T-4 提速(CI 门禁 10 步→9 步)→ T-5 消重(**吃掉 B8**,−382 行)。两处经实测**否决**: 档 B 拆分不做、撤 70% 覆盖率阈值不做 | 待用户评审提案 | ✅ 收口 |
 | **W2 配置防御** | ✅ **全部完成**(2026-08-10): #2 hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);#16 安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only,守 KT-PIT-0016);#9 MCP root-pin repair 从「造好没人调」接进检查 + `--fix`,逻辑移进 shared 打通 server↔cli 边界(commit ea134c91)。doctor 检查数 51→53 | 无 | ✅ 收口 |
 | **W3 沉淀减负** | ✅ **全部完成**(2026-08-11)。**B4+T1**(`5e42db62`): ISS-001 根因不在代码而在 skill 契约 —— Step 6 规定 Phase 0 只能产出 `session_id[]` 或 `"all"`,没有 omit 选项,于是 skill 永远不省略 range,anchor cutoff 实际失效;改成三选一表(无 hint 一律 OMIT),矛盾的 Step 6 整段删除,权威契约收敛到 `archiveScanInputSchema.range` 的 describe。**review 龄触发**(`779b0138`): Stop hook 早已是 count-OR-age,缺口在 SessionStart 只看 count(注释还声称两边一致);`liveKnowledgeStats` 一直在算 `oldestPendingMtimeMs` 然后被丢掉 —— 与 #9 同族的"造好没人调"。**收口仪式**(`0b6c252a`): bootstrap 加"做完一段必须显式给归档判断,'无'是合法结论"。**T4 + 快速通道**(`68c60cf7`): ref 21→11(source-* 6 合 1 / phase-3-* 4 合 1 / 删 rc-history / dry-run 折进 SKILL.md),加单跳快速通道 | 无 | ✅ 收口 |
-| **W4 瘦身(代码+文档)** | ~~B9~~ ✅、~~B8~~ ✅、~~B5~~ ✅(403 死键)、~~B6~~ ✅(34 符号普查)、~~B7~~ ✅(删包 3651 行);~~I2~~ ✅(删专用分发通道);~~B3 尾巴~~ ✅ + ~~T4~~ ✅(`946ccb04`);**剩 轨T 的 T2/T3/T5** | KT-DEC-0016 的 supersede decision 已 propose 进 pending 待审;I3 已裁决不做 / I4 已完成 | 1 个会话 |
+| **W4 瘦身(代码+文档)** | ~~B9~~ ✅、~~B8~~ ✅、~~B5~~ ✅(403 死键)、~~B6~~ ✅(34 符号普查)、~~B7~~ ✅(删包 3651 行);~~I2~~ ✅(删专用分发通道);~~B3 尾巴~~ ✅ + ~~T4~~ ✅(`946ccb04`);~~T2~~ ✅(删 88 份 / 14,616 行)、~~T3~~ ✅、~~T5~~ ✅(新增 dangling-refs 硬闸) | KT-DEC-0016 的 supersede decision 已 propose 进 pending 待审;I3 已裁决不做 / I4 已完成 | ✅ 收口(2026-08-11) |
 | **W5 结构化** | B10-B15 择量 + steal P2 三条(#6/#10/#18*) | 无 | 按需分段 |
 | **(条件批)** | 需重议档案 §3.1/§3.2 若开禁,各自单独立项走完整 brainstorm | 你的裁决 | — |
 
-依赖关系(**已兑现**): W1 先行 → 实际是 W0 先行解钉 W1;W2 与 W3 可并行 → W2 已单独收口;W4 里 B8/B9 排在 W2 之后 → 均已在 W2 收口后完成。**剩余顺序: W3(当前)→ W4 → W5**。
+依赖关系(**已兑现**): W1 先行 → 实际是 W0 先行解钉 W1;W2 与 W3 可并行 → W2 已单独收口;W4 里 B8/B9 排在 W2 之后 → 均已在 W2 收口后完成。**剩余顺序: W5(当前)**;W3 / W4 均已收口。
 
 > **回填说明(2026-08-11)**: 本节此前长期停留在 08-10 的时点状态(W1 标"受阻"、W0 标"待评审"、W4 列 B8 未做),与磁盘实况不符。本次按 `packages/` 实际内容与 git log 逐条核实后回填。**教训: 批次表是给下一个会话读的唯一状态源,不回填等于给自己埋假信号。**
 
