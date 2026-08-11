@@ -372,11 +372,7 @@ function appendContractSection(
 // `fabric audit conflicts` renderer (moved verbatim from doctor.ts)
 // ---------------------------------------------------------------------------
 
-function renderConflictLintReport(
-  report: ConflictLintReport,
-  deepRequested: boolean,
-  dt: AuditTranslator,
-): void {
+function renderConflictLintReport(report: ConflictLintReport, dt: AuditTranslator): void {
   const lines: string[] = [];
   lines.push(auditHeader(dt("doctor.conflict.header")));
   lines.push("");
@@ -392,9 +388,6 @@ function renderConflictLintReport(
       threshold: report.threshold.toFixed(2),
     })}`,
   );
-  if (deepRequested && !report.deep) {
-    lines.push(`  ${paint.warn("○")} ${dt("doctor.conflict.deep_no_judge")}`);
-  }
   lines.push("");
   for (const pair of report.pairs) {
     const sym = pair.verdict === "conflict" ? paint.error("✗") : paint.warn("○");
@@ -694,16 +687,21 @@ export const conflictsCommand = defineCommand({
   args: {
     target: { type: "string", description: "Override project root (defaults to cwd)" },
     json: { type: "boolean", description: "Output as JSON", default: false },
-    deep: { type: "boolean", description: "Reserve the LLM-judge pass (no judge wired yet)", default: false },
+    // No `--deep`: the deep pass needs an injected ConflictJudge, and the CLI has
+    // no LLM to inject. The flag existed, advertised itself as "no judge wired
+    // yet", and could only ever print a warning — a switch that cannot change the
+    // output is worse than a missing one, because it reads as a capability. The
+    // `judge` seam stays on runDoctorConflictLint; re-add the flag when something
+    // can actually pass one.
   },
   async run({ args }) {
     const resolution = resolveDevMode(args.target as string | undefined, process.cwd());
     const dt = getDoctorTranslator(resolution.target);
-    const report = await runDoctorConflictLint(resolution.target, { deep: args.deep === true });
+    const report = await runDoctorConflictLint(resolution.target);
     if (args.json === true) {
       writeStdout(JSON.stringify(report, null, 2));
     } else {
-      renderConflictLintReport(report, args.deep === true, dt);
+      renderConflictLintReport(report, dt);
     }
   },
 });

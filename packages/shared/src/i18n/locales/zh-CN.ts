@@ -433,8 +433,6 @@ export const zhCNMessages: Messages = {
   "doctor.conflict.none": "未发现可疑的矛盾/重复条目对",
   "doctor.conflict.summary":
     "{candidates} 个候选对, {conflicts} 个判定为矛盾 (相似度 ≥ {threshold})",
-  "doctor.conflict.deep_no_judge":
-    "已请求 --deep 但未接入 LLM judge (请手动跑冷评 review);先展示便宜候选",
   "doctor.conflict.verdict.conflict": "矛盾",
   "doctor.conflict.verdict.similar": "相似 (可能重复)",
   "doctor.conflict.verdict.unknown": "待审 (可能重复或矛盾)",
@@ -1384,10 +1382,20 @@ export const zhCNMessages: Messages = {
   "cli.store.remove.description": "从注册表卸下 store（不删除磁盘）",
   "cli.store.explain.description": "解释 store 别名如何解析",
   "cli.store.list.description": "列出挂载的 store",
+  // 一次性磁盘迁移(KT-DEC-0060 折叠面)。它们改写 scope 坐标或搬文件,
+  // 没人会在日常工作里跑。
+  "cli.store.backfill.description": "为存量知识回填 semantic_scope + visibility_store(并修脏 layer)",
+  "cli.store.rescope.description": "改写 store 内知识条目的 semantic_scope 坐标",
+  "cli.store.promote.description": "把 project 域条目提升到 team 域(项目吸收)",
+  "cli.store.reroot.description":
+    "把平铺的 project 域条目迁入 knowledge/projects/<id>/(git mv,保留 blame)",
+  "cli.store.link.description": "把工作区目录关联到 store,便于发现",
   // 追加在 `fabric store --help` 末尾的说明 —— 交代进阶(meta.hidden)操作去哪了,
   // 否则只剩 list 一行会让用户以为 store 没别的能力。
+  // 点组名而不是举四个命令:举例已经漂过一次(它写着 `migrate`,
+  // 而当时唯一还**可见**的恰恰是那批一次性迁移),举错例子比不举更糟。
   "cli.store.help.folded-note":
-    "进阶操作(create / bind / switch-write / migrate 等)已折叠 —— 由 fabric install 与 fabric-store skill 驱动;需要时直接 `fabric store <命令> --help` 查看。",
+    "已折叠但仍可直接调用:安装与路由(create / mount / bind / switch-write —— 由 fabric install 与 fabric-store skill 驱动),以及一次性迁移(backfill / scope / promote / reroot / migrate)。需要时直接 `fabric store <命令> --help` 查看。",
   "cli.store.list.title": "已挂载知识库",
   "cli.store.project.list.title": "store '{store}' 中的项目",
   "cli.store.project.list.empty": "(无已注册项目)",

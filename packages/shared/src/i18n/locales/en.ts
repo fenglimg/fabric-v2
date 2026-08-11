@@ -485,8 +485,6 @@ export const enMessages: Messages = {
   "doctor.conflict.none": "No candidate conflicting/duplicate pairs found",
   "doctor.conflict.summary":
     "{candidates} candidate pair(s), {conflicts} judged conflict(s) (similarity ≥ {threshold})",
-  "doctor.conflict.deep_no_judge":
-    "--deep requested but no LLM judge is wired (run the cold-eval review manually); showing cheap candidates",
   "doctor.conflict.verdict.conflict": "conflict",
   "doctor.conflict.verdict.similar": "similar (possible duplicate)",
   "doctor.conflict.verdict.unknown": "review (possible duplicate or conflict)",
@@ -1493,10 +1491,24 @@ export const enMessages: Messages = {
     "Detach a store from the registry (does NOT delete it)",
   "cli.store.explain.description": "Explain how a store alias resolves",
   "cli.store.list.description": "List mounted knowledge stores",
+  // One-shot on-disk migrations (KT-DEC-0060 folded surface). They rewrite scope
+  // coordinates or move files; nobody runs them as part of daily work.
+  "cli.store.backfill.description":
+    "Backfill semantic_scope + visibility_store on existing knowledge (repairs dirty layer)",
+  "cli.store.rescope.description":
+    "Rewrite knowledge entries' semantic_scope coordinate in a store",
+  "cli.store.promote.description":
+    "Promote project-scoped entries to team scope (project absorption)",
+  "cli.store.reroot.description":
+    "Relocate flat project-scoped entries into knowledge/projects/<id>/ (git mv, blame-preserving)",
+  "cli.store.link.description": "Link a workspace directory to a store for discoverability",
   // Footer note appended to `fabric store --help` — explains where the advanced
   // (meta.hidden) operations went so the list-only listing isn't a dead end.
+  // Name the groups, not four sample verbs: the sample list drifted once already
+  // (it advertised `migrate` while the one-shot migrations were the only
+  // commands still VISIBLE), and a wrong example is worse than none.
   "cli.store.help.folded-note":
-    "Advanced operations (create / bind / switch-write / migrate, etc.) are folded — they're driven by fabric install and the fabric-store skill. Run `fabric store <command> --help` directly when you need one.",
+    "Folded, still callable: setup/routing (create / mount / bind / switch-write, driven by fabric install and the fabric-store skill) and one-shot migrations (backfill / scope / promote / reroot / migrate). Run `fabric store <command> --help` directly when you need one.",
   "cli.store.list.title": "Mounted stores",
   "cli.store.project.list.title": "Projects in store '{store}'",
   "cli.store.project.list.empty": "(no registered projects)",

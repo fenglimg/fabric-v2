@@ -415,7 +415,7 @@ const projectCommand = defineCommand({
 const backfillScopeCommand = defineCommand({
   meta: {
     name: "backfill",
-    description: "Backfill semantic_scope + visibility_store on existing knowledge (repairs dirty layer)",
+    description: t("cli.store.backfill.description"),
   },
   args: {
     store: { type: "string", description: "Backfill a mounted store's knowledge" },
@@ -541,9 +541,14 @@ function printRescopeReport(report: RescopeReport): void {
 }
 
 const rescopeCommand = defineCommand({
+  // NOT hidden, deliberately: scope / promote / backfill / reroot sit under the
+  // already-hidden `migrate` group, so they never reach `store --help` anyway.
+  // Hiding them too would leave `store migrate --help` listing nothing — the exact
+  // dead-end KT-DEC-0060's fold-note exists to prevent. Hidden belongs on the
+  // group, not on every member of it.
   meta: {
     name: "scope",
-    description: "Rewrite knowledge entries' semantic_scope coordinate in a store",
+    description: t("cli.store.rescope.description"),
   },
   args: {
     store: { type: "positional", required: true, description: "Target store alias or uuid" },
@@ -579,7 +584,7 @@ const rescopeCommand = defineCommand({
 const promoteCommand = defineCommand({
   meta: {
     name: "promote",
-    description: "Promote project-scoped entries to team scope (project absorption)",
+    description: t("cli.store.promote.description"),
   },
   args: {
     store: { type: "positional", required: true, description: "Target store alias or uuid" },
@@ -642,7 +647,7 @@ function printMigrationReport(report: MigrationReport): void {
 const rerootCommand = defineCommand({
   meta: {
     name: "reroot",
-    description: "Relocate flat project-scoped entries into knowledge/projects/<id>/ (git mv, blame-preserving)",
+    description: t("cli.store.reroot.description"),
   },
   args: {
     store: { type: "positional", required: true, description: "Target store alias or uuid" },
@@ -687,10 +692,19 @@ const migrateCommand = defineCommand({
 
 // BORROW-010: workspace linking — `fabric store link <alias> [workspace]`.
 // Links a workspace directory to a store for discoverability.
+// DEAD ON ARRIVAL — do not extend, decide whether to delete. This command is
+// never registered in the `store` subCommands map below, so `fabric store link`
+// does not exist. Two further proofs it has never once run: every string it
+// prints (`store.link.list.empty` / `.header` / `.unlinked` / `.created` /
+// `.failed`) is missing from BOTH locale tables, so it would echo raw keys; and
+// `store-link.ts` calls `require("node:fs")` inside an ESM module, which throws
+// on first use. Nothing anywhere reads `linked_workspaces[]` or the
+// `.fabric-store-link` marker it writes, and `store-link.ts` exports a SECOND,
+// also-unregistered copy of this same command (`storeLinkCommand`).
 const linkCommand = defineCommand({
   meta: {
     name: "link",
-    description: "Link a workspace directory to a store for discoverability",
+    description: t("cli.store.link.description"),
   },
   args: {
     store: {
