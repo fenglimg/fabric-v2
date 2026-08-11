@@ -1871,18 +1871,13 @@ export type Layer = z.infer<typeof LayerSchema>;
 export const StableIdSchema = z.string().regex(/^K[PT]-(MOD|DEC|GLD|PIT|PRO)-\d{4,}$/);
 export type StableId = z.infer<typeof StableIdSchema>;
 
-// v2.0 frontmatter — ALL flat scalars, no nested objects
-export const KnowledgeEntryFrontmatterSchema = z.object({
-  id: StableIdSchema, // e.g., "KT-DEC-0042"
-  type: KnowledgeTypeSchema, // one of 5 types
-  maturity: MaturitySchema, // draft | verified | proven
-  layer: LayerSchema, // personal | team
-  created_at: z.string(), // ISO 8601 timestamp
-  // v-next grill D4: runtime already treats superseded_by as first-class
-  // (retire writes review-write-actions.ts:827, parse reads :180, doctor lint consumes).
-  superseded_by: z.string().optional(),
-});
-export type KnowledgeEntryFrontmatter = z.infer<typeof KnowledgeEntryFrontmatterSchema>;
+// W4 B6: `KnowledgeEntryFrontmatterSchema` lived here and had ZERO consumers —
+// it looked like the frontmatter contract but nothing ever parsed with it. The
+// real parser is the hand-written regex reader in knowledge-meta-builder.ts,
+// whose own comment admitted the divergence. A schema nobody validates against
+// is worse than none: readers trust it as the contract while the runtime obeys
+// something else. `MaturitySchema` / `LayerSchema` / `StableIdSchema` above are
+// live and stay.
 
 // Helper: type-code mapping (plural keys → 3-letter ID-prefix code)
 export const KNOWLEDGE_TYPE_CODES = {

@@ -1,8 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import {
-  MCP_STORE_AWARE_CONTRACTS,
   parityMatrixSchema,
   type ParityCapability,
   type ParityClient,
@@ -48,16 +47,27 @@ const SKILL_SLUG = {
   "skill.fabric-recall-playbook": "fabric-recall-playbook",
 } as const;
 
-// ADJ-NEWN-2: per-MCP-tool store-aware contract key, so each mcp capability row
-// asserts ITS OWN contract exists (not a homogeneous "any contract" check).
-const MCP_CONTRACT_KEY: Record<string, keyof typeof MCP_STORE_AWARE_CONTRACTS> = {
-  // ISS-20260711-248: live tools only — retired plan_context/sections omitted.
-  "mcp.fab_recall": "fab_recall",
-  "mcp.fab_propose": "fab_propose",
-  "mcp.fab_review": "fab_review",
-  "mcp.fab_pending": "fab_pending",
-  "mcp.fab_archive_scan": "fab_archive_scan",
-};
+// The live MCP tool names, read from the server source that registers them —
+// NOT from a hand-maintained list, which is what let the old mcp assertion be
+// self-satisfying. Memoized: this is called once per (mcp row × client).
+let mcpToolNamesCache: string[] | null = null;
+function registeredMcpToolNames(): string[] {
+  if (mcpToolNamesCache) return mcpToolNamesCache;
+  const toolsDir = join(import.meta.dirname, "../../../server/src/tools");
+  const names = readdirSync(toolsDir)
+    .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
+    .flatMap((f) => [
+      ...readFileSync(join(toolsDir, f), "utf8").matchAll(
+        /server\.registerTool\(\s*["']([a-z_]+)["']/gu,
+      ),
+    ])
+    .map((m) => m[1] as string);
+  // A zero-length result would make `toContain` fail loudly rather than
+  // silently pass, but assert it here so the failure names the real cause.
+  expect(names.length, "no registerTool calls found — parser drifted").toBeGreaterThan(0);
+  mcpToolNamesCache = names;
+  return names;
+}
 
 let target: string;
 const tempRoots: string[] = [];
@@ -100,15 +110,18 @@ function assertDelivered(cap: ParityCapability, client: ParityClient): void {
     return;
   }
   if (cap.surface === "mcp") {
-    // ADJ-NEWN-2: assert THIS tool's own store-aware contract exists (per-tool,
-    // not a homogeneous "any contract" check). Same MCP stdio surface serves all
-    // clients, so the contract presence is the per-client deliverable.
-    const key = MCP_CONTRACT_KEY[cap.id];
-    expect(key, `${cap.id}: no MCP_CONTRACT_KEY mapping`).toBeDefined();
+    // W4 B6: this cell used to assert `MCP_STORE_AWARE_CONTRACTS[key]` is
+    // defined — one static table looked up in another static table, satisfied
+    // without the installer or the server doing anything. Every mcp row was a
+    // guaranteed pass. Now it walks to the actual producer: the tool name in
+    // the matrix row must be a name `packages/server/src/tools/*.ts` really
+    // hands to `server.registerTool`. Renaming or dropping a tool server-side
+    // without updating the matrix fails here.
+    const toolName = cap.id.slice("mcp.".length);
     expect(
-      MCP_STORE_AWARE_CONTRACTS[key as keyof typeof MCP_STORE_AWARE_CONTRACTS],
-      `${cap.id}: store-aware contract for this tool`,
-    ).toBeDefined();
+      registeredMcpToolNames(),
+      `${cap.id}/${client}: no server.registerTool("${toolName}") in packages/server/src/tools`,
+    ).toContain(toolName);
     return;
   }
   if (cap.surface === "render") {
