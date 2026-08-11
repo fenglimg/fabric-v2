@@ -16,7 +16,6 @@ import {
   installCitePolicyEvictHook,
   installHookLibs,
   installKnowledgeHintBroadHook,
-  installKnowledgeHintNarrowHook,
   installKnowledgePretoolUseHook,
   installPostTooluseMutationHook,
   installSessionEndMarkerHook,
@@ -106,10 +105,8 @@ export async function installHooks(
   // chmod 0o755 on POSIX. Order vs config-merge matters: copy first so the
   // validateHookPaths post-step finds the script on disk.
   results.push(...await runStep(() => installKnowledgeHintBroadHook(normalizedTarget)));
-  // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook script +
-  // edit-counter sidecar. Same copy plumbing as the broad sibling — three
-  // dest dirs, chmod 0o755 on POSIX, copy before merge so validate finds it.
-  results.push(...await runStep(() => installKnowledgeHintNarrowHook(normalizedTarget)));
+  // W4 I2: the narrow hook no longer has a copy step here — it moved under
+  // templates/hooks/lib/ and ships with installHookLibs below.
   // v2.0.0-rc.34 TASK-06: Claude Code-only UserPromptSubmit cite-policy
   // long-session evict sidecar. Single destination (.claude/hooks/) — Codex
   // lacks the event registration. Default OFF; user opt-in via
@@ -169,7 +166,10 @@ export function validateHookPaths(projectRoot: string): InstallStepResult[] {
   const scripts: Array<{ stepSuffix: string; hookFile: string }> = [
     { stepSuffix: "", hookFile: "fabric-hint.cjs" },
     { stepSuffix: "-broad", hookFile: "knowledge-hint-broad.cjs" },
-    { stepSuffix: "-narrow", hookFile: "knowledge-hint-narrow.cjs" },
+    // W4 I2: narrow moved to <client>/hooks/lib/. Still validated — it is a
+    // hard require() of the pretooluse orchestrator, so a missing copy breaks
+    // every edit-time hint exactly as before, only now the path says "lib".
+    { stepSuffix: "-narrow", hookFile: join("lib", "knowledge-hint-narrow.cjs") },
     // ISS-20260711-260: knowledge-pretooluse hard-requires cite-policy-evict
     // via require("./cite-policy-evict.cjs") — validate must catch a missing
     // copy the same way it catches a missing pretooluse orchestrator.

@@ -102,7 +102,9 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     // Fabric-owned hook scripts are removed.
     expect(existsSync(join(target, ".claude", "hooks", "fabric-hint.cjs"))).toBe(false);
     expect(existsSync(join(target, ".claude", "hooks", "knowledge-hint-broad.cjs"))).toBe(false);
-    expect(existsSync(join(target, ".claude", "hooks", "knowledge-hint-narrow.cjs"))).toBe(false);
+    // W4 I2: narrow lives under hooks/lib/ now, so assert THAT path — asserting
+    // the old top-level one would pass without removeHookLibs doing anything.
+    expect(existsSync(join(target, ".claude", "hooks", "lib", "knowledge-hint-narrow.cjs"))).toBe(false);
 
     // rc.16 TASK-004 (F2-tests): fabric-owned hook libs are removed too.
     // Symmetric inverse of installHookLibs — the lib `.cjs` files plus the

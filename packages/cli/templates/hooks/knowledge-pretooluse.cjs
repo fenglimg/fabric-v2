@@ -13,7 +13,11 @@
 // Each sub-hook stays best-effort/silent-on-failure, so a throw in one never
 // blocks the edit or suppresses the other (KT-DEC-0007).
 
-const narrow = require("./knowledge-hint-narrow.cjs");
+// W4 I2: narrow lives under lib/ because it is a lib — no client registers it
+// as a hook entry point; this file is its only caller. cite-policy-evict stays
+// at the top level because Codex DOES register it (.codex/hooks.json), i.e. it
+// is a real, client-asymmetric entry point rather than a misfiled helper.
+const narrow = require("./lib/knowledge-hint-narrow.cjs");
 const cite = require("./cite-policy-evict.cjs");
 const { createProjectContextResolver } = require("./lib/project-root.cjs");
 

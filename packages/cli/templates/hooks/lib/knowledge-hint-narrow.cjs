@@ -81,29 +81,29 @@ const { dirname, join } = require("node:path");
 // v2.0.0-rc.37 NEW-17: shared sidecar I/O for the plan-context-hint result
 // cache (skips a redundant CLI cold-start spawn when the same path-set is
 // re-edited within a session and the knowledge graph hasn't changed).
-const { readJsonStateAsync, writeJsonStateAsync } = require("./lib/state-store.cjs");
-const { createProjectContextResolver } = require("./lib/project-root.cjs");
-const toolPathExtract = require("./lib/tool-path-extract.cjs");
-const hintNarrowConfig = require("./lib/hint-narrow-config.cjs");
-const hintSummaryFormat = require("./lib/hint-summary-format.cjs");
+const { readJsonStateAsync, writeJsonStateAsync } = require("./state-store.cjs");
+const { createProjectContextResolver } = require("./project-root.cjs");
+const toolPathExtract = require("./tool-path-extract.cjs");
+const hintNarrowConfig = require("./hint-narrow-config.cjs");
+const hintSummaryFormat = require("./hint-summary-format.cjs");
 // W1-01 (ISS-011): the PreToolUse hook is the highest-frequency, most
 // concurrency-exposed write surface in Fabric. Multi-window edits spawn
 // concurrent hook processes that all append to the SAME non-session-scoped
 // ledger/counter files; a bare appendFileSync can interleave a partial write
 // and corrupt a line. Route every shared-file append through the advisory-lock
 // primitive (drop-on-contention, best-effort — matches injection-log).
-const { appendLockedLine } = require("./lib/injection-log.cjs");
+const { appendLockedLine } = require("./injection-log.cjs");
 // lifecycle-refactor W1-T2: client discriminator for the hook_surface_emitted
 // event (schema requires the `client` enum). Mirrors the broad hook's import.
 // v2.2 dual-sink (Goal A): + emitDualSink (PreToolUse two-channel emit).
-const { detectClient, emitDualSink } = require("./lib/client-adapter.cjs");
+const { detectClient, emitDualSink } = require("./client-adapter.cjs");
 // v2.2 dual-sink (Goal A / D4 + C5): human-output gate. On a narrow HIT the human
 // systemMessage is gated by nudge_mode (a miss is already a silent early-return
 // above); the AI additionalContext is emitted regardless (flow ⊥ observation).
 // Optional require so an old install degrades to "always emit human".
 let nudgePolicy = null;
 try {
-  nudgePolicy = require("./lib/nudge-policy.cjs");
+  nudgePolicy = require("./nudge-policy.cjs");
 } catch {
   // Lib missing (old install) — human sink always emits (legacy behavior).
 }
@@ -112,7 +112,7 @@ try {
 // for the edited file WITHOUT re-resolving or walking store trees. Best-effort.
 let bindingsSnapshotReader = null;
 try {
-  bindingsSnapshotReader = require("./lib/bindings-snapshot-reader.cjs");
+  bindingsSnapshotReader = require("./bindings-snapshot-reader.cjs");
 } catch {
   // Lib missing (old install) — store labels degrade to silent absence.
 }
@@ -1297,7 +1297,7 @@ async function main(env, stdio) {
       // Keep MCP fab_recall session_id fallback fresh (same sidecar as SessionStart).
       if (typeof payloadSessionId === "string" && payloadSessionId.length > 0) {
         try {
-          const { writeActiveSession } = require("./lib/state-store.cjs");
+          const { writeActiveSession } = require("./state-store.cjs");
           const tsMs = now instanceof Date ? now.getTime() : Number(now) || Date.now();
           writeActiveSession(cwd, payloadSessionId, tsMs);
         } catch {
@@ -1349,7 +1349,7 @@ async function main(env, stdio) {
           ? payload.session_id
           : null;
       if (typeof realSid === "string" && realSid.length > 0) {
-        const { writeActiveSession } = require("./lib/state-store.cjs");
+        const { writeActiveSession } = require("./state-store.cjs");
         writeActiveSession(cwd, realSid, nowMs);
       }
     } catch {

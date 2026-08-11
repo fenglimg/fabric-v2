@@ -84,8 +84,8 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     const hookTemplate = readTemplate("hooks/fabric-hint.cjs");
     // rc.6 TASK-019 (E1): SessionStart broad-injection hook script template.
     const broadHookTemplate = readTemplate("hooks/knowledge-hint-broad.cjs");
-    // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook script template.
-    const narrowHookTemplate = readTemplate("hooks/knowledge-hint-narrow.cjs");
+    // rc.6 TASK-020 (E2 + E4) / W4 I2: narrow ships as a lib now.
+    const narrowHookTemplate = readTemplate("hooks/lib/knowledge-hint-narrow.cjs");
 
     // Archive skill copies — byte-identical
     const claudeArchiveSkill = readFileSync(join(target, ".claude/skills/fabric-archive/SKILL.md"), "utf8");
@@ -115,9 +115,9 @@ describe("TASK-006 install-skills-and-hooks: fresh init", () => {
     expect(claudeBroad).toBe(broadHookTemplate);
     expect(codexBroad).toBe(broadHookTemplate);
 
-    // rc.6 TASK-020: knowledge-hint-narrow.cjs copies (PreToolUse sibling)
-    const claudeNarrow = readFileSync(join(target, ".claude/hooks/knowledge-hint-narrow.cjs"), "utf8");
-    const codexNarrow = readFileSync(join(target, ".codex/hooks/knowledge-hint-narrow.cjs"), "utf8");
+    // rc.6 TASK-020 / W4 I2: knowledge-hint-narrow.cjs copies, now under lib/.
+    const claudeNarrow = readFileSync(join(target, ".claude/hooks/lib/knowledge-hint-narrow.cjs"), "utf8");
+    const codexNarrow = readFileSync(join(target, ".codex/hooks/lib/knowledge-hint-narrow.cjs"), "utf8");
     expect(claudeNarrow).toBe(narrowHookTemplate);
     expect(codexNarrow).toBe(narrowHookTemplate);
 
@@ -517,7 +517,7 @@ describe("TASK-006 install-skills-and-hooks: dedup", () => {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks: POSIX exec bit", () => {
-  it("fabric-hint.cjs, knowledge-hint-broad.cjs AND knowledge-hint-narrow.cjs have owner-execute bit set", async () => {
+  it("fabric-hint.cjs and knowledge-hint-broad.cjs have owner-execute bit set", async () => {
     const target = await createInstalledFixtureRoot("itg-install-execbit");
     tempRoots.push(target);
 
@@ -539,15 +539,10 @@ describe.skipIf(process.platform === "win32")("TASK-006 install-skills-and-hooks
     expect(claudeBroadStat.mode & 0o100).toBe(0o100);
     expect(codexBroadStat.mode & 0o100).toBe(0o100);
 
-    // rc.6 TASK-020: narrow-injection PreToolUse sibling hook script
-    const claudeNarrowStat = statSync(
-      join(target, ".claude/hooks/knowledge-hint-narrow.cjs"),
-    );
-    const codexNarrowStat = statSync(
-      join(target, ".codex/hooks/knowledge-hint-narrow.cjs"),
-    );
-    expect(claudeNarrowStat.mode & 0o100).toBe(0o100);
-    expect(codexNarrowStat.mode & 0o100).toBe(0o100);
+    // W4 I2: narrow is no longer asserted here. It ships via installHookLibs,
+    // which does NOT chmod — and correctly so: libs are require()d, never
+    // spawned. It had the bit only because it used to ride the entry-point
+    // copy path. Every other lib has always lacked it.
   });
 });
 

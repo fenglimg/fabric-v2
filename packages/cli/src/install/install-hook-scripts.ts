@@ -6,7 +6,6 @@ import {
   HOOK_CITE_EVICT_SCRIPT_TEMPLATE_REL,
   HOOK_LIB_DESTINATIONS,
   HOOK_LIB_TEMPLATE_DIR_REL,
-  HOOK_NARROW_SCRIPT_TEMPLATE_REL,
   HOOK_POST_TOOLUSE_SCRIPT_TEMPLATE_REL,
   HOOK_PRETOOLUSE_SCRIPT_TEMPLATE_REL,
   HOOK_SCRIPT_DESTINATIONS,
@@ -84,19 +83,10 @@ export async function installKnowledgeHintBroadHook(
   );
 }
 
-/**
- * Copy templates/hooks/knowledge-hint-narrow.cjs (PreToolUse narrow-injection).
- */
-export async function installKnowledgeHintNarrowHook(
-  projectRoot: string,
-): Promise<InstallStepResult[]> {
-  return installHookScriptCopies(
-    "hook-narrow-script",
-    HOOK_NARROW_SCRIPT_TEMPLATE_REL,
-    HOOK_SCRIPT_DESTINATIONS.knowledgeHintNarrow,
-    projectRoot,
-  );
-}
+// W4 I2: installKnowledgeHintNarrowHook deleted. knowledge-hint-narrow.cjs now
+// lives in templates/hooks/lib/ and rides installHookLibs below with every
+// other lib — no bespoke copy step, no destination list, no validate row of its
+// own beyond the lib path.
 
 /**
  * ux-w2-6: copy templates/hooks/knowledge-pretooluse.cjs (PreToolUse orchestrator).

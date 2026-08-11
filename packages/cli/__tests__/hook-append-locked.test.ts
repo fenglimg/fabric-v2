@@ -24,7 +24,7 @@ const injectionLog = require("../templates/hooks/lib/injection-log.cjs") as {
   appendLockedLine?: (path: string, line: string) => void;
 };
 
-const narrow = require("../templates/hooks/knowledge-hint-narrow.cjs") as {
+const narrow = require("../templates/hooks/lib/knowledge-hint-narrow.cjs") as {
   appendEditCounter: (projectRoot: string, now: Date, paths: string[]) => void;
   appendHintSilenceCounter: (projectRoot: string, now: Date) => void;
   appendEditIntentToLedger: (

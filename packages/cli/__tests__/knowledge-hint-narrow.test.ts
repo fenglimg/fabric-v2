@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const hookPath = fileURLToPath(
-  new URL("../templates/hooks/knowledge-hint-narrow.cjs", import.meta.url),
+  new URL("../templates/hooks/lib/knowledge-hint-narrow.cjs", import.meta.url),
 );
 
 type NarrowEntry = {

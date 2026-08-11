@@ -207,20 +207,9 @@ export async function removeKnowledgeHintBroadHook(
   );
 }
 
-/**
- * Inverse of `installKnowledgeHintNarrowHook`. Removes the
- * `knowledge-hint-narrow.cjs` script from each client's `.<client>/hooks/`
- * directory.
- */
-export async function removeKnowledgeHintNarrowHook(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeHookScripts(
-    "hook-narrow-script",
-    HOOK_SCRIPT_DESTINATIONS.knowledgeHintNarrow,
-    projectRoot,
-  );
-}
+// W4 I2: removeKnowledgeHintNarrowHook deleted alongside its install-side
+// counterpart. knowledge-hint-narrow.cjs now lives in <client>/hooks/lib/, and
+// removeHookLibs already deletes every `.cjs` under those directories.
 
 /**
  * F3: inverse of `installCitePolicyEvictHook`. Removes the
@@ -639,9 +628,6 @@ export async function uninstallBootstrapStage(
   await runAndCollect(results, "hook-lib", projectRoot, () => removeHookLibs(projectRoot));
 
   // 4. Hook scripts (reverse of install order)
-  await runAndCollect(results, "hook-narrow-script", projectRoot, () =>
-    removeKnowledgeHintNarrowHook(projectRoot),
-  );
   await runAndCollect(results, "hook-broad-script", projectRoot, () =>
     removeKnowledgeHintBroadHook(projectRoot),
   );

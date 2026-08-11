@@ -42,11 +42,14 @@ export const HOOK_SCRIPT_TEMPLATE_REL = "hooks/fabric-hint.cjs";
 // fabric-hint.cjs — shares install/copy plumbing but is registered against a
 // different hook event (SessionStart instead of Stop) in each client config.
 export const HOOK_BROAD_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-broad.cjs";
-// rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook script + edit-
-// counter sidecar. Sibling to knowledge-hint-broad.cjs — same install/copy
-// plumbing but registered against PreToolUse with Edit|Write|MultiEdit
-// matchers in each client config.
-export const HOOK_NARROW_SCRIPT_TEMPLATE_REL = "hooks/knowledge-hint-narrow.cjs";
+// W4 I2: knowledge-hint-narrow.cjs no longer has a template-rel constant or a
+// destination entry of its own. rc.6 shipped it as a peer of the other hook
+// scripts — its own copy step, its own destination list — but ux-w2-6 folded it
+// into knowledge-pretooluse.cjs and NEITHER client has registered it since:
+// it is not in .claude/settings.json and not in .codex/hooks.json. It has been
+// a lib with an entry-point's paperwork ever since. Moving it under
+// templates/hooks/lib/ means installHookLibs (which ships every .cjs in that
+// directory) carries it, so the bespoke lane could be deleted outright.
 // ux-w2-6: single PreToolUse orchestrator (merges narrow + cite into one envelope).
 export const HOOK_PRETOOLUSE_SCRIPT_TEMPLATE_REL = "hooks/knowledge-pretooluse.cjs";
 // v2.0.0-rc.34 TASK-06: cite-policy long-session evict sidecar.
@@ -184,14 +187,10 @@ export const HOOK_SCRIPT_DESTINATIONS = {
     ".claude/hooks/knowledge-hint-broad.cjs",
     ".codex/hooks/knowledge-hint-broad.cjs",
   ],
-  knowledgeHintNarrow: [
-    ".claude/hooks/knowledge-hint-narrow.cjs",
-    ".codex/hooks/knowledge-hint-narrow.cjs",
-  ],
   // ux-w2-6: the single PreToolUse orchestrator. Requires knowledge-hint-narrow
-  // + cite-policy-evict as libs (both still copied) and merges their output into
-  // one envelope, so the Edit|Write|MultiEdit matcher carries ONE command (was
-  // two = 双弹).
+  // (now shipped by installHookLibs from templates/hooks/lib/, per W4 I2) and
+  // cite-policy-evict, merging their output into one envelope so the
+  // Edit|Write|MultiEdit matcher carries ONE command (was two = 双弹).
   knowledgePretoolUse: [
     ".claude/hooks/knowledge-pretooluse.cjs",
     ".codex/hooks/knowledge-pretooluse.cjs",

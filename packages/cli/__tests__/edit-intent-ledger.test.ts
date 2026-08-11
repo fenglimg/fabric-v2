@@ -29,7 +29,7 @@ import { editIntentCheckedEventSchema } from "@fenglimg/fabric-shared";
 
 const require_ = createRequire(import.meta.url);
 const hookPath = fileURLToPath(
-  new URL("../templates/hooks/knowledge-hint-narrow.cjs", import.meta.url),
+  new URL("../templates/hooks/lib/knowledge-hint-narrow.cjs", import.meta.url),
 );
 const hook = require_(hookPath) as {
   main: (env: Record<string, unknown>, stdio: { stderr: { write(s: string): void }; stdout: { write(s: string): void } }) => void;
