@@ -106,13 +106,41 @@ export async function withFileLock<T>(
   const token = `${process.pid}.${randomUUID()}`;
 
   const start = Date.now();
+  // Last contention error seen, so a timeout can name the real cause instead of
+  // reporting a bare "timed out" for what may have been a genuine EPERM.
+  let lastContentionError: NodeJS.ErrnoException | null = null;
   for (;;) {
     let handle;
     try {
       handle = await open(lockPath, "wx"); // atomic create-exclusive = acquire
     } catch (err) {
-      if (!isErrnoException(err) || err.code !== "EEXIST") throw err;
+      if (!isErrnoException(err)) throw err;
+      // POSIX signals contention as EEXIST. Windows does not: unlinking a file
+      // that another process still has open only marks it DELETE-PENDING, and
+      // opening a delete-pending file returns EPERM (ERROR_ACCESS_DENIED), or
+      // EBUSY. Under N concurrent holders that release-and-reacquire in a loop,
+      // that window is hit routinely — so on win32 these two codes mean exactly
+      // what EEXIST means everywhere else: someone else holds it, wait.
+      //
+      // They are NOT treated as contention off win32: there EPERM really is a
+      // permission problem and must surface immediately rather than spin until
+      // maxWaitMs. A genuine win32 permission error still terminates — it just
+      // does so via the timeout below, which carries this error as its cause.
+      const contended =
+        err.code === "EEXIST" ||
+        (process.platform === "win32" && (err.code === "EPERM" || err.code === "EBUSY"));
+      if (!contended) throw err;
+      lastContentionError = err;
       // Contended: reclaim a stale holder, otherwise wait and retry.
+      //
+      // ⚠️ Every path out of this block MUST fall through to the deadline check
+      // below. Two of them used to `continue` straight past it, so whenever the
+      // failing-open/absent-lock combination persisted — exactly what win32
+      // DELETE-PENDING produces (open fails, stat then reports ENOENT) — the
+      // loop spun hot forever: no timeout, no sleep, no yield. maxWaitMs is the
+      // only thing bounding this function; a `continue` that skips it silently
+      // turns a lock contention into a hang.
+      let reclaimed = false;
       try {
         const st = await stat(lockPath);
         if (Date.now() - st.mtimeMs > staleMs) {
@@ -122,15 +150,22 @@ export async function withFileLock<T>(
           if (staleToken !== null) {
             await unlinkIfToken(lockPath, staleToken);
           }
-          continue; // reclaimed (or lost the race) — retry the wx create either way
+          reclaimed = true; // (or lost the race) — retry the wx create either way
         }
       } catch {
-        continue; // lock vanished between EEXIST and stat — retry immediately
+        // Lock vanished between the failed open and stat. Retry, but still via
+        // the deadline check + backoff: the open may keep failing for a reason
+        // that stat cannot see.
       }
       if (Date.now() - start > maxWaitMs) {
-        throw new Error(`withFileLock: timed out acquiring ${lockPath} after ${maxWaitMs}ms`);
+        throw new Error(
+          `withFileLock: timed out acquiring ${lockPath} after ${maxWaitMs}ms` +
+            (lastContentionError ? ` (last error: ${lastContentionError.code})` : ""),
+          { cause: lastContentionError ?? undefined },
+        );
       }
-      await sleep(retryDelayMs);
+      // A successful reclaim means the lock should now be free — retry at once.
+      if (!reclaimed) await sleep(retryDelayMs);
       continue;
     }
     // Acquired — stamp our ownership token into the lock file before running fn.
