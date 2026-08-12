@@ -157,7 +157,7 @@ export {
   type ConsumptionInspection,
   type ConsumptionLintConfig,
 } from "./services/doctor-consumption-lint.js";
-export { appendEventLedgerEvent } from "./services/event-ledger.js";
+export { appendEventLedgerEvent, emitInitScanCompletedOnce } from "./services/event-ledger.js";
 export {
   planContext,
   readSelectionToken,

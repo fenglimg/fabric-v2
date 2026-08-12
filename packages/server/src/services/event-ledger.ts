@@ -928,3 +928,58 @@ export function flushAndSyncEventLedger(projectRoot: string): void {
     closeSync(fd);
   }
 }
+
+/**
+ * Emit `init_scan_completed` for a workspace, at most once ever.
+ *
+ * This event is the CONSUMED half of a producer/consumer pair that shipped with
+ * only its consumer: the Stop hook's underseed nudge (`signal-decide.cjs`,
+ * "Import signal") fires only when the corpus is sparse AND an
+ * `init_scan_completed` is at least `UNDERSEED_POST_INIT_QUIET_HOURS` old. No
+ * code anywhere emitted it, so that second condition was permanently false and
+ * the nudge could never fire in production. Its tests passed because they seed
+ * the event themselves — the gap is invisible from either side alone and only
+ * shows up on a producer↔consumer round-trip.
+ *
+ * Once-ever, not once-per-install, and that distinction is the whole point. The
+ * consumer takes the LATEST matching event, so emitting on every `fabric
+ * install` would restart the post-init quiet window each time — a user who
+ * re-installs (which is idempotent and therefore routine) would silently never
+ * see the nudge, reproducing the original bug with a fresh cause. Gating on
+ * "already present in the ledger" instead of on first-install also back-fills
+ * workspaces installed before this emitter existed: their next `fabric install`
+ * stamps the event once and starts their clock.
+ *
+ * Best-effort, like every other observability write here: a failure to record
+ * an advisory nudge's clock must never fail an install.
+ *
+ * @returns true when this call wrote the event, false when one already existed
+ *          or the write failed.
+ */
+export async function emitInitScanCompletedOnce(
+  projectRoot: string,
+  payload: {
+    durationMs: number;
+    source?: "init" | "scan" | "doctor_fix" | "doctor-rescan";
+    writtenStableIds?: readonly string[];
+  },
+): Promise<boolean> {
+  try {
+    const existing = await readEventLedger(projectRoot, { event_type: "init_scan_completed" });
+    if (existing.events.length > 0) return false;
+
+    await appendEventLedgerEvent(projectRoot, {
+      event_type: "init_scan_completed",
+      // Math.max guards a non-monotonic clock: the schema requires a
+      // nonnegative int and a negative elapsed would throw inside the try,
+      // silently dropping the event and leaving the nudge dead exactly as before.
+      duration_ms: Math.max(0, Math.round(payload.durationMs)),
+      written_stable_ids: [...(payload.writtenStableIds ?? [])],
+      ...(payload.source === undefined ? {} : { source: payload.source }),
+    });
+    return true;
+  } catch {
+    // Silent — observability only.
+    return false;
+  }
+}

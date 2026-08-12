@@ -1,5 +1,7 @@
 import { defineCommand } from "citty";
 
+import { emitInitScanCompletedOnce } from "@fenglimg/fabric-server";
+
 import { createDebugLogger, resolveDevMode } from "../dev-mode.js";
 import { t } from "../i18n.js";
 import { runGlobalInstall } from "../install/run-global-install.js";
@@ -140,6 +142,7 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
     .addStage(new ValidateStage())
     .addStage(new GuidanceStage());
 
+  const startedAt = Date.now();
   const result = await pipeline.execute(context);
 
   // Cleanup renderer
@@ -157,6 +160,22 @@ export async function runInitCommand(args: InitArgs): Promise<void> {
     return;
   }
 
+  // Start the underseed nudge's post-init quiet clock. `--dry-run` is excluded
+  // because a plan-only run scaffolds nothing — stamping it would tell the hook
+  // this workspace was initialized when no files were written. Only the first
+  // install ever writes the event (see emitInitScanCompletedOnce); re-installs
+  // must not restart the clock or the nudge never fires for anyone who re-runs
+  // install, which is idempotent and therefore routine.
+  if (args["dry-run"] !== true) {
+    await emitInitScanCompletedOnce(resolution.target, {
+      durationMs: Date.now() - startedAt,
+      source: "init",
+      // `fabric install` scaffolds the workspace; it does not author knowledge
+      // entries, so there are no stable_ids to report. The field exists for the
+      // baseline-seeding scan (`source: "scan"`), which does write some.
+      writtenStableIds: [],
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
