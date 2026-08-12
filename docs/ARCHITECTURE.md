@@ -105,7 +105,7 @@ generated CommonJS hook adapter 由 shared resolver entry 构建，提交前运�
 - store / sync / info 行为：`packages/cli/src/store/*`、`packages/cli/src/sync/*`、`packages/cli/src/commands/{store,sync,info}.ts`
 - MCP tools：`packages/server/src/tools/*.ts`
 - MCP server instructions：`packages/server/src/index.ts`
-- doctor 行为：`packages/server/src/services/doctor.ts`
+- doctor 行为：`packages/server/src/services/doctor/doctor.ts`
 - shared contracts：`packages/shared/src/schemas/*.ts`
 - ProjectContext owner：`packages/shared/src/resolver/project-context-resolver.ts`、
   `git-worktree-identity.ts` 与 `contracts.ts`
@@ -116,7 +116,7 @@ generated CommonJS hook adapter 由 shared resolver entry 构建，提交前运�
 
 - **MCP tool**：schema 进 `packages/shared/src/schemas/api-contracts.ts`；service 进 `packages/server/src/services/`；tool wrapper 进 `packages/server/src/tools/`；在 `packages/server/src/index.ts` 的 `createFabricServer` 注册。
 - **Skill**：canonical 模板在 `packages/cli/templates/skills/<slug>/SKILL.md`；`fabric install` 分发到各 client。
-- **Doctor check**：inspection 函数进 `packages/server/src/services/doctor.ts`；i18n key 进 `packages/shared/src/i18n/locales/{zh-CN,en}.ts`；在 `runDoctorReport` 的 checks 列表注册；`packages/server/src/services/doctor.test.ts` 的 snapshot 计数需同步更新。
+- **Doctor check**：inspection 函数进 `packages/server/src/services/doctor/doctor.ts`；i18n key 进 `packages/shared/src/i18n/locales/{zh-CN,en}.ts`；在 `runDoctorReport` 的 checks 列表注册；`packages/server/src/services/doctor/doctor.test.ts` 的 snapshot 计数需同步更新。
 
 提交规范：`<type>(<scope>): <中文描述>`，type ∈ feat/fix/refactor/docs/chore/test/perf；多任务计划优先一任务一 commit。
 

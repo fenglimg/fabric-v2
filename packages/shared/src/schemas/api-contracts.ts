@@ -1592,7 +1592,7 @@ export const fabPendingAnnotations = {
 // CLI contract — `fabric doctor --cite-coverage`
 //
 // v2.0.0-rc.24 TASK-09: Zod schema mirroring the `CiteCoverageReport` runtime
-// type that lives in `packages/server/src/services/doctor.ts` (TASK-08). The
+// type that lives in `packages/server/src/services/doctor/doctor.ts` (TASK-08). The
 // shape is intentionally duplicated here so the CLI renderer (TASK-10) can
 // validate JSON output and downstream tooling can consume a single typed
 // surface without taking a server-package import.

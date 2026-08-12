@@ -32,7 +32,7 @@ import { copyTextIdempotent, findTemplatePath, readTemplate } from "./template-i
 //     InstallStepResult. copyTextIdempotent already overwrites diff content;
 //     the message tells operators *why* they saw a write.
 //
-// Thresholds mirror server/src/services/doctor.ts inspectSkillTokenBudget
+// Thresholds mirror server/src/services/doctor/doctor.ts inspectSkillTokenBudget
 // (chars/3 token estimate, 10K ERROR). Kept duplicated rather than imported
 // because shared has no canonical home for these and importing from server
 // into cli would invert the dependency direction.

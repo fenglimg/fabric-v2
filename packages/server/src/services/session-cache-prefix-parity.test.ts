@@ -23,7 +23,7 @@ import {
   SESSION_HINTS_FILE_PREFIX,
   SESSION_HINTS_FILE_SUFFIX,
   STALE_SWEEP_PREFIXES,
-} from "./doctor-session-hints-stale.js";
+} from "./doctor/doctor-session-hints-stale.js";
 
 const require_ = createRequire(import.meta.url);
 const HOOK_LIB = join(

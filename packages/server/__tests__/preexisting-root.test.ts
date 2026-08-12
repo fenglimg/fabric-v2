@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { formatPreexistingRootMessage } from "../src/index.js";
-import { runDoctorReport } from "../src/services/doctor.js";
+import { runDoctorReport } from "../src/services/doctor/doctor.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

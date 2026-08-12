@@ -63,7 +63,7 @@ const config: KnipConfig = {
     'packages/server/src/meta-reader.ts': ['exports', 'types'],
     // server/services: internal implementation files — exports are package-private helpers.
     'packages/server/src/services/_shared.ts': ['exports', 'duplicates'],
-    'packages/server/src/services/doctor.ts': ['exports', 'types'],
+    'packages/server/src/services/doctor/doctor.ts': ['exports', 'types'],
     'packages/server/src/services/event-ledger.ts': ['types'],
     'packages/server/src/services/plan-context.ts': ['types'],
     'packages/server/src/services/read-ledger.ts': ['exports', 'types'],

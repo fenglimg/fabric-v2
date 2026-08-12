@@ -54,17 +54,17 @@ export {
   type EnrichDescriptionsCandidate,
   type EnrichDescriptionsMode,
   type EnrichDescriptionsReport,
-} from "./services/doctor.js";
+} from "./services/doctor/doctor.js";
 // W5 B11: enrichDescriptions is a knowledge-tree mutation the CLI audit drives,
 // not a doctor check — it and its canonical-filename walker moved out of the
 // doctor hub. Types still originate in doctor-types.ts.
-export { enrichDescriptions } from "./services/doctor-enrich-descriptions.js";
+export { enrichDescriptions } from "./services/doctor/doctor-enrich-descriptions.js";
 // v2.1 ④ conflict-detection (P4): knowledge-conflict lint.
 export {
   loadConflictEntries,
   runDoctorConflictLint,
   type ConflictLintReport,
-} from "./services/doctor-conflict.js";
+} from "./services/doctor/doctor-conflict.js";
 // P1 recall-engine-refactor (follow-up): recall-engine status surface used by
 // `fabric info recall` — fusion + embed config readers and the lazy embedder
 // probe/warm + its stable cache dir.
@@ -95,7 +95,7 @@ export {
   type RetiredReferenceHit,
   type RetiredReferenceInspection,
   type RetiredToken,
-} from "./services/doctor-retired-references-lint.js";
+} from "./services/doctor/doctor-retired-references-lint.js";
 // W3-H (S6): `fabric audit why-not-surfaced <id>` self-serve scope diagnostic.
 export {
   explainWhyNotSurfaced,
@@ -142,7 +142,7 @@ export {
   type RelatedGraphInspection,
   type RelatedGraphNode,
   type RelatedHubEntry,
-} from "./services/doctor-related-graph.js";
+} from "./services/doctor/doctor-related-graph.js";
 export {
   clearPrecheckCache,
   evaluateStoreDir,
@@ -156,7 +156,7 @@ export {
   type ConsumptionEntry,
   type ConsumptionInspection,
   type ConsumptionLintConfig,
-} from "./services/doctor-consumption-lint.js";
+} from "./services/doctor/doctor-consumption-lint.js";
 export { appendEventLedgerEvent, emitInitScanCompletedOnce } from "./services/event-ledger.js";
 export {
   planContext,

@@ -3,10 +3,10 @@
  *
  * Wave W1 extraction from doctor.ts (repo-hygiene-slim). No runtime logic —
  * only type aliases. doctor.ts re-exports these for backward-compatible
- * `import type { DoctorCheck } from "./doctor.js"` consumers.
+ * `import type { DoctorCheck } from "./doctor/doctor.js"` consumers.
  */
 import type { AgentsMeta } from "@fenglimg/fabric-shared";
-import type { DoctorHealth } from "./doctor-health.js";
+import type { DoctorHealth } from "./doctor/doctor-health.js";
 
 export type DoctorStatus = "ok" | "warn" | "error";
 export type DoctorIssueKind = "fixable_error" | "manual_error" | "warning" | "info";

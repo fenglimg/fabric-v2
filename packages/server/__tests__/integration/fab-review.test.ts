@@ -73,7 +73,7 @@ function storeCountersFile(layer: "team" | "personal"): string {
   return join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: uuid, personal: layer === "personal" }), STORE_LAYOUT.countersFile);
 }
 
-import { runDoctorReport } from "../../src/services/doctor.js";
+import { runDoctorReport } from "../../src/services/doctor/doctor.js";
 import { readEventLedger } from "../../src/services/event-ledger.js";
 import { reviewKnowledge, reviewPending } from "../../src/services/review.js";
 import { registerReview } from "../../src/tools/review.js";

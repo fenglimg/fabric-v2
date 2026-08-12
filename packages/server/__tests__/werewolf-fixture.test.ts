@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { runDoctorReport } from "../src/services/doctor.js";
+import { runDoctorReport } from "../src/services/doctor/doctor.js";
 
 const FIXTURE = fileURLToPath(
   new URL("./__fixtures__/werewolf-snapshot.tar.gz", import.meta.url),

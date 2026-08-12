@@ -1,7 +1,7 @@
 import { PROTECTED_TOKENS } from "@fenglimg/fabric-shared";
 import { describe, expect, it } from "vitest";
 
-import { RETIRED_TOKENS } from "./doctor-retired-references-lint.js";
+import { RETIRED_TOKENS } from "./doctor/doctor-retired-references-lint.js";
 
 /**
  * Two registries make opposite claims about the same vocabulary:
