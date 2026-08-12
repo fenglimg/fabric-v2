@@ -22,7 +22,7 @@
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -77,6 +77,12 @@ const ALLOWLIST = new Map([
   ["packages/cli/templates/skills/fabric-archive/ref/phase-3-review.md::packages/server/src/foo.ts", "worked example"],
   ["packages/cli/templates/skills/fabric-archive/ref/phase-3-review.md::packages/server/src/services/extract.ts", "worked example"],
   ["packages/cli/templates/skills/fabric-archive/ref/phase-3-review.md::packages/server/src/services/promote.ts", "worked example"],
+  // A hypothetical 3-engineer project's architecture doc ("Why a monolith?"),
+  // used to teach that a doc-mined observation must NOT inherit the miner file's
+  // path as relevance_paths. Deliberately NOT this repo's docs/ARCHITECTURE.md —
+  // renaming it to match would bind an illustrative example to a real file and
+  // make the example read as a citation of our own architecture.
+  ["packages/cli/templates/skills/fabric-archive/ref/source-mode.md::docs/architecture.md", "worked example"],
   ["packages/cli/templates/skills/fabric-archive/ref/source-mode.md::packages/server/src/retry.ts", "worked example"],
   ["packages/cli/templates/skills/fabric-archive/ref/source-mode.md::packages/server/src/lib/retry.ts", "worked example"],
   ["packages/cli/templates/skills/fabric-archive/ref/worked-examples.md::packages/cli/src/commands/hooks.ts", "worked example"],
@@ -122,13 +128,43 @@ function trackedFiles() {
 
 const isSkippedSource = (file) => SKIP_SOURCE.some((marker) => file === marker || file.includes(marker));
 
+// existsSync is NOT enough on macOS: the default APFS volume is case-INsensitive,
+// so `docs/architecture.md` "exists" locally while Linux CI (ext4, case-sensitive)
+// correctly reports it dangling. That divergence makes the gate pass on every dev
+// machine and fail only after push — the worst possible place to learn it.
+// So verify each segment against the real directory listing.
+const dirCache = new Map();
+function existsCaseSensitive(abs) {
+  if (!existsSync(abs)) return false;
+  const rel = relative(ROOT, abs);
+  if (rel.startsWith("..") || rel === "") return true; // outside the repo: no listing to check against
+  let dir = ROOT;
+  for (const segment of rel.split(sep)) {
+    let names = dirCache.get(dir);
+    if (!names) {
+      try {
+        names = new Set(readdirSync(dir));
+      } catch {
+        return false;
+      }
+      dirCache.set(dir, names);
+    }
+    if (!names.has(segment)) return false;
+    dir = join(dir, segment);
+  }
+  return true;
+}
+
 // Resolve the way a reader would: a relative citation is relative to the citing
 // file (that is what a markdown link means), otherwise relative to the root.
 function resolves(citation, sourceFile) {
   if (citation.startsWith("./") || citation.startsWith("../")) {
-    return existsSync(resolve(ROOT, dirname(sourceFile), citation));
+    return existsCaseSensitive(resolve(ROOT, dirname(sourceFile), citation));
   }
-  return existsSync(join(ROOT, citation)) || existsSync(resolve(ROOT, dirname(sourceFile), citation));
+  return (
+    existsCaseSensitive(join(ROOT, citation)) ||
+    existsCaseSensitive(resolve(ROOT, dirname(sourceFile), citation))
+  );
 }
 
 function citations(file, line) {
