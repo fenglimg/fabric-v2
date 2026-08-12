@@ -1389,7 +1389,6 @@ export const zhCNMessages: Messages = {
   "cli.store.promote.description": "把 project 域条目提升到 team 域(项目吸收)",
   "cli.store.reroot.description":
     "把平铺的 project 域条目迁入 knowledge/projects/<id>/(git mv,保留 blame)",
-  "cli.store.link.description": "把工作区目录关联到 store,便于发现",
   // 追加在 `fabric store --help` 末尾的说明 —— 交代进阶(meta.hidden)操作去哪了,
   // 否则只剩 list 一行会让用户以为 store 没别的能力。
   // 点组名而不是举四个命令:举例已经漂过一次(它写着 `migrate`,

@@ -1501,7 +1501,6 @@ export const enMessages: Messages = {
     "Promote project-scoped entries to team scope (project absorption)",
   "cli.store.reroot.description":
     "Relocate flat project-scoped entries into knowledge/projects/<id>/ (git mv, blame-preserving)",
-  "cli.store.link.description": "Link a workspace directory to a store for discoverability",
   // Footer note appended to `fabric store --help` — explains where the advanced
   // (meta.hidden) operations went so the list-only listing isn't a dead end.
   // Name the groups, not four sample verbs: the sample list drifted once already

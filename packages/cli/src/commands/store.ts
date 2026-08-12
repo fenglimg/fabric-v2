@@ -35,7 +35,6 @@ import {
   storeSwitchPersonal,
   storeSwitchWrite,
 } from "../store/store-ops.js";
-import { linkWorkspaceToStore, unlinkWorkspaceFromStore, listLinkedWorkspaces } from "./store-link.js";
 import {
   STORE_LAYOUT,
   loadGlobalConfig,
@@ -687,92 +686,6 @@ const migrateCommand = defineCommand({
     promote: promoteCommand,
     backfill: backfillScopeCommand,
     reroot: rerootCommand,
-  },
-});
-
-// BORROW-010: workspace linking — `fabric store link <alias> [workspace]`.
-// Links a workspace directory to a store for discoverability.
-// DEAD ON ARRIVAL — do not extend, decide whether to delete. This command is
-// never registered in the `store` subCommands map below, so `fabric store link`
-// does not exist. Two further proofs it has never once run: every string it
-// prints (`store.link.list.empty` / `.header` / `.unlinked` / `.created` /
-// `.failed`) is missing from BOTH locale tables, so it would echo raw keys; and
-// `store-link.ts` calls `require("node:fs")` inside an ESM module, which throws
-// on first use. Nothing anywhere reads `linked_workspaces[]` or the
-// `.fabric-store-link` marker it writes, and `store-link.ts` exports a SECOND,
-// also-unregistered copy of this same command (`storeLinkCommand`).
-const linkCommand = defineCommand({
-  meta: {
-    name: "link",
-    description: t("cli.store.link.description"),
-  },
-  args: {
-    store: {
-      type: "positional",
-      description: "Store alias (e.g. 'team')",
-      required: true,
-    },
-    workspace: {
-      type: "positional",
-      description: "Workspace directory path (default: current dir)",
-      required: false,
-    },
-    unlink: {
-      type: "boolean",
-      alias: "u",
-      description: "Remove the link instead of creating it",
-      required: false,
-    },
-    list: {
-      type: "boolean",
-      alias: "l",
-      description: "List linked workspaces for the store",
-      required: false,
-    },
-  },
-  async run(context) {
-    const t = getProjectTranslator();
-    const args = context.args;
-
-    if (args.list) {
-      const workspaces = listLinkedWorkspaces(args.store);
-      if (workspaces.length === 0) {
-        console.log(t("store.link.list.empty", { alias: args.store }));
-      } else {
-        console.log(t("store.link.list.header", { alias: args.store }));
-        for (const ws of workspaces) {
-          console.log(`  ${ws}`);
-        }
-      }
-      return;
-    }
-
-    const workspacePath = args.workspace ?? process.cwd();
-
-    if (args.unlink) {
-      unlinkWorkspaceFromStore(args.store, workspacePath);
-      console.log(t("store.link.unlinked", {
-        store: args.store,
-        workspace: workspacePath,
-      }));
-      return;
-    }
-
-    try {
-      const info = linkWorkspaceToStore(args.store, workspacePath);
-      console.log(t("store.link.created", {
-        store: info.storeAlias,
-        uuid: info.storeUuid,
-        workspace: info.workspacePath,
-      }));
-    } catch (error) {
-      console.error(t("store.link.failed", {
-        store: args.store,
-        workspace: workspacePath,
-        error: error instanceof Error ? error.message : String(error),
-      }));
-      process.exit(1);
-    }
   },
 });
 
