@@ -31,7 +31,19 @@ const config: KnipConfig = {
     '@clack/prompts',
     'picocolors',
     'string-width',
+    // forensic.ts 的 tree-sitter 三件套。全部经 `require.resolve(...)` 定位随包
+    // 分发的 .wasm(第 710/726/728/730 行)+ 动态 `import("web-tree-sitter")`
+    // (第 703 行)—— knip --strict 既不解析 require.resolve 的字符串实参,也不把
+    // 类型位置的 `import("…")` 记作依赖消费, 所以三者都会被误报为未用。
+    //
+    // ⚠️ 曾经只有 typescript 一个在这里, 因为 scanner/tree-sitter-probe.ts 里有
+    // 一句 knip 追得到的静态 import, 顺带把另外两个"证明"成有人用。W1 死代码
+    // 清理删掉那个 probe(它确实是死代码)之后, knip 立刻报这两个未用 ——
+    // **暴露的是 knip 一直存在的盲区, 不是新产生的死依赖**。别删依赖:
+    // 删了 forensic 扫描的 .wasm 就 resolve 不到, 是运行时炸而不是编译期红。
     'tree-sitter-typescript',
+    'tree-sitter-javascript',
+    'web-tree-sitter',
     // CLI TUI: ink + @inkjs/ui are imported from .tsx files which knip --strict
     // does not trace as dependency consumers (TSX not in default resolve set).
     'ink',
