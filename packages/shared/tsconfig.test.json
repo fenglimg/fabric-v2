@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // rootDir/outDir 只对 emit 有意义, 这份配置永远 --noEmit; 保留 rootDir 会让
+    // src/ 外的测试文件直接报 TS6059, 那正是这批文件长期不被检查的原因。
+    "rootDir": null,
+    "outDir": null,
+    "noEmit": true,
+    // 测试由 vitest 解析(bundler 语义), 不走 Node16 的显式扩展名规则。
+    // 这份配置必须描述测试**实际**的解析方式, 否则报的全是约定噪声不是缺陷。
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "allowImportingTsExtensions": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

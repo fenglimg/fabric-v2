@@ -4,7 +4,10 @@ import { dirname } from "node:path";
 import { GenericIOError } from "@fenglimg/fabric-shared/errors";
 
 import { t } from "../i18n.js";
-import type { InitWriteAction } from "../commands/install.js";
+// T-2: was `../commands/install.js` (the retired v1 installer). The identical
+// type now lives with the shipping pipeline, so this file no longer pins 1,953
+// lines of production-unreachable code into the build.
+import type { InitWriteAction } from "./pipeline/types.js";
 
 export type DiffFileState =
   | "missing"
@@ -75,10 +78,26 @@ export function preparePlannedPath(path: string, action: InitWriteAction): void 
   }
 }
 
+/** Stable marker so a drift abort survives stage-level error folding. */
+export const INSTALL_DRIFT_ABORT_KIND = "install-drift-abort";
+
 export function installDriftAbortError(path: string): GenericIOError {
   return new GenericIOError(t("cli.install.diff.drift-abort", { path }), {
     actionHint: t("cli.install.diff.drift-abort.action-hint", { path }),
     fixable: true,
-    details: { path },
+    details: { path, kind: INSTALL_DRIFT_ABORT_KIND },
   });
+}
+
+/**
+ * True for the structured drift abort above. A stage catching this must RETHROW
+ * rather than fold it into a StageResult: folding stringifies the error into
+ * `errors[]` and drops `actionHint`, which is the half of the message that tells
+ * the user what to actually do.
+ */
+export function isInstallDriftAbortError(error: unknown): boolean {
+  return (
+    error instanceof GenericIOError &&
+    (error.details as { kind?: string } | undefined)?.kind === INSTALL_DRIFT_ABORT_KIND
+  );
 }

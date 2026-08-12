@@ -1,142 +1,105 @@
 /**
- * Integration: FabricError prototype chain — shared.md §2 I5
+ * FabricError prototype chain.
  *
- * I5: All 5 subclasses maintain `instanceof FabricError` AND `instanceof XxxError`.
- *     Object.setPrototypeOf across module boundary does not break instanceof.
+ * `FabricError`'s constructor ends with `Object.setPrototypeOf(this, new.target
+ * .prototype)`. That single line is what keeps `instanceof` working for every
+ * subclass, so the coverage that matters is BREADTH — every concrete error
+ * class, not a hand-picked few.
+ *
+ * The class list is therefore derived from the barrel exports rather than typed
+ * out: a new subclass is covered the moment it is exported, and a deleted one
+ * trips the pinned census below instead of silently shrinking the suite.
  */
 import { describe, expect, it } from 'vitest'
 
-import {
-  FabricError,
-  ConfigError,
-  ConfigPathInvalidError,
-  GenericConfigError,
-  RuleError,
-  RuleValidationError,
-  IOFabricError,
-  PathEscapeError,
-  GenericIOError,
-  MCPError,
-  McpToolError,
-  InitError,
-  InitFrameworkUnknownError,
-} from '../../src/errors/index.js'
+import * as errors from '../../src/errors/index.js'
+import { FabricError } from '../../src/errors/index.js'
 
-// ---------------------------------------------------------------------------
-// I5.1 — Each concrete class is instanceof its abstract parent + FabricError
-// ---------------------------------------------------------------------------
-describe('I5 prototype chain: each subclass instanceof FabricError', () => {
-  it('ConfigPathInvalidError: instanceof ConfigError → FabricError → Error', () => {
-    const err = new ConfigPathInvalidError('bad path', { actionHint: 'Fix the config path.' })
-    expect(err).toBeInstanceOf(ConfigPathInvalidError)
-    expect(err).toBeInstanceOf(ConfigError)
-    expect(err).toBeInstanceOf(FabricError)
-    expect(err).toBeInstanceOf(Error)
+type ErrorCtor = new (message: string, opts: { actionHint: string }) => Error
+
+// Every exported class that descends from Error.
+const exportedErrorClasses = Object.entries(errors).filter(
+  (entry): entry is [string, ErrorCtor] =>
+    typeof entry[1] === 'function' && entry[1].prototype instanceof Error,
+)
+
+// `abstract` is erased at runtime, so it cannot be read off the class. What IS
+// observable: an abstract base always appears as some other exported class's
+// prototype. Leaves — classes nobody extends — are the concrete ones.
+const baseClassNames = new Set(
+  exportedErrorClasses.map(([, cls]) => (Object.getPrototypeOf(cls) as { name?: string }).name),
+)
+const concreteErrorClasses = exportedErrorClasses.filter(([name]) => !baseClassNames.has(name))
+
+/** Named links from `cls` up to Object.prototype, e.g. ConfigPathInvalidError → ConfigError → … */
+function prototypeChainOf(cls: ErrorCtor): string[] {
+  const chain: string[] = []
+  for (let proto = cls.prototype; proto !== null; proto = Object.getPrototypeOf(proto)) {
+    const name = (proto as { constructor?: { name?: string } }).constructor?.name
+    if (name && name !== 'Object') chain.push(name)
+  }
+  return chain
+}
+
+describe('FabricError prototype chain', () => {
+  it('the concrete-subclass set is pinned (add/remove fails this gate)', () => {
+    expect(concreteErrorClasses.map(([name]) => name).sort()).toMatchInlineSnapshot(`
+      [
+        "ConfigPathInvalidError",
+        "GenericConfigError",
+        "GenericIOError",
+        "InitFrameworkUnknownError",
+        "McpToolError",
+        "PathEscapeError",
+        "PersonalScopeLeakError",
+        "RuleValidationError",
+        "StoreWriteTargetUnresolvedError",
+      ]
+    `)
   })
 
-  it('GenericConfigError: instanceof ConfigError → FabricError → Error', () => {
-    const err = new GenericConfigError('config error', { actionHint: 'Check your config.' })
-    expect(err).toBeInstanceOf(GenericConfigError)
-    expect(err).toBeInstanceOf(ConfigError)
-    expect(err).toBeInstanceOf(FabricError)
-    expect(err).toBeInstanceOf(Error)
-  })
+  it.each(concreteErrorClasses)(
+    '%s is instanceof its own class, its base, FabricError and Error',
+    (_name, ErrorClass) => {
+      const err = new ErrorClass('boom', { actionHint: 'Do the thing.' })
 
-  it('RuleValidationError: instanceof RuleError → FabricError → Error', () => {
-    const err = new RuleValidationError('bad rule', { actionHint: 'Fix the rule.' })
-    expect(err).toBeInstanceOf(RuleValidationError)
-    expect(err).toBeInstanceOf(RuleError)
-    expect(err).toBeInstanceOf(FabricError)
-    expect(err).toBeInstanceOf(Error)
-  })
+      expect(err).toBeInstanceOf(ErrorClass)
+      expect(err).toBeInstanceOf(FabricError)
+      expect(err).toBeInstanceOf(Error)
 
-  it('PathEscapeError: instanceof IOFabricError → FabricError → Error', () => {
-    const err = new PathEscapeError('escape attempt', { actionHint: 'Stay within project root.' })
-    expect(err).toBeInstanceOf(PathEscapeError)
-    expect(err).toBeInstanceOf(IOFabricError)
-    expect(err).toBeInstanceOf(FabricError)
-    expect(err).toBeInstanceOf(Error)
-  })
+      // Also assert the intermediate abstract base, which `instanceof
+      // FabricError` alone would not catch if a subclass were re-parented.
+      const base = Object.getPrototypeOf(ErrorClass) as ErrorCtor
+      expect(err).toBeInstanceOf(base)
+      expect(prototypeChainOf(ErrorClass)).toEqual([
+        ErrorClass.name,
+        base.name,
+        'FabricError',
+        'Error',
+      ])
+    },
+  )
 
-  it('GenericIOError: instanceof IOFabricError → FabricError → Error', () => {
-    const err = new GenericIOError('io error', { actionHint: 'Check file permissions.' })
-    expect(err).toBeInstanceOf(GenericIOError)
-    expect(err).toBeInstanceOf(IOFabricError)
-    expect(err).toBeInstanceOf(FabricError)
-    expect(err).toBeInstanceOf(Error)
-  })
+  it.each(concreteErrorClasses)(
+    '%s survives a cross-module prototype reset (the setPrototypeOf contract)',
+    (_name, ErrorClass) => {
+      // Bundlers can re-wrap an Error across a module boundary, resetting its
+      // prototype. Re-creating the instance from the class prototype must yield
+      // an object that still satisfies every instanceof in the chain.
+      const original = new ErrorClass('boom', { actionHint: 'Do the thing.' })
+      const restored = Object.create(ErrorClass.prototype) as Error
+      Object.assign(restored, original)
 
-  it('McpToolError: instanceof MCPError → FabricError → Error', () => {
-    const err = new McpToolError('mcp fail', { actionHint: 'Check MCP server.' })
-    expect(err).toBeInstanceOf(McpToolError)
-    expect(err).toBeInstanceOf(MCPError)
-    expect(err).toBeInstanceOf(FabricError)
-    expect(err).toBeInstanceOf(Error)
-  })
+      expect(restored).toBeInstanceOf(ErrorClass)
+      expect(restored).toBeInstanceOf(FabricError)
+      expect(restored).toBeInstanceOf(Error)
+    },
+  )
 
-  it('InitFrameworkUnknownError: instanceof InitError → FabricError → Error', () => {
-    const err = new InitFrameworkUnknownError('unknown framework', { actionHint: 'Specify framework manually.' })
-    expect(err).toBeInstanceOf(InitFrameworkUnknownError)
-    expect(err).toBeInstanceOf(InitError)
-    expect(err).toBeInstanceOf(FabricError)
-    expect(err).toBeInstanceOf(Error)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// I5.2 — Cross-module boundary: setPrototypeOf does not break instanceof
-// ---------------------------------------------------------------------------
-describe('I5 cross-module prototype chain via Object.setPrototypeOf', () => {
-  it('ConfigPathInvalidError retains instanceof after Object.setPrototypeOf', () => {
-    const original = new ConfigPathInvalidError('original', { actionHint: 'Fix path.' })
-
-    // Simulate what happens when errors cross module boundaries in some bundlers:
-    // the Error is re-wrapped or its prototype is reset.
-    // FabricError constructor already calls Object.setPrototypeOf(this, new.target.prototype)
-    // to handle this — verify it works.
-    const proto = Object.getPrototypeOf(original)
-    const reimported = Object.create(proto) as ConfigPathInvalidError
-    Object.setPrototypeOf(reimported, ConfigPathInvalidError.prototype)
-
-    expect(reimported).toBeInstanceOf(ConfigPathInvalidError)
-    expect(reimported).toBeInstanceOf(FabricError)
-  })
-
-  it('RuleValidationError retains instanceof after explicit prototype reset', () => {
-    const err = new RuleValidationError('rule fail', { actionHint: 'Fix the rule.' })
-
-    // Verify that the constructor-time Object.setPrototypeOf call ensures instanceof works
-    // even if the prototype chain is traversed from a different module scope
-    const reconstructed = err
-    expect(reconstructed instanceof RuleValidationError).toBe(true)
-    expect(reconstructed instanceof RuleError).toBe(true)
-    expect(reconstructed instanceof FabricError).toBe(true)
-  })
-
-  it('McpToolError prototype chain survives serialization and reconstruction via Object.create', () => {
-    const err = new McpToolError('mcp tool fail', { actionHint: 'Check MCP tool.' })
-
-    // Re-create with same prototype (cross-boundary simulation)
-    const restored = Object.create(McpToolError.prototype) as McpToolError
-    Object.assign(restored, err)
-
-    expect(restored instanceof McpToolError).toBe(true)
-    expect(restored instanceof MCPError).toBe(true)
-    expect(restored instanceof FabricError).toBe(true)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// I5.3 — Negative: non-FabricError does NOT satisfy instanceof FabricError
-// ---------------------------------------------------------------------------
-describe('I5 negative: plain Error is not instanceof FabricError', () => {
-  it('plain Error is not instanceof FabricError', () => {
-    const plainErr = new Error('plain error')
-    expect(plainErr).not.toBeInstanceOf(FabricError)
-  })
-
-  it('TypeError is not instanceof FabricError', () => {
-    const typeErr = new TypeError('type error')
-    expect(typeErr).not.toBeInstanceOf(FabricError)
+  it.each([
+    ['Error', new Error('plain')],
+    ['TypeError', new TypeError('type')],
+  ])('a built-in %s is NOT instanceof FabricError', (_name, err) => {
+    expect(err).not.toBeInstanceOf(FabricError)
   })
 })

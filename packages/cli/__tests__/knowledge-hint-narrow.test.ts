@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const hookPath = fileURLToPath(
-  new URL("../templates/hooks/knowledge-hint-narrow.cjs", import.meta.url),
+  new URL("../templates/hooks/lib/knowledge-hint-narrow.cjs", import.meta.url),
 );
 
 type NarrowEntry = {
@@ -103,6 +103,16 @@ type HookModule = {
     targetPaths: string[],
     currentRevisionHash: string,
   ) => { render: boolean; narrow: NarrowEntry[]; cache: SessionHintsCache };
+  narrowDedupWindowPath: (projectRoot: string, sessionId: string) => string;
+  readNarrowDedupWindow: (
+    projectRoot: string,
+    sessionId: string,
+  ) => { revision_hash: string; counter: number; recent: unknown[] };
+  writeNarrowDedupWindow: (
+    projectRoot: string,
+    sessionId: string,
+    state: { revision_hash: string; counter: number; recent: unknown[] },
+  ) => void;
   CONSTANTS: {
     CLI_TIMEOUT_MS: number;
     SUMMARY_MAX_LEN: number;
@@ -1857,4 +1867,62 @@ describe("knowledge-hint-narrow.cjs — dual-sink PreToolUse (Goal A)", () => {
     expect(env.hookSpecificOutput.additionalContext).toMatch(/KT-DEC-0001/);
   });
 
+});
+
+// W5 #18*: the dedup window's `counter` is a TURN counter, and turns belong to
+// one conversation. It used to live in a single shared .fabric/.cache file, so
+// concurrently open client windows consumed each other's window — window B lost
+// hints purely because window A had already seen them, which defeats the very
+// purpose of the suppression (B's agent was never trained on A's hint).
+describe("knowledge-hint-narrow.cjs — dedup window is per-session (W5 #18*)", () => {
+  it("gives each session its own sidecar file", () => {
+    const root = mkRoot("narrow-dedup-paths");
+    expect(hook.narrowDedupWindowPath(root, "sess-a")).not.toBe(
+      hook.narrowDedupWindowPath(root, "sess-b"),
+    );
+  });
+
+  it("sanitizes session ids so they cannot escape .fabric/.cache/", () => {
+    const root = mkRoot("narrow-dedup-traversal");
+    const p = hook.narrowDedupWindowPath(root, "../../etc/passwd");
+    expect(p.startsWith(join(root, ".fabric", ".cache"))).toBe(true);
+    expect(p).not.toContain("..");
+  });
+
+  it("does not let one session's turns consume another's window", () => {
+    const root = mkRoot("narrow-dedup-isolation");
+    hook.writeNarrowDedupWindow(root, "sess-a", {
+      revision_hash: "rev-1",
+      counter: 7,
+      recent: [{ path: "src/foo.ts", entry_id: "KT-DEC-0001", at_turn: 7 }],
+    });
+    expect(hook.readNarrowDedupWindow(root, "sess-a").counter).toBe(7);
+
+    const b = hook.readNarrowDedupWindow(root, "sess-b");
+    expect(b.counter).toBe(0);
+    expect(b.recent).toEqual([]);
+  });
+
+  // The behaviour the file layout exists to protect: a second window still gets
+  // the hint the first window already consumed.
+  it("still emits to a second window for a path the first window already saw", () => {
+    const root = mkRoot("narrow-dedup-two-windows");
+    const narrow = [makeEntry("KT-DEC-0001", "decision", "proven", "shared rule")];
+    const fire = (sessionId: string) =>
+      captureStderr({
+        cwd: root,
+        payload: {
+          session_id: sessionId,
+          tool_name: "Edit",
+          tool_input: { file_path: "src/foo.ts" },
+        },
+        cliResult: makeCliPayload(narrow),
+      });
+
+    const windowA = fire("sess-window-a");
+    expect(windowA.join("")).toContain("KT-DEC-0001");
+
+    const windowB = fire("sess-window-b");
+    expect(windowB.join("")).toContain("KT-DEC-0001");
+  });
 });

@@ -61,7 +61,7 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
 
   const installTarget = trackFixture(`fab-i18n-install-${locale}`);
   vi.resetModules();
-  const { installCommand } = await import("../src/commands/install.ts");
+  const { installCommand } = await import("../src/commands/install-v2.ts");
   const installOutput = await captureOutput(async () => {
     await installCommand.run?.({ args: { target: installTarget } } as never);
   });
@@ -86,11 +86,12 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
     await configCmd.run?.({ args: { target: configUninitTarget } } as never);
   });
 
-  // v2.0.0-rc.37 Wave A2: `fabric serve` snapshot removed alongside the
-  // command's quarantine (per [[fabric-serve-quarantine-not-delete]]). The
-  // serve i18n strings remain in locales for backward-compat consumers but
-  // are no longer reachable via the main CLI surface — see
-  // packages/server-http-experimental/README.md for the restoration recipe.
+  // v2.0.0-rc.37 Wave A2: `fabric serve` snapshot removed alongside the command.
+  // Its i18n strings were kept "for backward-compat consumers" that never
+  // materialized; W4 B5's dead-key census found them unreferenced and deleted
+  // them, and W4 B7 deleted the quarantined package they belonged to. The
+  // surviving `doctor.check.stale_serve_lock.*` keys are live — main still runs
+  // a read-only lock probe.
 
   // MINIMAL uninstall snapshot — description + usage help-text first line only.
   // Per plan clarification #8, uninstall stdout iterates across rc.9/10/etc.;

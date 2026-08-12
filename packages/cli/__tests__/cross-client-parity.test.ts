@@ -47,10 +47,12 @@ function extractWerewolfFixture(register: (dir: string) => void): string {
   return root;
 }
 
+// W4 I2: knowledge-hint-narrow.cjs dropped from this hard-coded top-level list
+// — it ships under hooks/lib/ now, and the lib parity check below enumerates
+// that directory dynamically, so it stays covered without being named here.
 const HOOK_SCRIPTS = [
   "fabric-hint.cjs",
   "knowledge-hint-broad.cjs",
-  "knowledge-hint-narrow.cjs",
   "cite-policy-evict.cjs",
 ];
 const HOOK_CLIENTS = [".claude", ".codex"];

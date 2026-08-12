@@ -13,6 +13,11 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       exclude: [
         "src/**/*.test.ts",
+        // Test-only support code living under src/ so colocated *.test.ts
+        // siblings can import it without crossing tsconfig `rootDir`. It is
+        // never reachable from the tsup entry (src/index.ts) — excluding it
+        // keeps it out of the 75% denominator like its *.test.ts consumers.
+        "src/**/__testing__/**",
         "src/**/*.d.ts",
         "src/**/types*.ts",
         "src/**/types/**",

@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { backfillUnboundProject } from "../src/install/backfill-unbound-project.js";
-import { bindCreatedStoreToProject } from "../src/install/install-onboarding.js";
+import { storeCreate } from "../src/store/store-ops.js";
+import { ensureStoreProjectBinding } from "../src/install/store-project-onboarding.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
 import { runGlobalInstall } from "../src/install/run-global-install.js";
 import { readStoreProjects } from "@fenglimg/fabric-shared";
@@ -60,7 +61,11 @@ describe("backfillUnboundProject", () => {
     // Create + bind a local team store so the store is genuinely mounted, then
     // strip the project coordinate to reproduce the pre-fix legacy state.
     saveProjectConfig({ required_stores: [] }, projectRoot);
-    await bindCreatedStoreToProject(projectRoot, "team", { globalRoot });
+    // T-2: fixture setup now composes the SAME two primitives the shipping
+    // store stage uses (storeCreate + ensureStoreProjectBinding) instead of the
+    // retired v1 `bindCreatedStoreToProject` wrapper.
+    await storeCreate("team", NOW, { globalRoot });
+    await ensureStoreProjectBinding(projectRoot, "team", { globalRoot, now: NOW });
     const bound = loadProjectConfig(projectRoot);
     saveProjectConfig(
       {

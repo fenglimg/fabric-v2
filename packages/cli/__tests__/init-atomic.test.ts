@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as atomicWriteModule from "@fenglimg/fabric-shared/node/atomic-write";
-import { initFabric } from "../src/commands/install.ts";
 import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
+  runScaffoldOnly,
 } from "./helpers/init-test-utils.ts";
 
 const tempRoots: string[] = [];
@@ -42,7 +42,7 @@ describe("init-atomic: no .tmp files remain after fresh init", () => {
     const target = createWerewolfFixtureRoot("fab-atomic-no-tmp");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const fabricDir = join(target, ".fabric");
     const tmpFiles = collectTmpFiles(fabricDir);
@@ -53,7 +53,7 @@ describe("init-atomic: no .tmp files remain after fresh init", () => {
     const target = createWerewolfFixtureRoot("fab-atomic-no-tmp-claude");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const claudeDir = join(target, ".claude");
     const tmpFiles = collectTmpFiles(claudeDir);
@@ -61,24 +61,20 @@ describe("init-atomic: no .tmp files remain after fresh init", () => {
   });
 });
 
-describe("init-atomic: events.jsonl created as raw file and populated by install ledger event", () => {
-  it("events.jsonl exists and contains install_diff_applied after fresh init", async () => {
+describe("init-atomic: events.jsonl created as a raw file", () => {
+  it("events.jsonl exists as an empty regular file after fresh scaffold", async () => {
     const target = createWerewolfFixtureRoot("fab-atomic-events");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const eventsPath = join(target, ".fabric", "events.jsonl");
     expect(existsSync(eventsPath)).toBe(true);
 
-    // rc.23 TASK-012 (F8a): scaffold writes a 0-byte events.jsonl, then the
-    // install stage appends `install_diff_applied` (the legacy
-    // `init_scan_completed` event was removed alongside the baseline scan).
-    // Asserting non-empty + contains install_diff_applied verifies both the
-    // raw-create contract and the install-ledger contract.
-    const raw = readFileSync(eventsPath, "utf8");
-    expect(raw.length).toBeGreaterThan(0);
-    expect(raw).toContain("install_diff_applied");
+    // Scaffold writes a 0-byte events.jsonl directly (never through
+    // atomicWriteText — asserted by the sibling test). Appenders grow it later,
+    // so an empty file right after scaffold is the correct expectation.
+    expect(readFileSync(eventsPath, "utf8")).toBe("");
   });
 
   it("atomicWriteText is NOT called for events.jsonl", async () => {
@@ -87,7 +83,7 @@ describe("init-atomic: events.jsonl created as raw file and populated by install
 
     const spy = vi.spyOn(atomicWriteModule, "atomicWriteText");
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const eventsCallsites = spy.mock.calls.filter(([p]) => p.endsWith("events.jsonl"));
     expect(eventsCallsites).toHaveLength(0);
@@ -99,7 +95,7 @@ describe("init-atomic: events.jsonl created as raw file and populated by install
 
     const spy = vi.spyOn(atomicWriteModule, "atomicWriteJson");
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const eventsCallsites = spy.mock.calls.filter(([p]) => p.endsWith("events.jsonl"));
     expect(eventsCallsites).toHaveLength(0);
@@ -119,7 +115,7 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
 
     const spy = vi.spyOn(atomicWriteModule, "atomicWriteJson");
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const calls = spy.mock.calls.filter(([p]) => p.endsWith("agents.meta.json"));
     expect(calls).toHaveLength(0);
@@ -132,7 +128,7 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
 
     const spy = vi.spyOn(atomicWriteModule, "atomicWriteJson");
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const calls = spy.mock.calls.filter(([p]) => p.endsWith("forensic.json"));
     expect(calls).toHaveLength(1);
@@ -144,7 +140,7 @@ describe("init-atomic: P1 scaffold artifacts use atomic writes", () => {
 
     const spy = vi.spyOn(atomicWriteModule, "atomicWriteText");
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     // rc.23 TASK-012 (F8a): KB is intentionally empty on fresh install. No
     // .md files under .fabric/knowledge/ should be written by `fabric install`
@@ -162,7 +158,7 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     const target = createWerewolfFixtureRoot("fab-atomic-forensic-content");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const forensicPath = join(target, ".fabric", "forensic.json");
     expect(existsSync(forensicPath)).toBe(true);
@@ -175,7 +171,7 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     const target = createWerewolfFixtureRoot("fab-atomic-no-legacy-v1");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     // v2.0: bootstrap/README.md and INITIAL_TAXONOMY.md must not be written.
     expect(existsSync(join(target, ".fabric", "bootstrap", "README.md"))).toBe(false);
@@ -186,7 +182,7 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     const target = createWerewolfFixtureRoot("fab-atomic-config-included");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const configPath = join(target, ".fabric", "fabric-config.json");
     expect(existsSync(configPath)).toBe(true);
@@ -206,7 +202,7 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     const target = createWerewolfFixtureRoot("fab-atomic-config-no-tmp");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     // No .tmp residue (the helper uses a plain idempotent writeFileSync,
     // which is atomic enough for a 1KB JSON; collectTmpFiles must remain empty).
@@ -220,7 +216,7 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     const target = createWerewolfFixtureRoot("fab-atomic-no-cabinet");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     // W5 I1: the .fabric/knowledge/{decisions,...}/ cabinet (with .gitkeep
     // markers) is no longer scaffolded. Team knowledge lives in mounted stores.
@@ -237,7 +233,7 @@ describe("init-atomic: artifact content correctness after atomic lift", () => {
     const target = createWerewolfFixtureRoot("fab-atomic-gitignore");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const gitignorePath = join(target, ".fabric", ".gitignore");
     expect(existsSync(gitignorePath)).toBe(true);

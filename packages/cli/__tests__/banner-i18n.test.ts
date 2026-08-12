@@ -203,8 +203,6 @@ const CONTRACTS: Record<string, KeyContract> = {
     protectedTokens: ["📋 Fabric:", "7 "], // numeric "${count} " survives
     zhCNContract: ["7 条", "最早一条 3.2 天前"],
     enHints: ["pending knowledge entries", "oldest is", "3.2d old"],
-    // ISS-20260712-017: EN must not contain Chinese age fragments
-    enMustNotContain: ["最早一条", "天前"],
   },
   reviewCta: {
     protectedTokens: ["/fabric-review"],
@@ -308,7 +306,11 @@ describe("banner-i18n: 11 keys × 4 variants — render matrix", () => {
       it("en: renders non-empty + English hint + protected tokens", () => {
         const out = renders["en"]!;
         expect(out.length).toBeGreaterThan(0);
-        // No Chinese characters in the en variant
+        // No Chinese characters in the en variant. This one line IS the
+        // ISS-20260712-017 guard (en \u8f93\u51fa\u6df7\u5165\u4e2d\u6587\u5e74\u9f84\u7247\u6bb5\u5982\u300c\u6700\u65e9\u4e00\u6761\u300d/\u300c\u5929\u524d\u300d)
+        // \u2014\u2014 \u6574\u7c7b\u5b57\u7b26\u6bd4\u9010\u4e2a\u7247\u6bb5\u5217\u4e3e\u4e25\u683c,\u6240\u4ee5\u4e0d\u8981\u518d\u5f80 CONTRACTS \u91cc\u52a0
+        // per-key \u7684\u4e2d\u6587\u9ed1\u540d\u5355:\u90a3\u79cd\u5b57\u6bb5\u65e2\u5197\u4f59\u53c8\u4e0d\u4f1a\u88ab\u672c\u5faa\u73af\u8bfb\u5230(\u66fe\u6709\u8fc7\u4e00\u4e2a
+        // `enMustNotContain`,\u58f0\u660e\u4e86\u4f46\u6ca1\u6709\u4efb\u4f55\u65ad\u8a00\u6d88\u8d39\u5b83)\u3002
         expect(out).not.toMatch(/[\u4e00-\u9fff]/);
         for (const token of contract.protectedTokens) {
           expect(out).toContain(token);

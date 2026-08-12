@@ -23,6 +23,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// T-5: use the REAL renderer rather than three hand-copied stubs of its output
+// format. vi.importActual bypasses the mock registry, so the doMock isolation
+// these tests need is preserved while format drift becomes impossible.
+const { renderBacklogAgeLine } = await vi.importActual<{
+  renderBacklogAgeLine: (m: { count: number; oldest_days: number | null }) => string;
+}>("@fenglimg/fabric-server");
+
 const originalExitCode = process.exitCode;
 const tempRoots: string[] = [];
 
@@ -64,8 +71,7 @@ describe("G5 doctor metrics.jsonl append", () => {
         median_age_days: 2,
         ages_days: [1, 3],
       }),
-      renderBacklogAgeLine: (m: { count: number; oldest_days: number | null }) =>
-        m.count === 0 ? "  backlog: 0 high-value" : `  backlog: ${m.count} high-value, oldest ${m.oldest_days}d`,
+      renderBacklogAgeLine,
       // G5: append helper delegated back into the real doctor-health service via
       // this mocked stub — the test asserts the CALLER wrote to metrics.jsonl,
       // NOT the internals. So we let it use the REAL fs.appendFileSync via the
@@ -111,8 +117,7 @@ describe("G5 doctor metrics.jsonl append", () => {
         median_age_days: 5,
         ages_days: [5],
       }),
-      renderBacklogAgeLine: (m: { count: number; oldest_days: number | null }) =>
-        m.count === 0 ? "  backlog: 0 high-value" : `  backlog: ${m.count} high-value, oldest ${m.oldest_days}d`,
+      renderBacklogAgeLine,
     }));
 
     const { doctorCommand } = await import("../src/commands/doctor.ts");
@@ -152,7 +157,7 @@ describe("G5 doctor metrics.jsonl append", () => {
         median_age_days: 0,
         ages_days: [],
       }),
-      renderBacklogAgeLine: () => "  backlog: 0 high-value",
+      renderBacklogAgeLine,
     }));
 
     // doctor.ts imports { appendFileSync } from "node:fs" at top level. The

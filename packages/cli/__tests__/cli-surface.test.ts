@@ -136,8 +136,8 @@ describe("CLI surface drift gate (docs/test-seed/cli.md §1)", () => {
     expect(flags, DRIFT_HINT).toEqual(expect.arrayContaining(["target"]));
   });
 
-  // v2.0.0-rc.37 Wave A2: serve --port / --host drift gate removed; the
-  // serve command is quarantined to packages/server-http-experimental/ per
-  // [[fabric-serve-quarantine-not-delete]]. Restore alongside startHttpServer
-  // if the web UI surface is ever re-enabled.
+  // v2.0.0-rc.37 Wave A2: serve --port / --host drift gate removed along with
+  // the serve command itself. The HTTP surface lived in a quarantined package
+  // until W4 B7 deleted it; recover from git history alongside startHttpServer
+  // if a web UI surface is ever re-enabled.
 });

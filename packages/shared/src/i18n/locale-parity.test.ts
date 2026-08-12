@@ -36,4 +36,69 @@ describe("i18n locale parity census", () => {
 
     expect({ emptyEn, emptyZh }).toEqual({ emptyEn: [], emptyZh: [] });
   });
+
+  // -------------------------------------------------------------------------
+  // W4 B5 — dead-key ratchet.
+  //
+  // 403 of 1265 keys (31.9%) were provably unreferenced: the whole v1.8
+  // `dashboard.*` subsystem (201), the retired `--force-skills-only` /
+  // `--force-hooks-only` install flags, and the `agents_meta` check that went
+  // with the retired co-location index. Nothing failed while they sat there —
+  // an unused key costs nothing at runtime, which is exactly why they piled up
+  // for two minor lines. This ratchet is the only thing that notices.
+  //
+  // To change the count you must RE-RUN THE CENSUS, not just edit the number.
+  // The census is not a checked-in script on purpose (the last one,
+  // scripts/i18n-audit.mjs, rotted into a "not committed" one-off that duplicated
+  // the parity test above): scan every file under the repo — every suffix,
+  // including .cjs hook templates and installed .claude/.codex copies — for each
+  // key, treating a key as ALIVE when a file `includes()` it literally OR it
+  // matches a `${...}`-wildcarded template literal found in the source. Both
+  // halves are required: `doctor.check.<code>.message.${singular}` and
+  // `cli.config.fields.${key}.label` are built dynamically and a literal-only
+  // scan reports 562 false deaths.
+  // -------------------------------------------------------------------------
+  // 2026-08-11 (W5 轴F): 862 → 865. Net +3 = four added (`cli.store.{backfill,
+  // rescope,promote,reroot}.description`, routing the store migration commands'
+  // hardcoded English through t() like every other store command) minus one
+  // removed (`doctor.conflict.deep_no_judge`, orphaned when the empty
+  // `audit conflicts --deep` flag was deleted). A fifth, `cli.store.link
+  // .description`, was added and then removed in the same pass when the whole
+  // `store link` command turned out to be dead on arrival and was deleted.
+  // Census re-run per the note above: 10,011 files, 454 template patterns,
+  // 0 provably dead.
+  //
+  // Re-running it caught a bug worth repeating here, because it is the natural
+  // way to write the wildcard half and it is wrong: escape the key THEN
+  // substitute `${...}` and you get `\[A-Za-z0-9_.-]+` — an escaped literal
+  // bracket matching nothing — which reported 100+ live keys as dead. Split on
+  // `${...}` first, escape each literal segment, then join with the wildcard.
+  it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
+    expect(enKeys.length).toBe(865);
+  });
+
+  it("no key resurrects the deleted v1.8 dashboard namespace", () => {
+    // The dashboard subsystem has no source left in the tree — 201 orphaned
+    // strings were all that remained of it. A `dashboard.*` key reappearing
+    // means someone is reviving a UI that does not exist.
+    expect(enKeys.filter((k) => k.startsWith("dashboard."))).toEqual([]);
+  });
+
+  // Absorbed from scripts/i18n-audit.mjs check [3] before deleting it: an `en`
+  // value containing CJK is an untranslated string that shipped to English
+  // users. Its check [4] ("zh value byte-identical to en") was NOT absorbed —
+  // 21 of those are intentional (protected tokens, format strings, proper
+  // nouns), so as a gate it is pure churn.
+  it("no en value carries untranslated CJK", () => {
+    const INTENTIONAL_CJK = new Set([
+      // Quotes the literal anti-trigger token a SKILL.md description must contain.
+      "doctor.check.skill_description.remediation",
+      // A language picker labels each language in its own script, by design.
+      "cli.install.language.option.zh-CN",
+    ]);
+    const leaked = enKeys.filter(
+      (k) => !INTENTIONAL_CJK.has(k) && /[一-鿿]/.test(enMessages[k]),
+    );
+    expect(leaked).toEqual([]);
+  });
 });

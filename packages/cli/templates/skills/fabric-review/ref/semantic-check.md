@@ -1,6 +1,6 @@
 # Semantic Check Guidance — fabric-review
 
-LLM-assisted duplicate / contradiction / subsumption detection plus activation/actionability review during `pending` mode (and on demand during `topic` mode).
+LLM-assisted duplicate / contradiction / subsumption detection plus activation/actionability review during `pending` mode (and on demand during the `maintain`/browse sub-flow).
 
 > Boundary B (locked): "extraction classification / layer inference / slug naming / mode inference / **semantic dedup** → Skill (LLM); pending file write / frontmatter assembly / idempotency check / counter mgmt / layer-flip transaction / atomic promote → MCP (deterministic)"
 
@@ -10,7 +10,7 @@ Semantic check is the LLM's job — the MCP tool does NOT compare meaning.
 
 For each pending entry to be presented:
 
-1. Call `fab_pending action="search"` with `query=<title or summary keywords>` and `filters.type=<same type>` to fetch already-canonical entries of the same type.
+1. Call `fab_recall(paths=[<the code paths the pending entry is about>])` to fetch the ranked canonical neighbours. Do NOT gather this set with `fab_pending action="search"`: its query is a substring match, so it only returns entries that reused your wording — and a differently-worded duplicate is the whole reason this check exists. An empty `search` result means the guessed terms missed, not that nothing overlaps.
 2. Compare semantically (LLM judgment, not string match). 三类判断均为 LLM 主观判断 dup/subsumption；具体阈值不可量化（不使用百分比 / 相似度数值伪精度）：
    - **Duplicate** — same essential claim. 标题与摘要表达同一核心结论，pending 未提供新证据或新上下文。Flag: `⚠ Possible duplicate of <stable_id>`.
    - **Contradiction** — opposing claims about the same subject. 例：一个 entry 说 "use X"，pending 说 "avoid X"，且作用域一致。Flag: `⚠ Contradicts <stable_id>`.

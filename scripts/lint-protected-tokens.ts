@@ -10,7 +10,6 @@ interface Violation {
 }
 
 const ROOT = process.cwd();
-const BOOTSTRAP_DIR = path.join(ROOT, "packages", "cli", "templates", "bootstrap");
 const SKILLS_DIR = path.join(ROOT, "packages", "cli", "templates", "skills");
 const PROTECTED_TOKENS_PATH = path.join(
   ROOT,
@@ -20,17 +19,6 @@ const PROTECTED_TOKENS_PATH = path.join(
   "i18n",
   "protected-tokens.ts",
 );
-
-// Tokens every bootstrap template MUST contain verbatim. The default edit-time
-// entry point is the recall-first shortcut; plan_context + get_sections remain
-// protected as the fallback when the returned bodies need manual narrowing.
-// Drifting any of these silently breaks the AI-client handshake.
-const BOOTSTRAP_REQUIRED_TOKENS = [
-  "fab_recall",
-  "fab_plan_context",
-  "fab_get_knowledge_sections",
-  ".fabric/events.jsonl",
-];
 
 // Tokens every SKILL.md MUST contain verbatim. v2.0 skills are intentionally
 // mixed bilingual (Chinese narrative + English protocol tokens) so the lint
@@ -97,12 +85,13 @@ const SKILL_MCP_TOKENS: Record<string, string[]> = {
   "fabric-sync": ["thin shim", "CLI", "本 skill 只", "NEVER"],
 };
 
-// PROTECTED_TOKENS registry MUST include these — they form the canonical
-// v2.0 protocol surface (MCP tools + ledger anchors + hard-rule keywords)
-// that any future tooling reuse should respect.
+// PROTECTED_TOKENS registry MUST include these — the protocol surface (live
+// MCP tools + ledger anchors + hard-rule keywords) that any future tooling
+// reuse has to respect.
 const REGISTRY_REQUIRED_TOKENS = [
-  ...BOOTSTRAP_REQUIRED_TOKENS,
   ...SKILL_REQUIRED_TOKENS,
+  "fab_recall",
+  ".fabric/events.jsonl",
   "fab_propose",
   "fab_review",
   "relevance_scope",
@@ -124,12 +113,6 @@ async function collectFiles(directory: string): Promise<string[]> {
   try {
     entries = await readdir(directory, { withFileTypes: true });
   } catch (error) {
-    // rc.19 TASK-006 deleted packages/cli/templates/bootstrap/. The single
-    // source of truth for bootstrap content is now
-    // packages/shared/src/templates/bootstrap-canonical.ts, validated by its
-    // own unit-test invariants in bootstrap-canonical.test.ts. Treat a
-    // missing legacy directory as "nothing to lint here". rc.22 follow-up:
-    // repoint this script at the TS canonical for deeper protection.
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return [];
     }
@@ -184,12 +167,6 @@ function pushMissingTokenViolations(
       });
     }
   }
-}
-
-export function validateBootstrapFile(filePath: string, source: string): Violation[] {
-  const violations: Violation[] = [];
-  pushMissingTokenViolations(violations, filePath, source, BOOTSTRAP_REQUIRED_TOKENS);
-  return violations;
 }
 
 export function validateSkillFile(filePath: string, source: string): Violation[] {
@@ -271,15 +248,9 @@ export async function main(): Promise<void> {
   const protectedTokens = parseProtectedTokens(protectedTokenSource);
   const violations = validateProtectedTokenRegistry(protectedTokens);
 
-  const bootstrapFiles = await collectFiles(BOOTSTRAP_DIR);
   const skillFiles = (await collectFiles(SKILLS_DIR)).filter((filePath) =>
     filePath.endsWith("SKILL.md"),
   );
-
-  for (const filePath of bootstrapFiles) {
-    const source = await readFile(filePath, "utf8");
-    violations.push(...validateBootstrapFile(filePath, source));
-  }
 
   for (const filePath of skillFiles) {
     const source = await readFile(filePath, "utf8");
@@ -287,10 +258,10 @@ export async function main(): Promise<void> {
     violations.push(...validateSkillRefReachability(filePath, source, await listSkillRefFiles(filePath)));
   }
 
-  const totalChecked = bootstrapFiles.length + skillFiles.length;
+  const totalChecked = skillFiles.length;
 
   if (violations.length === 0) {
-    process.stdout.write(`protected token lint passed: ${totalChecked} template files checked.\n`);
+    process.stdout.write(`protected token lint passed: ${totalChecked} SKILL.md files checked.\n`);
     return;
   }
 

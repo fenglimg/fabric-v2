@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-const hook = require("../templates/hooks/knowledge-hint-narrow.cjs") as {
+const hook = require("../templates/hooks/lib/knowledge-hint-narrow.cjs") as {
   metaFreshnessToken: (cwd: string) => number | null;
   narrowResultCacheFileName: (sessionId: string) => string;
   pathSetKey: (paths: string[]) => string;

@@ -46,7 +46,7 @@ const { join } = require("node:path");
 // the parity-trivial shared structural primitives — sectionBar (title row) +
 // scopeBadge ([team]/[project]/[personal]) — from the .cjs theme mirror. This is
 // the ONLY shared-theme dependency the hook may take: lib/theme.cjs is byte-locked
-// to packages/shared/src/theme.ts by theme-parity.test.ts (G-THEME). The hook MUST
+// to packages/shared/src/theme.ts, which lib/theme.cjs is compiled from. The hook MUST
 // NEVER reach for the CLI-only ESM/TS structure layer (the tree / grid primitives
 // under packages/cli/src/tui) — it is unrequireable from a .cjs runtime; the HUD
 // deliberately uses plain two-space indent instead of the complex tree() primitive.
@@ -523,6 +523,15 @@ const TRUNCATION_THRESHOLD = 12;
 // DEFAULT_REVIEW_HINT_PENDING_COUNT (the Stop hook's review threshold) so the two
 // surfaces agree on "how much pending is too much". Strictly `> threshold`.
 const REVIEW_PENDING_THRESHOLD = 10;
+
+// ...and the OTHER half of that agreement (W3): the Stop hook fires on
+// count-OR-age, so a count-only rung here meant 3 entries rotting for a month
+// nudged at session END but stayed invisible at session START — the one moment
+// the user is actually deciding what to do next. `oldestPendingMtimeMs` was
+// already being computed by liveKnowledgeStats and thrown away here.
+// Default mirrors hint-config's DEFAULT_REVIEW_HINT_PENDING_AGE_DAYS; the knob
+// is the same `review_hint_pending_age_days` so one config edit moves both.
+const DEFAULT_REVIEW_PENDING_AGE_DAYS = 7;
 
 // `fabric plan-context-hint` is a thin wrapper over planContext(); on a
 // well-seeded repo it returns in ~100ms. Two-second cap is defensive — any
@@ -1093,7 +1102,7 @@ function renderAiSink(opts) {
   // flat `ALWAYS-ACTIVE RULES (...)` header. The store label is preserved on the
   // human sink (renderScopeStoreLabel); the AI sink leads with the count title.
   // sectionBar degrades to `# <title>` when color is off (NO_COLOR / non-TTY),
-  // byte-locked to the TS source by theme-parity.
+  // compiled from the TS source (packages/shared/src/theme.ts).
   lines.push(
     headerRule(
       zh
@@ -1291,18 +1300,43 @@ function buildSessionStartSinks(cwd, payload, env) {
       segments.push(zh ? "import 待补(KB 稀疏)" : "import (sparse KB)");
     }
 
-    // review — pending backlog exceeds REVIEW_PENDING_THRESHOLD (live count).
+    // review — pending backlog exceeds REVIEW_PENDING_THRESHOLD (live count) OR
+    // the oldest pending entry has been sitting longer than the age knob. Two
+    // different failures: "too many to face" vs "few but rotting"; the count
+    // rung alone never catches the second.
     if (!dismissed.has("review") && snapshot !== null && bindingsSnapshotReader !== null) {
       let pendingCount = 0;
+      let oldestPendingMtimeMs = null;
       try {
         const live = bindingsSnapshotReader.liveKnowledgeStats(snapshot);
         if (live && Number.isFinite(live.pendingCount)) pendingCount = Math.floor(live.pendingCount);
+        if (live && Number.isFinite(live.oldestPendingMtimeMs)) {
+          oldestPendingMtimeMs = live.oldestPendingMtimeMs;
+        }
       } catch {
         pendingCount = 0;
       }
+      const ageDays = readConfigNumber(
+        cwd,
+        "review_hint_pending_age_days",
+        DEFAULT_REVIEW_PENDING_AGE_DAYS,
+        { min: Number.MIN_VALUE },
+      );
+      // Guard on pendingCount > 0: a store with zero pending has no oldest
+      // entry, and a stale/absent mtime must not manufacture an age nudge.
+      const oldestDays =
+        pendingCount > 0 && oldestPendingMtimeMs !== null
+          ? (nowMs - oldestPendingMtimeMs) / 86_400_000
+          : null;
       if (pendingCount > REVIEW_PENDING_THRESHOLD) {
         segments.push(
           zh ? `review ${pendingCount} 条 pending 待审` : `review ${pendingCount} pending`,
+        );
+      } else if (oldestDays !== null && oldestDays >= ageDays) {
+        segments.push(
+          zh
+            ? `review ${pendingCount} 条 pending 已挂 ${oldestDays.toFixed(0)} 天`
+            : `review ${pendingCount} pending, oldest ${oldestDays.toFixed(0)}d`,
         );
       }
     }

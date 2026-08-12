@@ -11,6 +11,7 @@
     "test": "pnpm -r --if-present test",
     "test:coverage": "pnpm -r --if-present test:coverage",
     "test:strategy": "node scripts/test-strategy-gate.mjs",
+    "test:dangling-refs": "node scripts/lint-dangling-refs.mjs",
     "test:store-only-e2e": "node scripts/store-only-e2e.mjs",
     "test:upgrade-e2e": "node scripts/upgrade-e2e.mjs",
     "dogfood:first-value": "node scripts/dogfood-first-value.mjs",
@@ -18,6 +19,7 @@
     "dogfood:quality-flywheel": "node scripts/dogfood-quality-flywheel.mjs",
     "lint": "knip --strict",
     "typecheck": "pnpm -r exec tsc --noEmit",
+    "typecheck:tests": "node scripts/typecheck-tests.mjs",
     "prepare": "lefthook install"
   },
   "devDependencies": {

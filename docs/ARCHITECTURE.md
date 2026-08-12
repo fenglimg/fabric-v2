@@ -6,18 +6,18 @@
 
 Fabric 是 pnpm monorepo，运行时分为 3 个包：
 
-- `packages/cli`：`fabric` CLI。负责 install、store、sync、info、doctor、config、uninstall、audit、inspect，以及 hook / Skill / MCP client 配置写入。
+- `packages/cli`：`fabric` CLI。命令全集见 `src/commands/index.ts` 的 `allCommands`（每条自带存在理由的注释）；另负责 hook / Skill / MCP client 配置写入。
 - `packages/server`：stdio-only MCP server。负责知识检索、提取、review、doctor 服务、event ledger、metrics。
 - `packages/shared`：跨 CLI / server 共享的 Zod schema、i18n、错误类型、atomic-write helper 和 resolver 类型。
 
-历史 HTTP / REST / SSE / Dashboard 代码已隔离到 `packages/server-http-experimental`。主线 CLI 不注册 `fabric serve`，server 主线不启动 HTTP listener；该 package 被 `pnpm-workspace.yaml` 排除，也不得进入主线 package dependency、module specifier、CI 或 release input。
+v1.8 时代的 HTTP / REST / SSE / Dashboard 代码曾隔离成独立 package，已于 W4 B7 删除 —— 三端客户端全走 MCP stdio，没有任何消费者，且删除前它已 import 了仓内不存在的符号(编译不过)。CLI 不注册 `fabric serve`，server 不启动 HTTP listener。要复活去 git 历史取，不要重新引入一个"以后可能用得上"的隔离包:隔离相对 git 历史的边际价值是零，代价却是一个会持续腐烂的活目录。
 
 ## Runtime Surfaces
 
 Fabric 有 3 个用户可见 surface：
 
 - CLI：人类在 terminal 中运行，例如 `fabric install`、`fabric doctor`、`fabric store`、`fabric sync`、`fabric info`。
-- Skill：AI 在对话中做判断，例如 `fabric-archive`、`fabric-review`、`fabric-import`。
+- Skill：AI 在对话中做判断。canonical 模板全集 = `packages/cli/templates/skills/` 下的目录名。
 - MCP：AI client 调用的 runtime primitive，例如 `fab_recall`、`fab_propose`、`fab_pending`、`fab_archive_scan`、`fab_review`。
 
 设计规则：确定性 I/O 放 CLI 或 server service；需要 LLM 判断的流程放 Skill；session 内知识读取走 MCP。
@@ -105,7 +105,7 @@ generated CommonJS hook adapter 由 shared resolver entry 构建，提交前运�
 - store / sync / info 行为：`packages/cli/src/store/*`、`packages/cli/src/sync/*`、`packages/cli/src/commands/{store,sync,info}.ts`
 - MCP tools：`packages/server/src/tools/*.ts`
 - MCP server instructions：`packages/server/src/index.ts`
-- doctor 行为：`packages/server/src/services/doctor.ts`
+- doctor 行为：`packages/server/src/services/doctor/doctor.ts`
 - shared contracts：`packages/shared/src/schemas/*.ts`
 - ProjectContext owner：`packages/shared/src/resolver/project-context-resolver.ts`、
   `git-worktree-identity.ts` 与 `contracts.ts`
@@ -116,35 +116,19 @@ generated CommonJS hook adapter 由 shared resolver entry 构建，提交前运�
 
 - **MCP tool**：schema 进 `packages/shared/src/schemas/api-contracts.ts`；service 进 `packages/server/src/services/`；tool wrapper 进 `packages/server/src/tools/`；在 `packages/server/src/index.ts` 的 `createFabricServer` 注册。
 - **Skill**：canonical 模板在 `packages/cli/templates/skills/<slug>/SKILL.md`；`fabric install` 分发到各 client。
-- **Doctor check**：inspection 函数进 `packages/server/src/services/doctor.ts`；i18n key 进 `packages/shared/src/i18n/locales/{zh-CN,en}.ts`；在 `runDoctorReport` 的 checks 列表注册；`packages/server/src/services/doctor.test.ts` 的 snapshot 计数需同步更新。
+- **Doctor check**：inspection 函数进 `packages/server/src/services/doctor/doctor.ts`；i18n key 进 `packages/shared/src/i18n/locales/{zh-CN,en}.ts`；在 `runDoctorReport` 的 checks 列表注册；`packages/server/src/services/doctor/doctor.test.ts` 的 snapshot 计数需同步更新。
 
 提交规范：`<type>(<scope>): <中文描述>`，type ∈ feat/fix/refactor/docs/chore/test/perf；多任务计划优先一任务一 commit。
 
 ## Install Pipeline
 
-当前 `fabric install` 是 pipeline-based install：
-
-1. `preflight`
-2. `env`
-3. `store`
-4. `hooks`
-5. `mcp`
-6. `validate`
-7. `guidance`
-
-公开参数以 `install-v2.ts` 的 citty command 和 `InitArgs` 为准。不要在文档中维护旧的 `--force`、`--reapply`、`--scope`、`--plan` 说明；当前 preview 行为是 `--dry-run`。
+当前 `fabric install` 是 pipeline-based install。阶段与顺序就是 `install-v2.ts` 里那串连续的 `.addStage(new XStage())`,读代码比读这里的副本更快也不会漂;每个 stage 一个 `pipeline/*.stage.ts`。公开参数以 `install-v2.ts` 的 citty command 和 `InitArgs` 为准。不要在文档中维护旧的 `--force`、`--reapply`、`--scope`、`--plan` 说明；当前 preview 行为是 `--dry-run`。
 
 ## Uninstall Pipeline
 
-`fabric uninstall` 是 install 的对称逆操作，5 个阶段（执行顺序为 install 的逆序）：
+`fabric uninstall` 是 install 的对称逆操作，阶段顺序为 install 的逆序;阶段清单以 `packages/cli/src/commands/uninstall.ts` 为准。
 
-1. `bootstrap` — 移除 Skills + hook 脚本，un-merge hook-config，strip bootstrap 指针行，删 snapshot
-2. `mcp` — 每个 client 的 `writer.remove('fabric')`
-3. `store` — **默认跳过**；仅在 `--unbind-store` 或向导勾选时执行：解绑本项目对 team store 的 binding（清 `required_stores` / `write_routes` / `active_write_store` / `active_project`）
-4. `scaffold` — best-effort 删项目本地 `.fabric/` state 文件（`agents.meta.json` / `events.jsonl` / `forensic.json`）
-5. `validate` — 确认 bootstrap 产物已清
-
-硬不变量：`~/.fabric/stores/` 下的全局知识 store **永不删除**（任何 flag 都不行，guard 在 `buildUninstallFabricPlan` + `unbindStoreProject`）；所有阶段 best-effort，缺失产物记 `skipped` 不抛错。预览走 `--dry-run`。入口：`packages/cli/src/commands/uninstall.ts`。
+一条**不在代码形状里的**语义记在这:store 阶段**默认跳过**,只有 `--unbind-store` 或向导勾选才解绑 binding —— 卸载 Fabric 不等于退出团队知识库。硬不变量：`~/.fabric/stores/` 下的全局知识 store **永不删除**（任何 flag 都不行，guard 在 `buildUninstallFabricPlan` + `unbindStoreProject`）；所有阶段 best-effort，缺失产物记 `skipped` 不抛错。预览走 `--dry-run`。入口：`packages/cli/src/commands/uninstall.ts`。
 
 ## CLI Output（flat-design renderer）
 
@@ -188,10 +172,9 @@ Grill 后锁定的架构不是单个 resolver 改动，而是 surface alignment 
 - Event/metrics：最终 runtime ledger 在 global state，按
   `workspace_binding_id` 分区；project-root event files 仅是 legacy input。
 
-当前 `feat/store-only-surface-alignment` 已完成核心写路由和 binding snapshot
-切片；skills、review modify-scope、derived index、global event ledger、sync
-hard gates 仍是后续 release-gate 工作，不能在文档或 release note 中声明全
-矩阵完成。
+核心写路由与 binding snapshot 切片已落地;skills、review modify-scope、derived
+index、global event ledger、sync hard gates 仍是后续 release-gate 工作,不能在
+文档或 release note 中声明全矩阵完成。
 
 ## Update Policy
 

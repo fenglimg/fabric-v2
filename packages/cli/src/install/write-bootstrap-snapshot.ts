@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import { resolveBootstrapCanonical } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
 
-import type { InstallStepResult } from "./skills-and-hooks.js";
+import type { InstallStepResult } from "./step-result.js";
 
 /**
  * rc.19 TASK-002 — bootstrap snapshot writer.

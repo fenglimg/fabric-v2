@@ -7,7 +7,7 @@ import { atomicWriteJson } from "@fenglimg/fabric-shared/node/atomic-write";
 
 import type { ClientConfigWriter, ClientKind, McpRootPolicy, RemoveResult, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
-import { inspectManagedRootPin } from "./root-pin-migration.js";
+import { inspectManagedRootPin } from "@fenglimg/fabric-shared";
 
 type JsonObject = Record<string, unknown>;
 

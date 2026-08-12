@@ -8,7 +8,7 @@ import { atomicWriteText } from "@fenglimg/fabric-shared/node/atomic-write";
 import type { ClientConfigWriter, RemoveResult, ServerEntry } from "./writer.js";
 import { createServerEntry } from "./writer.js";
 import type { McpRootPolicy } from "./writer.js";
-import { inspectManagedRootPin } from "./root-pin-migration.js";
+import { inspectManagedRootPin } from "@fenglimg/fabric-shared";
 
 function expandHome(filePath: string): string {
   if (filePath === "~") {

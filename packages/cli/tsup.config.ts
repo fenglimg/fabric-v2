@@ -5,7 +5,7 @@ import { defineConfig } from "tsup";
 const { version } = JSON.parse(readFileSync("./package.json", "utf8")) as { version: string };
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/scanner/tree-sitter-probe.ts"],
+  entry: ["src/index.ts"],
   format: ["esm"],
   dts: true,
   clean: true,

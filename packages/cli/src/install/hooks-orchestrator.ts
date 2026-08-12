@@ -3,41 +3,46 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { t } from "../i18n.js";
 import {
-  installArchiveHintHook,
   installFabricArchiveSkill,
-  installFabricReviewSkill,
-  installFabricStoreSkill,
   installFabricConfigSkill,
   installFabricRecallPlaybookSkill,
+  installFabricReviewSkill,
+  installFabricStoreSkill,
   installFabricSyncSkill,
   installSharedSkillLib,
+} from "./install-skills.js";
+import {
+  installArchiveHintHook,
+  installCitePolicyEvictHook,
   installHookLibs,
   installKnowledgeHintBroadHook,
-  installKnowledgeHintNarrowHook,
+  installKnowledgeHintSubagentHook,
   installKnowledgePretoolUseHook,
-  installCitePolicyEvictHook,
-  installSessionEndMarkerHook,
   installPostTooluseMutationHook,
+  installSessionEndMarkerHook,
+} from "./install-hook-scripts.js";
+import {
   mergeClaudeCodeHookConfig,
   mergeCodexHookConfig,
+} from "./hook-config-merge.js";
+import {
   writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock,
-  type InstallStepResult,
-} from "./skills-and-hooks.js";
+} from "./bootstrap-propagation.js";
+import type { InstallStepResult } from "./step-result.js";
 import { writeFabricAgentsSnapshot } from "./write-bootstrap-snapshot.js";
 
 // ---------------------------------------------------------------------------
 // rc.15 relocation rationale:
 //
-// Pure orchestrator for hook + skill installation. Previously lived in
-// `packages/cli/src/commands/hooks.ts`; relocated in rc.15 because
-// `commands/` is reserved for citty command wrappers and the `fabric hooks`
-// top-level command was deleted in TASK-004 (C5) while these helpers
+// Pure orchestrator for hook + skill installation. Relocated here in rc.15
+// because `commands/` is reserved for citty command wrappers: the `fabric
+// hooks` top-level command was deleted (TASK-004 / C5) while these helpers
 // survive as install-stage infrastructure. Callers:
-//   - `fabric install` (packages/cli/src/commands/install.ts) — primary entry
+//   - the `fabric install` pipeline — primary entry
 //   - `installHooks` integration + unit tests
 //
-// The neighbour file `skills-and-hooks.ts` provides the lower-level
+// The neighbour file the `install-*.ts` writers provides the lower-level
 // per-client copy/merge primitives that this orchestrator composes.
 // ---------------------------------------------------------------------------
 
@@ -52,35 +57,29 @@ export type InstallHooksResult = {
 };
 
 /**
- * v2/rc.2+rc.3+rc.4+rc.5 hook installer. Re-installable from `fabric install`
- * (and was historically also `fabric hooks install` until rc.15 deleted the
- * top-level command). Performs the full archive+review+import-feature install
- * in sequence (each idempotent):
- *   1. Copy templates/skills/fabric-archive/SKILL.md into .claude/skills/ + .codex/skills/
- *   2. Copy templates/skills/fabric-review/SKILL.md into .claude/skills/ + .codex/skills/  (rc.3)
- *   3. Copy templates/skills/fabric-import/SKILL.md into .claude/skills/ + .codex/skills/  (rc.4)
- *   4. Copy templates/hooks/fabric-hint.cjs into .claude/hooks/ + .codex/hooks/
- *      (rc.5 TASK-010: renamed from archive-hint.cjs)
- *   5. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
- *      (hooks.Stop[] array-append-with-dedupe — preserves user entries)
- *   6. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
- *      (events.Stop[] array-append-with-dedupe)
- *   7. Append fabric-archive, fabric-review AND fabric-import Skill
- *      pointers to CLAUDE.md/AGENTS.md when those files
+ * Hook + skill installer, re-invocable from `fabric install`. Performs the full
+ * install in sequence (each step idempotent):
+ *   1. Copy every templates/skills/<slug>/SKILL.md (+ its ref/*.md companions)
+ *      into .claude/skills/ + .codex/skills/
+ *   2. Copy the hook scripts and hook libs into .claude/hooks/ + .codex/hooks/
+ *   3. Deep-merge templates/hooks/configs/claude-code.json into .claude/settings.json
+ *      (per-event array-append-with-dedupe — preserves user entries)
+ *   4. Deep-merge templates/hooks/configs/codex-hooks.json into .codex/hooks.json
+ *      (same append semantics under events.*)
+ *   5. Append the Skill pointers to CLAUDE.md/AGENTS.md when those files
  *      already exist (does not create them; each pointer is dedup-checked
  *      independently).
- *   8. Validate that every installed client hook config resolves to the
- *      fabric-hint.cjs script on disk — guards against template / install
- *      drift (e.g. partial copy, manual edit of one config file).
+ *   6. Validate that every installed client hook config resolves to a hook
+ *      script that exists on disk — guards against template / install drift
+ *      (e.g. partial copy, manual edit of one config file).
  *
  * Returns the union of paths written, skipped, and any errors. Best-effort:
  * a single client's failure (missing directory, unreadable settings.json)
  * surfaces in `errors` but does not throw — the other client install still
  * runs.
  *
- * Why all 8 steps (not just hooks): rc.2 wires the Skill, hook script, and
- * config-merge as one feature. Installing only the hook script would leave
- * the Stop hook firing without a Skill to invoke.
+ * Why skills AND hooks in one step: they are one feature. Installing the hook
+ * script alone would leave the Stop hook firing with no Skill to invoke.
  */
 export async function installHooks(
   target: string,
@@ -106,10 +105,9 @@ export async function installHooks(
   // chmod 0o755 on POSIX. Order vs config-merge matters: copy first so the
   // validateHookPaths post-step finds the script on disk.
   results.push(...await runStep(() => installKnowledgeHintBroadHook(normalizedTarget)));
-  // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook script +
-  // edit-counter sidecar. Same copy plumbing as the broad sibling — three
-  // dest dirs, chmod 0o755 on POSIX, copy before merge so validate finds it.
-  results.push(...await runStep(() => installKnowledgeHintNarrowHook(normalizedTarget)));
+  results.push(...await runStep(() => installKnowledgeHintSubagentHook(normalizedTarget)));
+  // W4 I2: the narrow hook no longer has a copy step here — it moved under
+  // templates/hooks/lib/ and ships with installHookLibs below.
   // v2.0.0-rc.34 TASK-06: Claude Code-only UserPromptSubmit cite-policy
   // long-session evict sidecar. Single destination (.claude/hooks/) — Codex
   // lacks the event registration. Default OFF; user opt-in via
@@ -169,7 +167,10 @@ export function validateHookPaths(projectRoot: string): InstallStepResult[] {
   const scripts: Array<{ stepSuffix: string; hookFile: string }> = [
     { stepSuffix: "", hookFile: "fabric-hint.cjs" },
     { stepSuffix: "-broad", hookFile: "knowledge-hint-broad.cjs" },
-    { stepSuffix: "-narrow", hookFile: "knowledge-hint-narrow.cjs" },
+    // W4 I2: narrow moved to <client>/hooks/lib/. Still validated — it is a
+    // hard require() of the pretooluse orchestrator, so a missing copy breaks
+    // every edit-time hint exactly as before, only now the path says "lib".
+    { stepSuffix: "-narrow", hookFile: join("lib", "knowledge-hint-narrow.cjs") },
     // ISS-20260711-260: knowledge-pretooluse hard-requires cite-policy-evict
     // via require("./cite-policy-evict.cjs") — validate must catch a missing
     // copy the same way it catches a missing pretooluse orchestrator.
@@ -178,6 +179,10 @@ export function validateHookPaths(projectRoot: string): InstallStepResult[] {
     { stepSuffix: "-pretooluse", hookFile: "knowledge-pretooluse.cjs" },
     // lifecycle-refactor W2-T2/T3: SessionEnd + PostToolUse marker hooks.
     { stepSuffix: "-session-end", hookFile: "session-end-marker.cjs" },
+    // W5 #6: SubagentStart knowledge injection. Validated like every other
+    // registered entry point — a missing copy silently returns sub-agents to
+    // starting blind, which is exactly the gap it was added to close.
+    { stepSuffix: "-subagent", hookFile: "knowledge-hint-subagent.cjs" },
     { stepSuffix: "-post-tooluse", hookFile: "post-tooluse-mutation.cjs" },
   ];
   const clients: Array<{ client: string; configRel: string; hookDir: string }> = [

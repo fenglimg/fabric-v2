@@ -7,6 +7,7 @@ import {
   cleanupFixtureRoot,
   createWerewolfFixtureRoot,
   setProcessTty,
+  runScaffoldOnly,
 } from "./helpers/init-test-utils.ts";
 import { installCommand, resolveMcpRootPolicy } from "../src/commands/install-v2.js";
 
@@ -81,7 +82,7 @@ describe("init CLI surface", () => {
     const target = createWerewolfFixtureRoot("fab-init-plan-acceptance");
     tempRoots.push(target);
 
-    const { installCommand } = await import("../src/commands/install.ts");
+    const { installCommand } = await import("../src/commands/install-v2.ts");
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process.stderr, "write").mockImplementation(((chunk: string | Uint8Array) => {
       void chunk;
@@ -129,16 +130,26 @@ describe("init CLI surface", () => {
 
     // Second install — must succeed via canonical-no-op short-circuit.
     let secondRunError: unknown = null;
+    let second: Awaited<ReturnType<typeof runInit>> | null = null;
     try {
-      await runInit(target);
+      second = await runInit(target);
     } catch (e) {
       secondRunError = e;
     }
     expect(secondRunError).toBeNull();
 
-    // Canonical confirmation banner is visible in stdout.
-    const allOutput = [...stdoutLines, ...stderrLines].join("\n");
-    expect(allOutput).toMatch(/Workspace already canonical/);
+    // T-2: the no-op contract is asserted on the pipeline result, not on a
+    // banner string. The old assertion matched "Workspace already canonical",
+    // which only the RETIRED v1 installer ever printed — the shipping installer
+    // replaced that banner with the idempotent-re-install collapse, so the
+    // assertion was passing against code no user runs. The durable, wording-free
+    // statement of "no-op" is: the run succeeded and no stage materially
+    // changed anything.
+    expect(second?.success).toBe(true);
+    const changedStages = (second?.context.stageResults ?? [])
+      .filter((s) => s.changed === true)
+      .map((s) => s.name);
+    expect(changedStages).toEqual([]);
   });
 
   it("renders dry-run preview when --dry-run is used in a TTY context", async () => {
@@ -146,7 +157,7 @@ describe("init CLI surface", () => {
     const target = createWerewolfFixtureRoot("fab-init-cli-surface");
     tempRoots.push(target);
 
-    const { installCommand } = await import("../src/commands/install.ts");
+    const { installCommand } = await import("../src/commands/install-v2.ts");
     const stdout: string[] = [];
     const stderr: string[] = [];
     vi.spyOn(console, "log").mockImplementation((message?: unknown) => {
@@ -165,9 +176,18 @@ describe("init CLI surface", () => {
       },
     } as never);
 
-    expect(stdout.some((line) => line.includes("Fabric install dry run"))).toBe(true);
-    // Wizard is suppressed under --dry-run (planOnly disables the wizard).
+    // T-2: the "Fabric install dry run" preview title is v1-only. In the shipping
+    // installer that string is hardcoded (not even i18n) inside the `--global`
+    // branch alone — a project-level --dry-run prints no preview banner at all,
+    // leaving `cli.install.plan.preview-title` / `cli.install.plan.mode-banner.plan`
+    // orphaned in both locale catalogs. Restoring a dry-run preview is tracked as
+    // a UX gap; asserting the banner here only kept a retired code path green.
+    //
+    // The wording-free contracts that DO hold: the wizard is suppressed under
+    // --dry-run (planOnly disables it), and nothing is written.
     expect(stdout.some((line) => line.includes("Install bootstrap templates?"))).toBe(false);
+    expect(existsSync(join(target, ".fabric", "fabric-config.json"))).toBe(false);
+    expect(existsSync(join(target, ".claude", "hooks"))).toBe(false);
     // Silence linter about unused stderr capture — the bucket is here in case
     // future dry-run noise lands on stderr and needs to be asserted.
     void stderr;
@@ -179,8 +199,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const target = createWerewolfFixtureRoot("fab-init-config-fresh");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/install.ts");
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const configPath = join(target, ".fabric", "fabric-config.json");
     expect(existsSync(configPath)).toBe(true);
@@ -204,8 +223,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const target = createWerewolfFixtureRoot("fab-init-config-preserved");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/install.ts");
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     // User edits the file: changes one field, removes another, adds a custom field.
     const configPath = join(target, ".fabric", "fabric-config.json");
@@ -218,7 +236,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const beforeMtime = statSync(configPath).mtimeMs;
     const beforeContent = readFileSync(configPath, "utf8");
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const afterContent = readFileSync(configPath, "utf8");
     expect(afterContent).toBe(beforeContent);
@@ -236,15 +254,14 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const target = createWerewolfFixtureRoot("fab-init-config-reapply");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/install.ts");
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const configPath = join(target, ".fabric", "fabric-config.json");
     const customised = { review_hint_pending_count: 99, fabric_language: "en" };
     writeFileSync(configPath, JSON.stringify(customised, null, 2) + "\n", "utf8");
     const beforeContent = readFileSync(configPath, "utf8");
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const afterContent = readFileSync(configPath, "utf8");
     expect(afterContent).toBe(beforeContent);
@@ -254,8 +271,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     const target = createWerewolfFixtureRoot("fab-init-no-sentinel");
     tempRoots.push(target);
 
-    const { initFabric } = await import("../src/commands/install.ts");
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const sentinelPath = join(target, ".fabric", ".import-requested");
     expect(existsSync(sentinelPath)).toBe(false);
@@ -290,7 +306,7 @@ describe("init CLI surface — fabric-config.json scaffold (TASK-003)", () => {
     }) as typeof process.stderr.write);
 
     vi.resetModules();
-    const { runInitCommand } = await import("../src/commands/install.ts");
+    const { runInitCommand } = await import("../src/commands/install-v2.ts");
     await runInitCommand({ target, yes: true });
 
     // The retired sentinel prompt MUST NOT appear among any confirm() calls.

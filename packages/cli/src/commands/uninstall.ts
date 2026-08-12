@@ -21,7 +21,7 @@ import {
   type UninstallStepResult,
 } from "../install/uninstall-skills-and-hooks.js";
 import { unbindStoreProject } from "../install/uninstall-store.js";
-import { HOOK_SCRIPT_DESTINATIONS, SKILL_DESTINATIONS } from "../install/skills-and-hooks.js";
+import { HOOK_SCRIPT_DESTINATIONS, SKILL_DESTINATIONS } from "../install/distribution-targets.js";
 
 // W4 uninstall-symmetry: `fabric uninstall` is now the visual + semantic inverse
 // of the install-v2 pipeline. It drives the SAME TASK-001 OutputRenderer that

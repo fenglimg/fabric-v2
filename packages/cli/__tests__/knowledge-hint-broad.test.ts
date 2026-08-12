@@ -13,8 +13,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -1924,6 +1926,89 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + backlog summary (H2/H
       expect(stderr).toMatch(/\/fabric-review/);
       // import + archive segments are NOT live here.
       expect(stderr).not.toMatch(/sparse KB/);
+    });
+  });
+
+  // W3: the Stop hook fires review on count-OR-age; this rung used to fire on
+  // count only, so "few but rotting" was invisible at session START. The mtime
+  // is what liveKnowledgeStats reads, so backdate it rather than the config.
+  function backdatePending(home: string, projectId: string, ageDays: number): void {
+    const dir = join(home, ".fabric", "state", "test-store", projectId, "knowledge", "pending", "decisions");
+    const whenSec = (FIXED_NOW_MS - ageDays * 24 * 60 * 60 * 1000) / 1000;
+    for (const f of readdirSync(dir)) utimesSync(join(dir, f), whenSec, whenSec);
+  }
+
+  it("backlog summary: review segment fires on OLDEST-AGE even when count is under threshold (W3)", () => {
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      seedDoctorRun(1); // lint ran yesterday → maintenance quiet
+      // 3 pending — well UNDER the count threshold of 10, so only the age rung
+      // can fire. 30 days > the 7-day default.
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 3 });
+      backdatePending(home, PROJECT_ID, 30);
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 20 }, 0, { team: 20 }), // total 20 >= 10 → import suppressed
+      });
+      expect(stderr).toMatch(/Fabric backlog:/);
+      expect(stderr).toMatch(/review 3 pending, oldest 30d/);
+      expect(stderr).toMatch(/\/fabric-review/);
+      // The count rung did NOT fire — its wording must be absent.
+      expect(stderr).not.toMatch(/review 3 pending$/m);
+    });
+  });
+
+  it("backlog summary: a FRESH under-threshold backlog stays silent (W3 age rung has a floor)", () => {
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      seedDoctorRun(1);
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 3 });
+      backdatePending(home, PROJECT_ID, 2); // 2 days < 7-day default
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 20 }, 0, { team: 20 }),
+      });
+      expect(stderr).not.toMatch(/review \d+ pending/);
+    });
+  });
+
+  it("backlog summary: ZERO pending never fires the age rung (W3 — no oldest entry to be stale)", () => {
+    withIsolatedFabricHome((home) => {
+      plantBound();
+      seedDoctorRun(1);
+      // pending_count 0 → no pending dir at all; oldestPendingMtimeMs is null.
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 0 });
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 20 }, 0, { team: 20 }),
+      });
+      expect(stderr).not.toMatch(/review \d+ pending/);
+    });
+  });
+
+  it("backlog summary: review_hint_pending_age_days knob moves the age rung (W3)", () => {
+    withIsolatedFabricHome((home) => {
+      mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+      writeFileSync(
+        join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({ project_id: PROJECT_ID, fabric_language: "en" }),
+        "utf8",
+      );
+      // Raise the knob past the entry's age → the same backlog goes quiet.
+      mkdirSync(join(home, ".fabric"), { recursive: true });
+      writeFileSync(
+        join(home, ".fabric", "fabric-global.json"),
+        JSON.stringify({ defaults: { review_hint_pending_age_days: 90 } }),
+        "utf8",
+      );
+      seedDoctorRun(1);
+      writeBindingsSnapshot(home, PROJECT_ID, { canonical_count: 20, pending_count: 3 });
+      backdatePending(home, PROJECT_ID, 30);
+      const stderr = capture({
+        payload: makePayload([makeEntry("KT-DEC-0001", "decision", "proven", "x")]),
+        census: census({ decisions: 20 }, 0, { team: 20 }),
+      });
+      expect(stderr).not.toMatch(/review \d+ pending/);
     });
   });
 

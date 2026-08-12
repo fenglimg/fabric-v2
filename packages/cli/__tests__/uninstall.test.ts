@@ -21,11 +21,10 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { initFabric } from "../src/commands/install.ts";
 import {
   installFabricArchiveSkill,
   installFabricReviewSkill,
-} from "../src/install/skills-and-hooks.ts";
+} from "../src/install/install-skills.ts";
 import {
   uninstallFabricArchiveSkill,
   uninstallFabricReviewSkill,
@@ -46,6 +45,7 @@ import {
   cleanupFixtureRoot,
   createEmptyFixtureRoot,
   createWerewolfFixtureRoot,
+  runScaffoldOnly,
   setProcessTty,
 } from "./helpers/init-test-utils.ts";
 
@@ -111,7 +111,7 @@ describe("uninstall plan enumeration", () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-plan-shape");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const plan = await buildUninstallExecutionPlan(target, { skipMcp: true });
 
@@ -163,7 +163,7 @@ describe("uninstall --dry-run mode (no-write contract)", () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-plan-mode");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     // Snapshot the entire .fabric + .claude + .codex trees BEFORE plan-only.
     const before = {
@@ -210,7 +210,7 @@ describe("uninstall default scaffold execution", () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-scaffold-default");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     // Pre-conditions: the event-ledger state files are scaffolded by install.
     // W5 I1 retired the agents.meta.json scaffold, so it is absent post-install.
@@ -252,7 +252,7 @@ describe("uninstall wizard cancellation", () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-wizard-cancel");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     restoreTtyMocks.push(setProcessTty(true, true, true));
     const stderrWrites: string[] = [];
@@ -363,7 +363,7 @@ describe("uninstall idempotency", () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-idempotent");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -390,7 +390,7 @@ describe("uninstallFabric top-level entrypoint", () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-fabric");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -417,7 +417,7 @@ describe("uninstallMcpClients", () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-mcp-dryrun");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -454,7 +454,7 @@ describe("runUninstallCommand interactive confirmation", () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-yes-bypass");
     tempRoots.push(target);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     restoreTtyMocks.push(setProcessTty(true, true, true));
 
@@ -621,7 +621,7 @@ describe("uninstall validate stage", () => {
   it("reports cleared after a full bootstrap teardown", async () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-validate");
     tempRoots.push(target);
-    await initFabric(target);
+    await runScaffoldOnly(target);
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     const result = await uninstallFabric(target, { skipMcp: true });
@@ -635,7 +635,7 @@ describe("uninstall renderer wiring", () => {
   it("drives the OutputRenderer without throwing and emits section + summary + complete", async () => {
     const target = createWerewolfFixtureRoot("fab-uninstall-renderer");
     tempRoots.push(target);
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     const calls: string[] = [];
     const renderer: OutputRenderer = {

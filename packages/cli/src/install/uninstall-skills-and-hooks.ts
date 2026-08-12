@@ -13,12 +13,12 @@ import {
   HOOK_SCRIPT_DESTINATIONS,
   SKILL_DESTINATIONS,
   SKILL_LIB_DESTINATIONS,
-} from "./skills-and-hooks.js";
+} from "./distribution-targets.js";
 import { fabricAgentsSnapshotPath } from "./write-bootstrap-snapshot.js";
 
 /**
  * Uninstall helpers — symmetric inverse of the install pipeline shipped in
- * {@link ./skills-and-hooks.ts}. Each helper is idempotent + best-effort:
+ * the `install-*.ts` writers under this directory. Each helper is idempotent + best-effort:
  *   - Missing artifacts produce `status: 'skipped'` (never throw).
  *   - Hook-config un-merge filters fabric entries out by `command`-path match
  *     against {@link FABRIC_HOOK_COMMAND_PATHS}; user-authored entries are
@@ -53,21 +53,6 @@ export type UninstallOptions = Record<string, never>;
 // -----------------------------------------------------------------------
 
 /**
- * W3-C legacy cleanup: the fabric/ router was retired (0-router terminal set).
- * Kept so `fabric uninstall` still sweeps the residual dir from pre-W3-C
- * installs — paths are inlined since the destination key no longer exists.
- */
-export async function uninstallFabricRouterSkill(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeSkill(
-    "skill-router",
-    [".claude/skills/fabric/SKILL.md", ".codex/skills/fabric/SKILL.md"],
-    projectRoot,
-  );
-}
-
-/**
  * Inverse of `installFabricArchiveSkill`. Removes each SKILL.md at
  * `SKILL_DESTINATIONS.fabricArchive`, then attempts to remove the parent
  * `fabric-archive/` directory if it is empty.
@@ -75,9 +60,7 @@ export async function uninstallFabricRouterSkill(
 export async function uninstallFabricArchiveSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill", SKILL_DESTINATIONS.fabricArchive, projectRoot, {
-    includeRefFiles: true,
-  });
+  return removeSkill("skill", SKILL_DESTINATIONS.fabricArchive, projectRoot);
 }
 
 /**
@@ -88,23 +71,7 @@ export async function uninstallFabricArchiveSkill(
 export async function uninstallFabricReviewSkill(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
-  return removeSkill("skill-review", SKILL_DESTINATIONS.fabricReview, projectRoot, {
-    includeRefFiles: true,
-  });
-}
-
-/**
- * W3-C legacy cleanup: fabric-import folded into archive `source` mode. Kept so
- * uninstall sweeps the residual dir from pre-W3-C installs.
- */
-export async function uninstallFabricImportSkill(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeSkill(
-    "skill-import",
-    [".claude/skills/fabric-import/SKILL.md", ".codex/skills/fabric-import/SKILL.md"],
-    projectRoot,
-  );
+  return removeSkill("skill-review", SKILL_DESTINATIONS.fabricReview, projectRoot);
 }
 
 /**
@@ -148,61 +115,23 @@ export async function uninstallFabricConfigSkill(
   return removeSkill("skill-config", SKILL_DESTINATIONS.fabricConfig, projectRoot);
 }
 
-/**
- * W3-C legacy cleanup: fabric-audit folded into review `retire` sub-flow. Kept
- * so uninstall sweeps the residual dir from pre-W3-C installs.
- */
-export async function uninstallFabricAuditSkill(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeSkill(
-    "skill-audit",
-    [".claude/skills/fabric-audit/SKILL.md", ".codex/skills/fabric-audit/SKILL.md"],
-    projectRoot,
-  );
-}
-
-/**
- * W3-C legacy cleanup: fabric-connect folded into review `relate` sub-flow. Kept
- * so uninstall sweeps the residual dir from pre-W3-C installs.
- */
-export async function uninstallFabricConnectSkill(
-  projectRoot: string,
-): Promise<UninstallStepResult[]> {
-  return removeSkill(
-    "skill-connect",
-    [".claude/skills/fabric-connect/SKILL.md", ".codex/skills/fabric-connect/SKILL.md"],
-    projectRoot,
-  );
-}
-
-type RemoveSkillOptions = {
-  /**
-   * Inverse of the install-side `FabricSkillInstallSpec.includeRefFiles`. When
-   * set, the skill ships `ref/*.md` companion files (installed by
-   * `installSkillRefFiles`) into `<skillDir>/ref/`. Without removing them the
-   * `ref/` directory keeps `<skillDir>` non-empty, so `rmDirIfEmpty` below
-   * leaves the whole skill directory (plus its ref files) orphaned after
-   * `fabric uninstall`. Removing the install-written `.md` files first lets the
-   * parent prune succeed.
-   */
-  includeRefFiles?: boolean;
-};
-
+// Ref pruning is unconditional, mirroring the install side. A skill that ships
+// `ref/*.md` keeps `<skillDir>` non-empty, so without this prune `rmDirIfEmpty`
+// leaves the whole skill directory orphaned after `fabric uninstall`; a skill
+// with no ref/ gets an `absent` skip row and nothing else. The pair of
+// hand-kept `includeRefFiles: true` booleans this replaces could disagree with
+// each other and with the template tree — and did.
 async function removeSkill(
   step: string,
   rels: readonly string[],
   projectRoot: string,
-  opts: RemoveSkillOptions = {},
 ): Promise<UninstallStepResult[]> {
   const results: UninstallStepResult[] = [];
   for (const rel of rels) {
     const target = join(projectRoot, rel);
     results.push(await rmIfExists(step, target));
     const skillDir = dirname(target);
-    if (opts.includeRefFiles) {
-      results.push(...(await removeSkillRefFiles(step, skillDir)));
-    }
+    results.push(...(await removeSkillRefFiles(step, skillDir)));
     results.push(await rmDirIfEmpty(`${step}-dir`, skillDir));
   }
   return results;
@@ -279,19 +208,21 @@ export async function removeKnowledgeHintBroadHook(
 }
 
 /**
- * Inverse of `installKnowledgeHintNarrowHook`. Removes the
- * `knowledge-hint-narrow.cjs` script from each client's `.<client>/hooks/`
- * directory.
+ * W5 #6: inverse of `installKnowledgeHintSubagentHook`.
  */
-export async function removeKnowledgeHintNarrowHook(
+export async function removeKnowledgeHintSubagentHook(
   projectRoot: string,
 ): Promise<UninstallStepResult[]> {
   return removeHookScripts(
-    "hook-narrow-script",
-    HOOK_SCRIPT_DESTINATIONS.knowledgeHintNarrow,
+    "hook-subagent-script",
+    HOOK_SCRIPT_DESTINATIONS.knowledgeHintSubagent,
     projectRoot,
   );
 }
+
+// W4 I2: removeKnowledgeHintNarrowHook deleted alongside its install-side
+// counterpart. knowledge-hint-narrow.cjs now lives in <client>/hooks/lib/, and
+// removeHookLibs already deletes every `.cjs` under those directories.
 
 /**
  * F3: inverse of `installCitePolicyEvictHook`. Removes the
@@ -670,7 +601,7 @@ export async function deleteFabricAgentsSnapshot(
  *   2. Hook-config un-merge (codex → claude — reverse of install)
  *   3. Hook-lib removal (lib/*.cjs across both client hook dirs — rc.16 TASK-004)
  *   4. Hook-script removal (knowledge-narrow → knowledge-broad → fabric-hint)
- *   5. Skill removal (fabric-import → fabric-review → fabric-archive)
+ *   5. Skill removal (exact reverse of install order — see the fan-out below)
  *
  * Each helper invocation is try/catch-wrapped: a thrown error becomes a
  * `{ status: 'error', message }` entry in the returned results array. The
@@ -710,11 +641,12 @@ export async function uninstallBootstrapStage(
   await runAndCollect(results, "hook-lib", projectRoot, () => removeHookLibs(projectRoot));
 
   // 4. Hook scripts (reverse of install order)
-  await runAndCollect(results, "hook-narrow-script", projectRoot, () =>
-    removeKnowledgeHintNarrowHook(projectRoot),
-  );
   await runAndCollect(results, "hook-broad-script", projectRoot, () =>
     removeKnowledgeHintBroadHook(projectRoot),
+  );
+  // W5 #6: SubagentStart injection script.
+  await runAndCollect(results, "hook-subagent-script", projectRoot, () =>
+    removeKnowledgeHintSubagentHook(projectRoot),
   );
   await runAndCollect(results, "hook-script", projectRoot, () =>
     removeArchiveHintHook(projectRoot),
@@ -741,17 +673,10 @@ export async function uninstallBootstrapStage(
     removeSharedSkillLib(projectRoot),
   );
 
-  // 5. Skill files (reverse of install order: connect → audit → store → sync → import → review → archive)
-  await runAndCollect(results, "skill-connect", projectRoot, () =>
-    uninstallFabricConnectSkill(projectRoot),
-  );
-  await runAndCollect(results, "skill-audit", projectRoot, () =>
-    uninstallFabricAuditSkill(projectRoot),
-  );
-  // W4 uninstall-symmetry: the fabric-store skill is installed by the hooks
-  // stage (installFabricStoreSkill) but was never swept on uninstall — surfaced
-  // by the W4 validate stage as a residual artifact. Install order is sync →
-  // store → recall-playbook, so uninstall removes playbook, then store, then sync.
+  // 5. Skill files, exact reverse of install order: config → recall-playbook →
+  // store → sync → review → archive. Each installed skill has one remover here
+  // and nothing else does — a skill missing from this list survives uninstall
+  // (how fabric-store once did, caught by the W4 validate stage).
   await runAndCollect(results, "skill-config", projectRoot, () =>
     uninstallFabricConfigSkill(projectRoot),
   );
@@ -764,18 +689,11 @@ export async function uninstallBootstrapStage(
   await runAndCollect(results, "skill-sync", projectRoot, () =>
     uninstallFabricSyncSkill(projectRoot),
   );
-  await runAndCollect(results, "skill-import", projectRoot, () =>
-    uninstallFabricImportSkill(projectRoot),
-  );
   await runAndCollect(results, "skill-review", projectRoot, () =>
     uninstallFabricReviewSkill(projectRoot),
   );
   await runAndCollect(results, "skill", projectRoot, () =>
     uninstallFabricArchiveSkill(projectRoot),
-  );
-  // B2 skill-router: the fabric/ router installs first, so it uninstalls last.
-  await runAndCollect(results, "skill-router", projectRoot, () =>
-    uninstallFabricRouterSkill(projectRoot),
   );
 
   return results;

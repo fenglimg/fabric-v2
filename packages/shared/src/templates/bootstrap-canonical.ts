@@ -38,7 +38,7 @@ export const BOOTSTRAP_MARKER_END = "<!-- fabric:bootstrap:end -->";
  * with an optional preceding blank-line separator (so re-install / uninstall
  * don't leave orphan blank lines). Non-greedy body matches any content
  * between the begin/end markers, including newlines. Mirrors the shape of
- * the existing `FABRIC_SECTION_REGEX` in `packages/cli/src/install/skills-and-hooks.ts`.
+ * `FABRIC_SECTION_REGEX`, which lives beside it in this file.
  */
 export const BOOTSTRAP_REGEX =
   /(?:\r?\n){0,2}<!-- fabric:bootstrap:begin -->[\s\S]*?<!-- fabric:bootstrap:end -->/;
@@ -91,10 +91,11 @@ export const BOOTSTRAP_CANONICAL_ZH = `# Fabric Bootstrap
 - **Scope 三轴(为什么没浮现)** (KT-MOD-0001):一条知识是否浮现由三个**正交**轴决定 —— ① \`semantic_scope\` 受众(\`team\` / \`project:<id>\` / \`personal\`;绑错项目则不显)② \`relevance_scope\` 时机(\`broad\` 常驻 / \`narrow\` 仅编辑匹配文件时浮现)③ \`store\` 物理库(没 \`fabric store bind\` 就不读)。三轴名字会撞("team" 既是受众值也可是 store 别名),所以困惑"为什么这条没浮现"时跑 \`fabric audit why-not-surfaced <id>\` 逐因诊断(store 没绑 / scope 不匹配 / narrow 时机)。
 - **Usage**:走单步 \`fab_recall(paths=[...])\` 一次拿回相关 KB 的描述 + 读取路径;需要某条正文时对其 \`entries[].read_path\` 做原生 Read 取回(不再走 MCP 二次取正文)。
 - **session_id**: 调用 \`fab_recall\` 时, 务必把当前 client session id 作为 \`session_id\` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 \`fabric doctor --archive-history\` 与 \`fabric-hint.cjs\` Stop hook 准确识别跨会话 debt 状态。
-- **Skills (4)**:写流程 \`fabric-archive\`(含 source mode 冷启动从 git/docs 回灌)/ \`fabric-review\`(含 retire 语义淘汰 + relate 关联建边 子流程);store 运维 \`fabric-store\` / \`fabric-sync\`。
+- **Skills (6)**:写流程 \`fabric-archive\`(含 source mode 冷启动从 git/docs 回灌)/ \`fabric-review\`(含 retire 语义淘汰 + relate 关联建边 子流程);检索用法 \`fabric-recall-playbook\`(何时/如何 recall、懒取正文、失败路径);配置体检与对话式调整 \`fabric-config\`;store 运维 \`fabric-store\` / \`fabric-sync\`。
 - **Language**:渲染按 \`~/.fabric/fabric-global.json\` 的 \`language\` 字段(machine-wide tone)。
 - **Archive cadence nudge** (rc.36 / finish→archive): 显著 decision 收口或一批 Edit 达到 config \`archive_edit_threshold\`(默认 20) 后,在合适回合轻量自调 \`fabric-archive\`(同 turn 最多 1 次;非 task engine / 非 Stop-hook flood)。Stop hook 仅 soft threshold nudge,守 KT-DEC-0007 — archive 没建立频率会让 KB 慢速死掉。
-- **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 \`fab_pending action="list"\` 或 \`fabric-review\` 返回的 \`pending_path\`;不要 glob 项目本地 \`.fabric/knowledge/pending\`。当可见 pending 累积 >10 条时,在合适回合主动 propose 调 \`fabric-review\` skill 批量审,避免 draft 卡死。
+- **收口仪式** (W3 finish-gate): 一段工作收口时 —— 用户说"完成/收工/提交吧",或你刚跑完最后一道 gate 准备汇报 —— **显式走一遍归档判断并把结论说出来**,结论允许是"本段无可归档"(带一句理由即可)。与上面的 cadence nudge 是 OR 关系,不互相取代:cadence 管"改得够多了",仪式管"这件事做完了"。是 prompt 层仪式**不是 hook gate**(守 KT-DEC-0007) —— 判断本身零成本,真正的成本是想不起来判断。
+- **Review backlog nudge** (rc.36): 需要判断 pending backlog 时走 \`fab_pending action="list"\` 或 \`fabric-review\` 返回的 \`pending_path\`;不要 glob 项目本地 \`.fabric/knowledge/pending\`。两个独立的该审信号,任一成立就在合适回合主动 propose 调 \`fabric-review\` skill 批量审: ① **量** —— 可见 pending >10 条(\`review_hint_pending_count\`);② **龄** —— 最老一条已挂 ≥7 天(\`review_hint_pending_age_days\`)。只看量会漏掉"就三条但烂了一个月"这种 draft 卡死。
 
 ## Self-archive policy (v2.2 C1: 精简说明书)
 
@@ -161,10 +162,11 @@ See \`docs/USER-QUICKSTART.md\` for the full maintainer version.
 - **Scope's 3 axes (why something isn't surfacing)** (KT-MOD-0001): whether an entry surfaces is decided by three **orthogonal** axes — ① \`semantic_scope\` audience (\`team\` / \`project:<id>\` / \`personal\`; the wrong project binding hides it) ② \`relevance_scope\` timing (\`broad\` always-on / \`narrow\` only when you edit a matching file) ③ \`store\` physical lib (not read without \`fabric store bind\`). The axis names collide ("team" is both an audience value and a possible store alias), so when puzzled about "why isn't this surfacing" run \`fabric audit why-not-surfaced <id>\` for a per-cause diagnosis (store unbound / scope mismatch / narrow timing).
 - **Usage**: go one-step \`fab_recall(paths=[...])\` to fetch the relevant KB descriptions + read paths in one call; when you need a body, do a native Read of its \`entries[].read_path\` (no second MCP round-trip for the body).
 - **session_id**: when calling \`fab_recall\`, always pass the current client session id as the \`session_id\` argument (Claude Code's session id is in the stdin payload; Codex's corresponding identifier likewise). This lets \`fabric doctor --archive-history\` and the \`fabric-hint.cjs\` Stop hook track cross-session debt accurately.
-- **Skills (4)**: write flow \`fabric-archive\` (with source-mode cold-start backfill from git/docs) / \`fabric-review\` (with retire-deprecation + relate-edge sub-flows); store ops \`fabric-store\` / \`fabric-sync\`.
+- **Skills (6)**: write flow \`fabric-archive\` (with source-mode cold-start backfill from git/docs) / \`fabric-review\` (with retire-deprecation + relate-edge sub-flows); retrieval usage \`fabric-recall-playbook\` (when/how to recall, lazy body Read, failure paths); config check-up and conversational tuning \`fabric-config\`; store ops \`fabric-store\` / \`fabric-sync\`.
 - **Language**: rendered per the \`language\` field in \`~/.fabric/fabric-global.json\` (machine-wide tone).
 - **Archive cadence nudge** (rc.36 / finish→archive): after a significant decision lands or an edit batch reaches config \`archive_edit_threshold\` (default 20), lightly self-trigger \`fabric-archive\` at a suitable turn (max 1 per turn; not a task engine / not Stop-hook flood). Stop hook remains a soft threshold nudge per KT-DEC-0007 — without an archive cadence the KB slowly dies.
-- **Review backlog nudge** (rc.36): to judge the pending backlog, go through \`fab_pending action="list"\` or the \`pending_path\` returned by \`fabric-review\`; don't glob the project-local \`.fabric/knowledge/pending\`. When the visible pending count exceeds 10, proactively propose the \`fabric-review\` skill at a suitable turn to batch-review and avoid draft deadlock.
+- **Finish ritual** (W3 finish-gate): when a stretch of work closes — the user says "done / ship it / commit", or you have just cleared the last gate and are about to report — **explicitly run the archive judgement and state its verdict**, where "nothing worth archiving here" is a valid verdict (give a one-line reason). ORed with the cadence nudge above, not a replacement: cadence covers "enough has changed", the ritual covers "this thing is finished". A prompt-layer ritual, **not a hook gate** (KT-DEC-0007) — the judgement itself is free; the real cost is forgetting to make it.
+- **Review backlog nudge** (rc.36): to judge the pending backlog, go through \`fab_pending action="list"\` or the \`pending_path\` returned by \`fabric-review\`; don't glob the project-local \`.fabric/knowledge/pending\`. Two independent signals, either one is enough to proactively propose the \`fabric-review\` skill at a suitable turn: ① **volume** — visible pending > 10 (\`review_hint_pending_count\`); ② **age** — the oldest entry has sat ≥ 7 days (\`review_hint_pending_age_days\`). Volume alone misses the "only three, but one has been rotting for a month" flavour of draft deadlock.
 
 ## Self-archive policy (v2.2 C1: lean spec)
 

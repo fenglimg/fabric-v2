@@ -1,8 +1,10 @@
-// v2.0.0-rc.37 Wave A2: `serve` subcommand quarantined to
-// packages/server-http-experimental/ per KB decision
-// [[fabric-serve-quarantine-not-delete]]. The HTTP-server entry point is no
-// longer wired into the main CLI; restore via the package README's restoration
-// recipe if a future web UI surface re-introduces it.
+// v2.0.0-rc.37 Wave A2: `serve` subcommand (the HTTP-server entry point) is not
+// wired into the CLI — all three clients speak MCP stdio and nothing consumes
+// HTTP. It was quarantined to packages/server-http-experimental/ at the time;
+// W4 B7 deleted that package. Recover from git history if a web UI surface is
+// ever re-introduced — and expect to fix it up, since by deletion time it
+// already imported a symbol (`invalidateKnowledgeSyncCooldown`) that no longer
+// existed anywhere in the repo.
 export const allCommands = {
   // v2.2.0-rc.5: pipeline-based install with TUI renderer (EPIC-005/006/007/008)
   install: () => import("./install-v2.js").then((module) => module.installCommand),

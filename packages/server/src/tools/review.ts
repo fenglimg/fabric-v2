@@ -23,7 +23,7 @@ import {
   type GateWarning,
 } from "../services/first-reconcile-gate.js";
 import { type InFlightTracker } from "../services/in-flight-tracker.js";
-import { reviewKnowledge } from "../services/review.js";
+import { reviewKnowledge } from "../services/review/review.js";
 import { unsealedProjectScopeWarning } from "../services/write-scope-warning.js";
 import { toMcpToolError } from "./mcp-tool-error.js";
 

@@ -110,96 +110,12 @@ export const mcpEventLedgerEventSchema = z.object({
   message: z.unknown(),
 });
 
-export const reapplyCompletedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("reapply_completed"),
-  preserved_ledger: z.boolean(),
-  preserved_meta: z.boolean(),
-  rules_count: z.number().int().nonnegative(),
-});
-
-// v2.0.0-rc.29 TASK-003 (BUG-H4): install_diff_applied — emitted by
-// `fabric install` (cli `commands/install.ts:appendInstallDiffLedgerEvent`)
-// per install run summarizing managed-file diff outcomes. Closes the
-// `event_ledger_schema_compat` warn that CLI-only events produced when the
-// server schema lacked the discriminant.
-export const installDiffAppliedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("install_diff_applied"),
-  applied: z.array(z.string()),
-  canonical: z.array(z.string()),
-  drifted: z.array(z.string()),
-});
-
 export const eventLedgerTruncatedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
   event_type: z.literal("event_ledger_truncated"),
   byte_offset: z.number().int().nonnegative(),
   byte_length: z.number().int().nonnegative(),
   corrupted_path: z.string(),
-});
-
-export const metaReconciledOnStartupEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("meta_reconciled_on_startup"),
-  reconciled_files: z.array(z.string()),
-  duration_ms: z.number().int().nonnegative(),
-  source: z.literal("reconcileKnowledge"),
-});
-
-export const metaReconciledEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("meta_reconciled"),
-  reconciled_files: z.array(z.string()),
-  duration_ms: z.number().int().nonnegative(),
-  // v2.0.0-rc.23 TASK-005 (a-B): added `auto-heal-description` trigger so the
-  // read-path plan_context handler can drive a full reconcile when it detects
-  // any node carrying `description === undefined` (legacy meta drift that the
-  // revision-hash gate cannot catch — a missing description doesn't move the
-  // revision). Symmetric to rc.22 D2 read-side auto-heal but covers the
-  // description-undefined case which the revision drift gate misses.
-  // v2.0.0-rc.27 TASK-001 (§2.9): `post-approve` / `post-modify` added so
-  // `fab_review` write-actions can flush newly-promoted entries into
-  // `agents.meta.json.nodes[id]` synchronously — without this the new entry
-  // remains description-less until the next plan_context auto-heal.
-  // v2.0.0-rc.29 TASK-005 (BUG-G1): `auto-heal-after-drift` added so
-  // `ensureKnowledgeFresh` hot-path can chain a paired reconcile (closing the
-  // drift→heal gap) when the caller opts in via `autoHealOnDrift: true`.
-  trigger: z.enum([
-    "doctor",
-    "manual",
-    "auto-heal-description",
-    "auto-heal-after-drift",
-    "post-approve",
-    "post-modify",
-  ]),
-  source: z.literal("reconcileKnowledge"),
-  // v2.0.0-rc.22 TASK-014 (Scope E): set when reconcileKnowledge forced a
-  // writeKnowledgeMeta on revision drift alone (no per-file content drift).
-  // Distinguishes top-level schema/revision repair from the standard per-file
-  // drift path. Optional so existing emitters stay unchanged.
-  force_write_reason: z.enum(["revision_drift"]).optional(),
-});
-
-export const claudeSkillPathMigratedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("claude_skill_path_migrated"),
-  from: z.string(),
-  to: z.string(),
-});
-
-export const claudeHookPathMigratedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("claude_hook_path_migrated"),
-  from: z.string(),
-  to: z.string(),
-});
-
-export const codexSkillPathMigratedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("codex_skill_path_migrated"),
-  from: z.string(),
-  to: z.string(),
 });
 
 // v2.0 rc.1: emitted by the init scan when baseline knowledge entries are written.
@@ -415,22 +331,6 @@ export const doctorRunEventSchema = z.object({
   timestamp: z.string().datetime(),
 });
 
-// v2.0 rc.5 TASK-013 (C4): emitted by doctor lint #24 (relevance_paths_dangling)
-// when `--apply-lint` (future rc.7+ behavior) prunes a glob from a canonical
-// entry's `relevance_paths` because the glob resolves to zero matches in the
-// current workspace. One event per pruned glob. In rc.5 the lint stays
-// flag-only (no auto-prune mutation), but the schema pre-registers the event
-// so future apply-lint behavior can ship without an additional schema bump.
-// `removed_glob` records the exact glob string that was removed from the
-// entry's frontmatter so the audit trail can be replayed to reconstruct the
-// pre-prune `relevance_paths` array.
-export const knowledgePathDangledEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("knowledge_path_dangled"),
-  stable_id: z.string(),
-  removed_glob: z.string(),
-});
-
 // v2.0.0-rc.9 TASK-003 (A3): emitted by `doctor --apply-lint` after the
 // lint #26 (`relevance_fields_missing`) mutation arm finishes walking mounted
 // store `knowledge/pending/**/*.md` entries and back-filling missing
@@ -452,22 +352,6 @@ export const relevanceMigrationRunEventSchema = z.object({
   timestamp: z.string().datetime(),
   scanned_count: z.number().int().nonnegative(),
   touched_count: z.number().int().nonnegative(),
-});
-
-// v2.0 rc.5 TASK-009 (B2): emitted by `doctor --apply-lint` when a pending
-// knowledge entry exceeds the 30-day auto-archive threshold and gets moved
-// from mounted store `knowledge/pending/<type>/` into archive storage.
-// `reason` is currently always "auto_archive_30d" but is left a free string
-// so future doctor passes (e.g. a stale-pending-after-rejection variant) can
-// reuse the same event vocabulary without schema churn. One event is appended
-// per archived file — callers iterate the event stream to reconstruct the
-// archive timeline.
-export const pendingAutoArchivedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("pending_auto_archived"),
-  pending_path: z.string(),
-  archived_to: z.string(),
-  reason: z.string(),
 });
 
 // v2.0.0-rc.20 TASK-02: emitted per assistant turn after the assistant emits
@@ -567,19 +451,6 @@ export const eventsRotatedEventSchema = z.object({
   archive_path: z.string(),
 });
 
-// v2.0.0-rc.22 Scope D T-D1: emitted by the read-path `loadActiveMeta` helper
-// Historical agents_meta auto-heal event. The co-location agents.meta surface
-// is retired, but the event remains parseable so old ledgers do not break
-// event replay.
-export const knowledgeMetaAutoHealedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("knowledge_meta_auto_healed"),
-  previous_revision_hash: z.string(),
-  revision_hash: z.string(),
-  trigger: z.literal("read"),
-  caller: z.enum(["planContext", "getKnowledgeSections", "getKnowledge", "extractKnowledge"]).optional(),
-});
-
 // v2.0.0-rc.23 TASK-010 (e): emitted by `fabric doctor --fix` when a stale
 // `.fabric/.serve.lock` file holding a dead PID is unlinked. The lock is
 // written by `acquireLock` at the top of `fabric serve` and released on graceful
@@ -668,23 +539,16 @@ export const sessionArchiveAttemptedEventSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// v2.1 GATE-INSTR (NEW-N-3): 9 interaction-axis instrumentation events.
+// Interaction-axis instrumentation: what a hook injected and what an MCP call
+// cost, made replayable from events.jsonl instead of only observable live.
 //
-// Source spec: .workflow/.scratchpad/e2e-axis3-v3-delta.md §4 + e2e-methodology-
-// FINAL.md:87 (codex round10). These lift the interaction axis (hook→behavior
-// delta, skill auto-invoke F1, MCP stdio behavior, LLM-judge auditability) from
-// T2/T3 "can't observe today" up to T1-ledger "replayable from events.jsonl".
-//
-// JOIN-FIELD HARD CONSTRAINT (spec §4): every interaction event carries
-// session_id + correlation_id (envelope, optional there but expected here);
-// MCP events add request_id; LLM-judge adds input_trace_id. Without these the
-// cross-event join (e.g. skill_trigger_candidate ⋈ skill_invocation_started to
-// measure false-negatives) cannot reconstruct, so the events would be inert.
-// Kept envelope-optional for schema additivity / back-compat; the EMIT sites
-// (future wiring) are responsible for always populating them.
+// Every event here MUST carry session_id + correlation_id (envelope-optional
+// for back-compat, but an emitter that omits them makes the event inert: the
+// cross-event join is the whole point). MCP events add request_id as the
+// per-round-trip key.
 // ---------------------------------------------------------------------------
 
-// 1. hook_surface_emitted — a hook rendered knowledge into a client channel.
+// hook_surface_emitted — a hook rendered knowledge into a client channel.
 // Measures hook→behavior delta (what was injected vs. what the agent did).
 export const hookSurfaceEmittedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
@@ -697,7 +561,7 @@ export const hookSurfaceEmittedEventSchema = z.object({
   suppression_reason: z.string().optional(),
 });
 
-// 2. hook_signal_emitted — a nudge signal (archive/review/maintenance hint)
+// hook_signal_emitted — a nudge signal (archive/review/maintenance hint)
 // evaluated its threshold. Measures nudge-trigger logic (fired vs. not).
 export const hookSignalEmittedEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
@@ -708,7 +572,7 @@ export const hookSignalEmittedEventSchema = z.object({
   fired: z.boolean(),
 });
 
-// 3. mcp_stdio_trace — one MCP stdio tool round-trip. Measures MCP call
+// mcp_stdio_trace — one MCP stdio tool round-trip. Measures MCP call
 // behavior (latency / payload size / errors). request_id is the join key.
 export const mcpStdioTraceEventSchema = z.object({
   ...eventLedgerEnvelopeSchema,
@@ -720,86 +584,6 @@ export const mcpStdioTraceEventSchema = z.object({
   payload_bytes_in: z.number().int().nonnegative(),
   payload_bytes_out: z.number().int().nonnegative(),
   error_code: z.string().optional(),
-});
-
-// 4. payload_guard_observed — the ≤4k MCP payload guard ran. Measures
-// truncation behavior (G-MCP-PAYLOAD's runtime counterpart).
-export const payloadGuardObservedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("payload_guard_observed"),
-  tool_name: z.string(),
-  path_count: z.number().int().nonnegative(),
-  tokens_estimated: z.number().int().nonnegative(),
-  truncated: z.boolean(),
-  cap: z.number().int().positive(),
-});
-
-// 5. skill_invocation_started — a skill began. trigger_source distinguishes
-// user-typed vs. auto-invoke vs. AI self-trigger (the cite/self-archive E3).
-export const skillInvocationStartedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("skill_invocation_started"),
-  skill_name: z.string(),
-  trigger_source: z.enum(["user", "auto_invoke", "ai_self_trigger", "chained"]),
-  entry_point: z.string(),
-});
-
-// 6. skill_invocation_completed — a skill finished. outcome closes the loop
-// opened by skill_invocation_started (join via correlation_id).
-export const skillInvocationCompletedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("skill_invocation_completed"),
-  skill_name: z.string(),
-  trigger_source: z.enum(["user", "auto_invoke", "ai_self_trigger", "chained"]),
-  entry_point: z.string(),
-  outcome: z.enum(["completed", "aborted", "error", "no_op"]),
-  elapsed_ms: z.number().nonnegative().optional(),
-});
-
-// 7. skill_phase_transition — phase-level telemetry within a skill run.
-export const skillPhaseTransitionEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("skill_phase_transition"),
-  skill_name: z.string(),
-  phase: z.string(),
-  status: z.enum(["entered", "completed", "skipped", "failed"]),
-  checkpoint: z.string().optional(),
-  elapsed_ms: z.number().nonnegative().optional(),
-});
-
-// 8. skill_trigger_candidate — a moment where a skill COULD have auto-invoked
-// (signal present). Joined with skill_invocation_started it yields auto-invoke
-// false-negatives (candidate fired but no invocation = should-have-triggered).
-export const skillTriggerCandidateEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("skill_trigger_candidate"),
-  skill_name: z.string(),
-  trigger_source: z.enum(["user", "auto_invoke", "ai_self_trigger", "chained"]),
-  signal: z.string(),
-  invoked: z.boolean(),
-});
-
-// 9. llm_judge_run — an LLM-judge scored a T3 quality dimension. input_trace_id
-// links the judged artifact back to its producing run (T3 auditability).
-export const llmJudgeRunEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("llm_judge_run"),
-  prompt: z.string(),
-  version: z.string(),
-  model: z.string(),
-  input_trace_id: z.string(),
-  score: z.number(),
-  rationale: z.string(),
-});
-
-// (9, cont.) client_capability_snapshot — records a client's capability set so
-// cross-client behavior deltas (D6 parity) can be attributed to capability gaps.
-export const clientCapabilitySnapshotEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("client_capability_snapshot"),
-  client: z.enum(["cc", "codex"]),
-  capabilities: z.array(z.string()),
-  version: z.string(),
 });
 
 // ---------------------------------------------------------------------------
@@ -918,14 +702,6 @@ export const knowledgeBodyReadEventSchema = z.object({
   tool_name: z.string().optional(),
 });
 
-// precompact_observed — PreCompact marker. The injection capability is not yet
-// grounded, so this is an inert observation marker only (no payload): it lets
-// doctor see compaction cadence without the hook computing anything.
-export const precompactObservedEventSchema = z.object({
-  ...eventLedgerEnvelopeSchema,
-  event_type: z.literal("precompact_observed"),
-});
-
 // graph_edge_candidate_requested — emitted by the Stop hook after a successful
 // archive. The hook only REQUESTS edge extraction (KT-DEC-0007); the `related`
 // edges are produced by the archive/import skill or doctor co-occurrence, never
@@ -945,14 +721,7 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   editIntentCheckedEventSchema,
   knowledgeDriftDetectedEventSchema,
   mcpEventLedgerEventSchema,
-  reapplyCompletedEventSchema,
-  installDiffAppliedEventSchema,
   eventLedgerTruncatedEventSchema,
-  metaReconciledOnStartupEventSchema,
-  metaReconciledEventSchema,
-  claudeSkillPathMigratedEventSchema,
-  claudeHookPathMigratedEventSchema,
-  codexSkillPathMigratedEventSchema,
   initScanCompletedEventSchema,
   // v2.0 rc.2 grill-followup TASK-004: knowledge.* lifecycle pre-registration
   knowledgeProposedEventSchema,
@@ -975,12 +744,6 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   knowledgeConsumedEventSchema,
   // v2.0 rc.5 TASK-012 (C3): knowledge_scope_degraded — narrow→broad auto-degrade
   knowledgeScopeDegradedEventSchema,
-  // v2.0 rc.5 TASK-009 (B2): pending_auto_archived — doctor --apply-lint moves
-  // pending entries >30d old into the .archive/pending/ subtree.
-  pendingAutoArchivedEventSchema,
-  // v2.0 rc.5 TASK-013 (C4): knowledge_path_dangled — emitted by doctor lint
-  // #24 when a glob in relevance_paths resolves to zero filesystem matches.
-  knowledgePathDangledEventSchema,
   // v2.0.0-rc.7 T10: doctor_run — emitted by `fabric doctor` to drive Signal D.
   doctorRunEventSchema,
   // v2.0.0-rc.9 TASK-003 (A3): relevance_migration_run — emitted by
@@ -996,9 +759,6 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // idempotent marker opening the contract-policy audit window. Distinct
   // from cite_policy_activated so contract metrics get their own window.
   citeContractPolicyActivatedEventSchema,
-  // v2.0.0-rc.22 Scope D T-D1: knowledge_meta_auto_healed — emitted by
-  // loadActiveMeta when read-path drift triggers an in-place meta rebuild.
-  knowledgeMetaAutoHealedEventSchema,
   // v2.0.0-rc.22 Scope A T3: events_rotated — emitted as the first line of
   // the post-rotation events.jsonl when sliding-window-by-age rotation moves
   // stale entries to events.archive/events-rotated-YYYY-MM-DD.jsonl.
@@ -1017,17 +777,10 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // cross-session digest, outcome-based rescan filter (skips user_dismissed),
   // covered_through_ts watermark, and `fabric doctor --archive-history`.
   sessionArchiveAttemptedEventSchema,
-  // v2.1 GATE-INSTR (NEW-N-3): 9 interaction-axis instrumentation events.
+  // Interaction-axis instrumentation (hook delivery + MCP round-trip cost).
   hookSurfaceEmittedEventSchema,
   hookSignalEmittedEventSchema,
   mcpStdioTraceEventSchema,
-  payloadGuardObservedEventSchema,
-  skillInvocationStartedEventSchema,
-  skillInvocationCompletedEventSchema,
-  skillPhaseTransitionEventSchema,
-  skillTriggerCandidateEventSchema,
-  llmJudgeRunEventSchema,
-  clientCapabilitySnapshotEventSchema,
   // lifecycle-refactor Wave 2 — dormant-hook activation markers.
   sessionEndedEventSchema,
   fileMutatedEventSchema,
@@ -1042,7 +795,6 @@ export const eventLedgerEventSchema = z.discriminatedUnion("event_type", [
   // KT-DEC-0030: knowledge_body_read — PostToolUse native-Read consumption marker
   // (replaces knowledge_consumed as the funnel's "body opened" signal).
   knowledgeBodyReadEventSchema,
-  precompactObservedEventSchema,
   graphEdgeCandidateRequestedEventSchema,
 ]);
 
@@ -1052,14 +804,7 @@ export type KnowledgeSectionsFetchedEvent = z.infer<typeof knowledgeSectionsFetc
 export type EditIntentCheckedEvent = z.infer<typeof editIntentCheckedEventSchema>;
 export type KnowledgeDriftDetectedEvent = z.infer<typeof knowledgeDriftDetectedEventSchema>;
 export type McpEventLedgerEvent = z.infer<typeof mcpEventLedgerEventSchema>;
-export type ReapplyCompletedEvent = z.infer<typeof reapplyCompletedEventSchema>;
-export type InstallDiffAppliedEvent = z.infer<typeof installDiffAppliedEventSchema>;
 export type EventLedgerTruncatedEvent = z.infer<typeof eventLedgerTruncatedEventSchema>;
-export type MetaReconciledOnStartupEvent = z.infer<typeof metaReconciledOnStartupEventSchema>;
-export type MetaReconciledEvent = z.infer<typeof metaReconciledEventSchema>;
-export type ClaudeSkillPathMigratedEvent = z.infer<typeof claudeSkillPathMigratedEventSchema>;
-export type ClaudeHookPathMigratedEvent = z.infer<typeof claudeHookPathMigratedEventSchema>;
-export type CodexSkillPathMigratedEvent = z.infer<typeof codexSkillPathMigratedEventSchema>;
 export type InitScanCompletedEvent = z.infer<typeof initScanCompletedEventSchema>;
 export type KnowledgeProposedEvent = z.infer<typeof knowledgeProposedEventSchema>;
 export type KnowledgePromoteStartedEvent = z.infer<typeof knowledgePromoteStartedEventSchema>;
@@ -1077,29 +822,19 @@ export type KnowledgeDeferredEvent = z.infer<typeof knowledgeDeferredEventSchema
 export type KnowledgeRejectedEvent = z.infer<typeof knowledgeRejectedEventSchema>;
 export type KnowledgeConsumedEvent = z.infer<typeof knowledgeConsumedEventSchema>;
 export type KnowledgeScopeDegradedEvent = z.infer<typeof knowledgeScopeDegradedEventSchema>;
-export type PendingAutoArchivedEvent = z.infer<typeof pendingAutoArchivedEventSchema>;
-export type KnowledgePathDangledEvent = z.infer<typeof knowledgePathDangledEventSchema>;
 export type DoctorRunEvent = z.infer<typeof doctorRunEventSchema>;
 export type RelevanceMigrationRunEvent = z.infer<typeof relevanceMigrationRunEventSchema>;
 export type AssistantTurnObservedEvent = z.infer<typeof assistantTurnObservedEventSchema>;
 export type CitePolicyActivatedEvent = z.infer<typeof citePolicyActivatedEventSchema>;
 export type CiteContractPolicyActivatedEvent = z.infer<typeof citeContractPolicyActivatedEventSchema>;
-export type KnowledgeMetaAutoHealedEvent = z.infer<typeof knowledgeMetaAutoHealedEventSchema>;
 export type EventsRotatedEvent = z.infer<typeof eventsRotatedEventSchema>;
 export type ServeLockClearedEvent = z.infer<typeof serveLockClearedEventSchema>;
 export type KnowledgeEnrichedEvent = z.infer<typeof knowledgeEnrichedEventSchema>;
 export type SessionArchiveAttemptedEvent = z.infer<typeof sessionArchiveAttemptedEventSchema>;
-// v2.1 GATE-INSTR (NEW-N-3) interaction-axis event types.
+// Interaction-axis instrumentation event types.
 export type HookSurfaceEmittedEvent = z.infer<typeof hookSurfaceEmittedEventSchema>;
 export type HookSignalEmittedEvent = z.infer<typeof hookSignalEmittedEventSchema>;
 export type McpStdioTraceEvent = z.infer<typeof mcpStdioTraceEventSchema>;
-export type PayloadGuardObservedEvent = z.infer<typeof payloadGuardObservedEventSchema>;
-export type SkillInvocationStartedEvent = z.infer<typeof skillInvocationStartedEventSchema>;
-export type SkillInvocationCompletedEvent = z.infer<typeof skillInvocationCompletedEventSchema>;
-export type SkillPhaseTransitionEvent = z.infer<typeof skillPhaseTransitionEventSchema>;
-export type SkillTriggerCandidateEvent = z.infer<typeof skillTriggerCandidateEventSchema>;
-export type LlmJudgeRunEvent = z.infer<typeof llmJudgeRunEventSchema>;
-export type ClientCapabilitySnapshotEvent = z.infer<typeof clientCapabilitySnapshotEventSchema>;
 // lifecycle-refactor Wave 2 — dormant-hook activation markers.
 export type SessionEndedEvent = z.infer<typeof sessionEndedEventSchema>;
 export type FileMutatedEvent = z.infer<typeof fileMutatedEventSchema>;
@@ -1112,7 +847,6 @@ export type WriteRouteChangedEvent = z.infer<typeof writeRouteChangedEventSchema
 // ISS-20260711-215
 export type NarrowHintFailedEvent = z.infer<typeof narrowHintFailedEventSchema>;
 export type KnowledgeBodyReadEvent = z.infer<typeof knowledgeBodyReadEventSchema>;
-export type PrecompactObservedEvent = z.infer<typeof precompactObservedEventSchema>;
 export type GraphEdgeCandidateRequestedEvent = z.infer<typeof graphEdgeCandidateRequestedEventSchema>;
 export type EventLedgerEvent =
   | KnowledgeContextPlannedEvent
@@ -1121,14 +855,7 @@ export type EventLedgerEvent =
   | EditIntentCheckedEvent
   | KnowledgeDriftDetectedEvent
   | McpEventLedgerEvent
-  | ReapplyCompletedEvent
-  | InstallDiffAppliedEvent
   | EventLedgerTruncatedEvent
-  | MetaReconciledOnStartupEvent
-  | MetaReconciledEvent
-  | ClaudeSkillPathMigratedEvent
-  | ClaudeHookPathMigratedEvent
-  | CodexSkillPathMigratedEvent
   | InitScanCompletedEvent
   | KnowledgeProposedEvent
   | KnowledgePromoteStartedEvent
@@ -1146,14 +873,11 @@ export type EventLedgerEvent =
   | KnowledgeRejectedEvent
   | KnowledgeConsumedEvent
   | KnowledgeScopeDegradedEvent
-  | PendingAutoArchivedEvent
-  | KnowledgePathDangledEvent
   | DoctorRunEvent
   | RelevanceMigrationRunEvent
   | AssistantTurnObservedEvent
   | CitePolicyActivatedEvent
   | CiteContractPolicyActivatedEvent
-  | KnowledgeMetaAutoHealedEvent
   | EventsRotatedEvent
   | ServeLockClearedEvent
   | KnowledgeEnrichedEvent
@@ -1161,13 +885,6 @@ export type EventLedgerEvent =
   | HookSurfaceEmittedEvent
   | HookSignalEmittedEvent
   | McpStdioTraceEvent
-  | PayloadGuardObservedEvent
-  | SkillInvocationStartedEvent
-  | SkillInvocationCompletedEvent
-  | SkillPhaseTransitionEvent
-  | SkillTriggerCandidateEvent
-  | LlmJudgeRunEvent
-  | ClientCapabilitySnapshotEvent
   | SessionEndedEvent
   | FileMutatedEvent
   | StoreMountedEvent
@@ -1177,7 +894,6 @@ export type EventLedgerEvent =
   | WriteRouteChangedEvent
   | NarrowHintFailedEvent
   | KnowledgeBodyReadEvent
-  | PrecompactObservedEvent
   | GraphEdgeCandidateRequestedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
 type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent

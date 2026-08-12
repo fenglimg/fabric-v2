@@ -19,7 +19,7 @@ import { normalizeKnowledgePath } from "./get-knowledge.js";
 import { buildCrossStoreRawItems, computeReadSetRevision } from "./cross-store-recall.js";
 import { loadIdRedirectMap, trimRedirectsToActiveIds } from "./id-redirect.js";
 import { bumpCounter, METRIC_COUNTER_NAMES } from "./metrics.js";
-import { coalesceSessionId, readActiveSessionId } from "./active-session.js";
+import { resolveSessionId } from "./active-session.js";
 
 import { compareStableIds as compareStableIdsPure, layerFromStableId as layerFromStableIdPure } from "./plan-context-ids.js";
 import {
@@ -147,8 +147,7 @@ export type RequirementProfile = {
 // candidate counts: every response returns `description_index` + a
 // `selection_token`, and the Agent follows up with `fab_get_knowledge_sections`
 // to fetch bodies. Rationale: the inline-body branch silently bypassed
-// `knowledge_consumed` event emission, breaking rc.5 C5 closure. See
-// docs/decisions/rc5-a3-superseded.md.
+// `knowledge_consumed` event emission, breaking rc.5 C5 closure.
 // v2.0.0-rc.38 UX-1 (D-MCP fold ①): per-path `description_index` removed. Since
 // rc.37 A1 dropped server-side relevance filtering it was identical to the
 // shared index for every path — N paths shipped N+1 copies. The candidate list
@@ -565,12 +564,13 @@ export async function planContext(
   // will become the SOLE write path once those lint readers migrate.
   bumpCounter(projectRoot, METRIC_COUNTER_NAMES.knowledge_context_planned);
   try {
-    // session_id for cite-coverage recall↔edit join: prefer the agent-supplied
-    // arg, else the SessionStart/edit active-session sidecar. Without either,
-    // planned events stay unscoped and recall_coverage_rate stays 0 even when
-    // the agent did recall (ccpm dogfood 2026-07-12).
-    const activeSid = await readActiveSessionId(projectRoot);
-    const sessionId = coalesceSessionId(input.session_id, activeSid);
+    // session_id for cite-coverage recall↔edit join: agent-supplied arg, else
+    // this process's pin, else an UNAMBIGUOUS active-session sidecar. Without
+    // any of those, planned events stay unscoped and recall_coverage_rate stays
+    // 0 even when the agent did recall (ccpm dogfood 2026-07-12, KT-PIT-0053) —
+    // an undercount we accept over attributing this recall to a neighbouring
+    // window's session (see active-session.ts header).
+    const sessionId = await resolveSessionId(projectRoot, input.session_id);
     await appendEventLedgerEvent(projectRoot, {
       event_type: "knowledge_context_planned",
       target_paths: uniquePaths,

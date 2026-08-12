@@ -12,6 +12,7 @@ import {
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
+import { resetPinnedSessionId } from "./active-session.js";
 import { readEventLedger } from "./event-ledger.js";
 import { planContext, layerFromStableId, readSelectionToken, __bm25CacheStats, __resetBm25Cache } from "./plan-context.js";
 import { contextCache } from "../cache.js";
@@ -295,10 +296,13 @@ describe("planContext", () => {
     const cacheDir = join(projectRoot, ".fabric", ".cache");
     await mkdir(cacheDir, { recursive: true });
     await writeFile(
-      join(cacheDir, "active-session.json"),
+      join(cacheDir, "active-session-sess-from-sidecar.json"),
       JSON.stringify({ session_id: "sess-from-sidecar", ts: Date.now() }),
       "utf8",
     );
+    // The pin is process-global and an earlier case in this file resolved an
+    // explicit id; clear it so this case exercises the sidecar arm.
+    resetPinnedSessionId();
 
     await planContext(projectRoot, {
       paths: ["src/index.ts"],

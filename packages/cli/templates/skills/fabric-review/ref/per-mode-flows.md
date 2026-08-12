@@ -1,6 +1,12 @@
-# Per-Mode Flows — fabric-review
+# Per-Mode Flows + Output Contract — fabric-review
 
-Full bilingual rendering blocks + step-by-step procedures for the four modes referenced from SKILL.md.
+Step-by-step procedures, bilingual rendering blocks, and the closing roll-up for the **2 modes** (`pending` / `maintain`) referenced from SKILL.md.
+
+> **Language.** Every bilingual block below is selected by the machine-wide
+> `~/.fabric/fabric-global.json` → `language` (`zh-CN` | `en` only). The
+> per-project `fabric_language` field is retired for skill rendering —
+> `resolveFabricLocale()` delegates to `resolveGlobalLocale()`. Emit ONE
+> language per block; never mix.
 
 ---
 
@@ -8,10 +14,10 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 
 1. Call `fab_pending` with `action: "list"`, no filters (or `filters.layer="both"` if user explicitly mentioned both layers).
 2. Server returns `items[]` (each = `{pending_path, type, layer, maturity, tags?, title?, summary?}`).
-3. Before presenting, perform **Semantic Check + Activation Check** (see `ref/semantic-check.md`) by issuing one or more `fab_pending action="search"` calls scoped by `filters.type` to surface possible duplicates / contradictions among already-canonical entries, then judge whether the pending entry changes next action.
+3. Before presenting, perform **Semantic Check + Activation Check** (see `ref/semantic-check.md`) by issuing one or more `fab_recall` calls on the paths each pending entry is about, to surface possible duplicates / contradictions among already-canonical entries, then judge whether the pending entry changes next action. (Ranked retrieval, not `fab_pending action="search"` — see `ref/semantic-check.md` for why a substring gate cannot do dedupe.)
 4. For each pending item, render a per-item block. Render `proposed_reason` (frontmatter) with its display-time description from `PROPOSED_REASON_DESCRIPTIONS_BY_LOCALE` enum (v-next grill D8) + first line of `## Context` so future-self has full context without re-reading the transcript. UX i18n Policy class 1 — roll-up templates; protected tokens (`pending_path`, `layer`, `team`, `decisions`, `proposed_reason`, `Tags`, etc.) appear verbatim in BOTH variants:
 
-   **en variant** (`fabric_language === "en"`):
+   **en variant** (`language === "en"`):
 
    ```md
    ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
@@ -23,11 +29,11 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    impact: avoids split client hooks drifting silently
    Proposed reason: decision-confirmation — ≥2 alternatives weighed; rationale stated.
    Context: Session goal: ship Stop-hook for v2 release.
-   ⚠ Possible duplicate of KT-D-0007 (LLM subjective dup/subsumption judgement; thresholds intentionally not quantified)
+   ⚠ Possible duplicate of KT-D-0007 (overlap: high)
    ⚠ reached-but-inert if summary/triage fields do not change next action
    ```
 
-   **zh-CN variant** (`fabric_language === "zh-CN"`):
+   **zh-CN variant** (`language === "zh-CN"`):
 
    ```md
    ## [type=decisions] [layer=team] pending_path=knowledge/pending/decisions/single-cjs-hook.md
@@ -39,7 +45,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    impact: avoids split client hooks drifting silently
    Proposed reason: decision-confirmation — ≥2 候选方案经权衡后确认选型。
    Context: Session goal: ship Stop-hook for v2 release.
-   ⚠ 可能重复 KT-D-0007 (LLM 主观判断 dup/subsumption；具体阈值不可量化)
+   ⚠ 可能重复 KT-D-0007 (overlap: high)
    ⚠ reached-but-inert: 摘要 / triage 字段若不能改变下一步动作,先走 modify-content
    ```
 
@@ -52,21 +58,21 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
 
    If `must_read_if`, `intent_clues`, or `impact` are missing on an old pending entry, render them as `<not recorded>` and consider that an activation warning, not a parser failure.
 
-5. Surface a per-item AskUserQuestion. UX i18n Policy class 5 — `header` + `question` translated; `options[]` array remain English routing keys:
+5. Surface a per-item AskUserQuestion. UX i18n Policy class 5 — `header` + `question` translated; `options[]` remain English routing keys:
 
    ```ts
    // EN
    AskUserQuestion({
      header: "Review pending entry",
-     question: "What action for 'Single .cjs hook across clients'?",
+     question: "What action for 'Single .cjs hook across clients'?  ({pending_path})",
      options: ["approve", "reject", "modify", "defer", "skip"]
    })
 
    // zh-CN
    AskUserQuestion({
      header: "审核 pending 条目",
-     question: "对 '单 .cjs hook 跨客户端' 执行什么操作？",
-     options: ["approve", "reject", "modify", "defer", "skip"]   // 不翻译
+     question: "对 '单 .cjs hook 跨客户端' 执行什么操作？({pending_path})",
+     options: ["approve", "reject", "modify", "defer", "skip"]   // 不翻译 — routing key
    })
    ```
 
@@ -79,27 +85,29 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    - `defer` → call `fab_review action="defer"` with `pending_paths=[path]`; optional `until` ISO datetime if the user supplies one ("defer 2 weeks" → compute and set).
    - `skip` → no MCP call; move to next item.
 
-7. After the loop, flush any accumulated batches (approve `pending_paths[]`, content-modify `items[]`) with their single calls, then display a roll-up: counts by action, list of newly-allocated `stable_id`s (from approve output), any per-item failures from the content-modify batch's `modified[]` (each `{pending_path, ok, error?}` — surface every `ok:false` row so a failed item is not silently lost), and tail of `.fabric/events.jsonl` showing the appended events. See `ref/output-contract.md` for the bilingual rollup template.
+7. After the loop, flush any accumulated batches (approve `pending_paths[]`, content-modify `items[]`) with their single calls, then emit the roll-up (see **Output Contract** below). Surface every `ok:false` row from the content-modify batch's `modified[]` so a failed item is not silently lost.
 
 ---
 
-## Mode: topic — Search & Surface Findings
+## Mode: maintain — Operate on Already-Canonical Knowledge
+
+`maintain` merges the legacy `topic` / `health` / `revisit` modes plus the `retire` and `relate` sub-flows. Pick the sub-flow from the same keyword scan that selected the mode; all five write through `fab_review` only.
+
+### Sub-flow: browse-by-topic
 
 1. Extract the topic keyword(s) from the user's message (e.g. "find about deepMerge" → query="deepMerge").
 2. Call `fab_pending action="search"` with `query` and any obvious filters (if user said "team-only" → `filters.layer="team"`).
 3. Server returns `items[]` ranked by relevance — these are entries already in mounted store `knowledge/<type>/` (NOT pending), unless `filters` says otherwise.
 4. Render top-N (cap at `review_topic_result_cap`, config-resolved, default 8) results with title / summary / pending_path.
-5. If the user follow-up indicates intent to act ("approve all", "modify the second one"), pivot into the corresponding pending mode action — the search result already gives the `pending_path` needed for the action.
+5. If the user follow-up indicates intent to act ("approve all", "modify the second one"), pivot into the corresponding pending-mode action — the search result already gives the `pending_path` needed for the action.
 6. NEVER surface a per-item AskUserQuestion just for browsing — only when the user signals an action verb.
 
----
-
-## Mode: health — Corpus Health & Stale Detection
+### Sub-flow: health / staleness
 
 1. Call `fab_pending action="list"` with `filters.maturity="draft"` (or no filter for full corpus inspection).
 2. Tail `.fabric/events.jsonl` for layer_changed / demoted / rejected counts in the trailing 30 days.
 3. Compute stale candidates: pending entries with mtime older than `review_stale_pending_days` (config-resolved, default 14) OR maturity=draft entries with no recent evidence-append events.
-4. Render a corpus dashboard. UX i18n Policy class 1 — roll-up templates; render per `fabric_language`:
+4. Render a corpus dashboard. UX i18n Policy class 1:
 
    **en variant**:
 
@@ -121,7 +129,7 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    - 已驳回 (30 天): 1
    ```
 
-5. For each stale candidate, surface AskUserQuestion. UX i18n Policy class 5 — `header` + `question` translated; `options[]` remain English routing keys:
+5. For each stale candidate, surface AskUserQuestion. UX i18n Policy class 5:
 
    ```ts
    // EN
@@ -139,29 +147,96 @@ Full bilingual rendering blocks + step-by-step procedures for the four modes ref
    })
    ```
 
-   Route `defer` → `fab_review action="defer"`, `demote` → `fab_review action="modify"` with `changes.maturity` lowered (or `reject` if the user wants outright removal of a pending entry).
+   Route `defer` → `fab_review action="defer"`; `demote` → `fab_review action="modify-content"` with `changes.maturity` lowered (or `reject` if the user wants outright removal of a pending entry).
 
----
-
-## Mode: revisit — Specific Entry Deep Dive
+### Sub-flow: revisit
 
 1. The user referenced a specific entry (by id `KT-D-7` or by slug `single-cjs-hook`).
 2. Call `fab_pending action="list"` with `filters` narrowed by best-guess fields; if the entry is canonical (has stable_id), use the path returned by `fab_pending` instead of inventing a store path.
 3. Display the full body (frontmatter + content). Tail the events.jsonl for any history events tagged with this stable_id.
-4. Surface AskUserQuestion `{options: ["approve", "modify", "reject", "skip"]}` only if the entry is still pending; for canonical entries the only mutation path is `modify` (incl. layer flip).
+4. Surface AskUserQuestion `{options: ["approve", "modify", "reject", "skip"]}` only if the entry is still pending; for canonical entries the only mutation paths are `modify-content` / `modify-layer` / `retire`.
+
+   When the user's stated intent is a layer change ("that's actually personal not team"), confirm the target via `AskUserQuestion {options: ["team", "personal"]}` BEFORE calling `fab_review action="modify-layer"`, then render `Layer flipped: <prior_stable_id> → <new_stable_id>` from the server response — never swallow the id change (see `ref/modify-flow.md`).
+
+### Sub-flow: retire
+
+See `ref/retire-mode.md` — two red lines (deprecate-over-delete / rescue-before-delete), intent→action map, tri-state procedure, scope re-assignment.
+
+### Sub-flow: relate
+
+See `ref/relate-mode.md` — edge-type criteria, sparse-over-dense cap, `KT→KP` privacy iron law.
+
+---
+
+## Output Contract — closing roll-up
+
+After each invocation the skill MUST produce a roll-up. UX i18n Policy class 1. Protected tokens (event-type strings such as `knowledge_promoted` / `knowledge_layer_changed` / `knowledge_rejected` / `knowledge_deferred`, plus `.fabric/events.jsonl`) appear verbatim in BOTH variants:
+
+**en variant**:
+
+```md
+# Review Summary — mode={pending|maintain}
+- Listed: N entries
+- Approved: M (new stable_ids: KT-D-12, KT-G-4, KP-P-2)
+- Rejected: R
+- Modified: U (incl. K layer flips)
+- Deferred: D
+- Skipped: S
+
+## Events appended (.fabric/events.jsonl tail)
+- knowledge_promote_started ×M
+- knowledge_promoted ×M
+- knowledge_layer_changed ×K
+- knowledge_rejected ×R
+- knowledge_deferred ×D
+```
+
+**zh-CN variant**:
+
+```md
+# Review 汇总 — mode={pending|maintain}
+- 列出: N 条
+- 已批准: M (新分配 stable_ids: KT-D-12, KT-G-4, KP-P-2)
+- 已驳回: R
+- 已修改: U (含 K 次 layer 切换)
+- 已延后: D
+- 已跳过: S
+
+## 追加事件 (.fabric/events.jsonl 末尾)
+- knowledge_promote_started ×M
+- knowledge_promoted ×M
+- knowledge_layer_changed ×K
+- knowledge_rejected ×R
+- knowledge_deferred ×D
+```
+
+Also surface the target store alias/UUID for every mutation so the user can inspect that store repo's `git status` when needed.
+
+### events.jsonl atomicity constraint
+
+Event lines appended to `.fabric/events.jsonl` are subject to POSIX single-write atomicity: only writes ≤ 4KB (`PIPE_BUF`) are guaranteed atomic via `Bash: echo "..." >> file`. Lines exceeding 4KB risk interleaved corruption under concurrent skill + server writes to the same ledger.
+
+Skills MUST ensure:
+
+- Each event JSON line is a **single line** (no embedded newlines; escape `\n` in any string value).
+- `session_context` and other free-form text fields **self-truncate** to keep the entire serialized line under 4KB. Suggested per-field caps: `session_context` first 500 chars; `source_sessions` cap at 5 entries; `recent_paths` cap at 20 entries; `user_messages_summary` first 500 chars.
+- If approaching the 4KB ceiling after the per-field caps, drop optional fields (e.g. tags / extra metadata) **before** truncating semantic content (the summary / context that carries the actual observation).
+- The promote / reject / modify / defer events listed above are emitted by the MCP server via `appendEventLedgerEvent` and are already length-bounded server-side; this constraint applies to any event the skill itself appends directly to the ledger (rare, but possible for diagnostic markers).
 
 ---
 
 ## Mode Inference — Examples & Anti-Pattern (companion to SKILL.md table)
 
-### Inference Examples (Sample User Messages → Expected Mode)
+### Inference examples (sample user messages → expected mode)
 
 - "review the pending knowledge" → `pending` (Step 1 keyword "review pending")
-- "find anything about deepMerge" → `topic` (Step 1 keyword "find … about")
-- "anything stale in our knowledge base?" → `health` (Step 1 keyword "stale")
-- "look at KT-D-7" → `revisit` (Step 1 keyword "look at <id>")
-- (Stop-hook fired with signal=review, no user typing) → `pending` (Step 3 default, overflow threshold tripped)
+- "find anything about deepMerge" → `maintain` / browse-by-topic (Step 1 keyword "find … about")
+- "anything stale in our knowledge base?" → `maintain` / health (Step 1 keyword "stale")
+- "look at KT-D-7" → `maintain` / revisit (Step 1 keyword "look at <id>")
+- "清理陈旧知识" → `maintain` / retire
+- "补 related 边" → `maintain` / relate
+- (Stop-hook fired with signal=review, no user typing) → `pending` (Step 2 default, overflow threshold tripped)
 
-### Anti-Pattern (Hard Rule restatement)
+### Anti-pattern (Hard Rule restatement)
 
-NEVER emit an `AskUserQuestion` whose options include {pending, maintain} (or the legacy {topic, health, revisit} aliases). The user does not pick the mode. If inference is genuinely ambiguous after both steps, default to `pending` and proceed; the user can always cancel and redirect. (rc.37 NEW-12 collapsed the 4 legacy modes to 2: `pending` + `maintain`.)
+NEVER emit an `AskUserQuestion` whose options include {pending, maintain} (or the legacy {topic, health, revisit} aliases). The user does not pick the mode. If inference is genuinely ambiguous after both steps, default to `pending` and proceed; the user can always cancel and redirect.

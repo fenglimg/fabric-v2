@@ -1,9 +1,11 @@
 /**
- * Integration: i18n protected-tokens — shared.md §2 I7
+ * Protected tokens must survive translation.
  *
- * I7: Protected tokens (command names, flag names, error codes) are never
- *     translated in any locale. t() placeholder substitution does not corrupt
- *     protected segments.
+ * PROTECTED_TOKENS is the vocabulary AI clients consume verbatim (MCP tool
+ * names, contract field names, hard-rule keywords). If any of them is
+ * translated or paraphrased in a locale, the client-side protocol breaks with
+ * no error anywhere — so the registry is pinned here rather than spot-checked
+ * with a few hand-picked `toContain` assertions.
  */
 import { describe, expect, it } from 'vitest'
 
@@ -13,72 +15,52 @@ import { enMessages } from '../../src/i18n/locales/en.js'
 import { zhCNMessages } from '../../src/i18n/locales/zh-CN.js'
 import type { Messages } from '../../src/i18n/types.js'
 
-// ---------------------------------------------------------------------------
-// I7.1 — Protected tokens appear verbatim in en locale
-// ---------------------------------------------------------------------------
-describe('I7 protected tokens: en locale', () => {
+describe('protected tokens: registry', () => {
+  it('the registry is pinned (add/remove fails this gate)', () => {
+    expect([...PROTECTED_TOKENS].sort()).toMatchInlineSnapshot(`
+      [
+        ".fabric/events.jsonl",
+        "@HUMAN",
+        "AGENTS.md",
+        "MUST",
+        "NEVER",
+        "broad",
+        "fab_propose",
+        "fab_recall",
+        "fab_review",
+        "knowledge/pending",
+        "knowledge_proposed",
+        "knowledge_scope_degraded",
+        "layer",
+        "narrow",
+        "pending_path",
+        "personal",
+        "proposed_reason",
+        "relevance_paths",
+        "relevance_scope",
+        "session_context",
+        "source_sessions",
+        "team",
+      ]
+    `)
+  })
+
+  it.each(PROTECTED_TOKENS)('%s is a non-blank token', (token) => {
+    expect(token.trim()).toBe(token)
+    expect(token.length).toBeGreaterThan(0)
+  })
+})
+
+describe('protected tokens: translator', () => {
   const t = createTranslator('en')
 
-  it('translator returns a string for every defined key', () => {
+  it('translator returns a non-empty string for every defined key', () => {
     for (const key of Object.keys(enMessages) as Array<keyof typeof enMessages>) {
       const result = t(key)
       expect(typeof result).toBe('string')
       expect(result.length).toBeGreaterThan(0)
     }
   })
-
-  it('PROTECTED_TOKENS array is non-empty', () => {
-    expect(PROTECTED_TOKENS.length).toBeGreaterThan(0)
-  })
-})
-
-// ---------------------------------------------------------------------------
-// I7.2 — Protected tokens in message templates are not altered
-// ---------------------------------------------------------------------------
-describe('I7 protected tokens: tokens preserved across locales', () => {
-  // Create a synthetic locale that attempts to translate protected terms
-  const sensitiveMessages: Messages = {
-    ...enMessages,
-    // Override a key that might reference a protected token — check that the
-    // *en* fallback or value preserves the token.
-    // The key we use needs to exist in the en locale.
-    'cli.sync-meta.drift-detected': 'Translation attempt of fabric sync-meta drift.',
-  }
-
-  const protectedTokensList = PROTECTED_TOKENS as ReadonlyArray<string>
-
-  it('none of PROTECTED_TOKENS is empty or whitespace', () => {
-    for (const token of protectedTokensList) {
-      expect(token.trim().length).toBeGreaterThan(0)
-    }
-  })
-
-  it('PROTECTED_TOKENS includes fab_plan_context', () => {
-    expect(protectedTokensList).toContain('fab_plan_context')
-  })
-
-  it('PROTECTED_TOKENS includes fab_get_knowledge_sections', () => {
-    expect(protectedTokensList).toContain('fab_get_knowledge_sections')
-  })
-
-  it('PROTECTED_TOKENS includes MUST', () => {
-    expect(protectedTokensList).toContain('MUST')
-  })
-
-  it('PROTECTED_TOKENS includes NEVER', () => {
-    expect(protectedTokensList).toContain('NEVER')
-  })
-
-  it('PROTECTED_TOKENS includes knowledge/pending', () => {
-    expect(protectedTokensList).toContain('knowledge/pending')
-  })
-})
-
-// ---------------------------------------------------------------------------
-// I7.3 — t() placeholder substitution does not break tokens
-// ---------------------------------------------------------------------------
-describe('I7 protected tokens: t() placeholder substitution', () => {
-  const t = createTranslator('en')
 
   it('substitution of {target} does not mutate tokens elsewhere in the message', () => {
     // cli.shared.target-invalid: "Target must be an existing directory: {target}"
@@ -89,8 +71,8 @@ describe('I7 protected tokens: t() placeholder substitution', () => {
 
   it('substitution with protected token as value preserves it verbatim', () => {
     // Using a protected token as a substitution value — it must appear unchanged
-    const result = t('cli.shared.target-invalid', { target: 'fab_plan_context' })
-    expect(result).toContain('fab_plan_context')
+    const result = t('cli.shared.target-invalid', { target: 'fab_recall' })
+    expect(result).toContain('fab_recall')
   })
 
   it('substitution with no vars returns template unchanged', () => {
@@ -105,10 +87,7 @@ describe('I7 protected tokens: t() placeholder substitution', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// I7.4 — zh-CN locale falls back to en for missing keys
-// ---------------------------------------------------------------------------
-describe('I7 i18n: zh-CN locale fallback to en', () => {
+describe('i18n: zh-CN locale falls back to en', () => {
   it('zh-CN translator does not throw for any en key', () => {
     const t = createTranslator('zh-CN')
     for (const key of Object.keys(enMessages) as Array<keyof typeof enMessages>) {
@@ -125,10 +104,7 @@ describe('I7 i18n: zh-CN locale fallback to en', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// I7.5 — Custom messages override
-// ---------------------------------------------------------------------------
-describe('I7 i18n: createTranslator with custom messages', () => {
+describe('i18n: createTranslator with custom messages', () => {
   it('custom messages override defaults', () => {
     const custom: Messages = {
       ...enMessages,

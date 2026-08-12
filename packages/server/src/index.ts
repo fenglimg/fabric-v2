@@ -1,9 +1,8 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 // v2.0.0-rc.37 Wave A2: `node:http` Server type no longer imported — the
-// startHttpServer entry point was quarantined to packages/server-http-experimental/
-// per KB [[fabric-serve-quarantine-not-delete]]. Restore alongside startHttpServer
-// if the web UI surface is ever re-enabled.
+// startHttpServer entry point left this package (quarantined, then deleted
+// outright in W4 B7). Recover from git history if a web UI surface returns.
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,7 +30,6 @@ declare const __SERVER_VERSION__: string;
 
 export {
   detectUnboundProject,
-  enrichDescriptions,
   runDoctorApplyLint,
   runDoctorArchiveHistory,
   checkBacklogAge,
@@ -56,13 +54,17 @@ export {
   type EnrichDescriptionsCandidate,
   type EnrichDescriptionsMode,
   type EnrichDescriptionsReport,
-} from "./services/doctor.js";
+} from "./services/doctor/doctor.js";
+// W5 B11: enrichDescriptions is a knowledge-tree mutation the CLI audit drives,
+// not a doctor check — it and its canonical-filename walker moved out of the
+// doctor hub. Types still originate in doctor-types.ts.
+export { enrichDescriptions } from "./services/doctor/doctor-enrich-descriptions.js";
 // v2.1 ④ conflict-detection (P4): knowledge-conflict lint.
 export {
   loadConflictEntries,
   runDoctorConflictLint,
   type ConflictLintReport,
-} from "./services/doctor-conflict.js";
+} from "./services/doctor/doctor-conflict.js";
 // P1 recall-engine-refactor (follow-up): recall-engine status surface used by
 // `fabric info recall` — fusion + embed config readers and the lazy embedder
 // probe/warm + its stable cache dir.
@@ -93,7 +95,7 @@ export {
   type RetiredReferenceHit,
   type RetiredReferenceInspection,
   type RetiredToken,
-} from "./services/doctor-retired-references-lint.js";
+} from "./services/doctor/doctor-retired-references-lint.js";
 // W3-H (S6): `fabric audit why-not-surfaced <id>` self-serve scope diagnostic.
 export {
   explainWhyNotSurfaced,
@@ -109,7 +111,7 @@ export {
 // (W4 allocateStoreKnowledgeId). cross-store-recall still consumes
 // deriveRuleIdentity / extractRuleDescription directly from the module.
 export { extractKnowledge } from "./services/extract-knowledge.js";
-export { reviewKnowledge, reviewPending } from "./services/review.js";
+export { reviewKnowledge, reviewPending } from "./services/review/review.js";
 // KT-GLD-0006: review-time cold-eval self-sufficiency judge protocol + batch builder
 // (driven offline by the fabric-review skill via maestro delegate; no hot-path LLM call).
 export {
@@ -140,7 +142,7 @@ export {
   type RelatedGraphInspection,
   type RelatedGraphNode,
   type RelatedHubEntry,
-} from "./services/doctor-related-graph.js";
+} from "./services/doctor/doctor-related-graph.js";
 export {
   clearPrecheckCache,
   evaluateStoreDir,
@@ -154,8 +156,8 @@ export {
   type ConsumptionEntry,
   type ConsumptionInspection,
   type ConsumptionLintConfig,
-} from "./services/doctor-consumption-lint.js";
-export { appendEventLedgerEvent } from "./services/event-ledger.js";
+} from "./services/doctor/doctor-consumption-lint.js";
+export { appendEventLedgerEvent, emitInitScanCompletedOnce } from "./services/event-ledger.js";
 export {
   planContext,
   readSelectionToken,
@@ -198,18 +200,20 @@ export {
 } from "./services/metrics.js";
 export { startRotationTick, stopRotationTick } from "./services/rotation-tick.js";
 
-// W2-06 (升级项 b): additive re-exports consumed by the experimental HTTP
-// server package (@fenglimg/fabric-server-http-experimental). These modules
-// used to live alongside that package; they now live here, so the package
-// imports them from this barrel. Purely additive — no behavior change.
+// W2-06 (升级项 b) added five re-exports here purely so the experimental HTTP
+// package could import them from this barrel. W4 B7 deleted that package, and
+// with it four of the five: `readEventLedger`, `rehydrateAgentsMetaAt`,
+// `resolveLedgerPaths`, `readLedger`. Each is still used heavily WITHIN this
+// package — the re-export was the dead part, not the module.
+//
+// `contextCache` survives because scripts/store-only-e2e.mjs really calls it.
+// Note that call is `server.contextCache?.invalidate?.("file_watch")`: dropping
+// the export would not fail the e2e, it would silently skip the invalidation
+// and leave a stale cache behind a green run.
 export { contextCache } from "./cache.js";
-export { readEventLedger } from "./services/event-ledger.js";
-export { rehydrateAgentsMetaAt } from "./services/rehydrate-state.js";
-export { resolveLedgerPaths, readLedger } from "./services/read-ledger.js";
 // v2.2 W5 R2 (agents.meta decolo): `getKnowledge` (the path-glob co-location
-// injection model) and `readAgentsMeta` (the co-location index reader) are no
-// longer re-exported — both were consumed only by the quarantined
-// server-http-experimental package, which is out of the main workspace.
+// injection model) and `readAgentsMeta` (the co-location index reader) were
+// dropped from this barrel for the same reason.
 
 function writeStderr(message: string): void {
   process.stderr.write(`${message}\n`);
@@ -242,8 +246,9 @@ export { AGENTS_MD_RESOURCE_URI } from "./constants.js";
 
 export { flushAndSyncEventLedger } from "./services/event-ledger.js";
 export { createInFlightTracker, type InFlightTracker } from "./services/in-flight-tracker.js";
-// v2.0.0-rc.37 Wave A2 Part 2: serve-lock fully quarantined to
-// packages/server-http-experimental/. Main retains a read-only probe at
+// v2.0.0-rc.37 Wave A2 Part 2: the serve-lock writer left this package and was
+// deleted with the experimental HTTP package in W4 B7. Main retains a
+// read-only probe at
 // `services/legacy-serve-lock-probe.ts` (isAlive + readLockState) so doctor
 // can reap legacy `.fabric/.serve.lock` corpses left behind by rc ≤36
 // `fabric serve` invocations. No public re-exports remain.
@@ -560,11 +565,10 @@ export function createShutdownHandler(deps: ShutdownHandlerDeps): () => void {
   };
 }
 
-// v2.0.0-rc.37 Wave A2: `startHttpServer` removed. The CLI surface
-// (`fabric serve`) is quarantined to packages/server-http-experimental/ per
-// KB [[fabric-serve-quarantine-not-delete]]. The Express app factory, bearer
-// auth middleware, serve-lock service, and HTTP integration tests now live in
-// the experimental package; no main-line HTTP entry point remains.
+// v2.0.0-rc.37 Wave A2: `startHttpServer` removed — no HTTP entry point
+// remains anywhere. The Express app factory, bearer auth middleware, serve-lock
+// service, and HTTP integration tests moved to a quarantined package, which W4
+// B7 then deleted; git history holds them.
 
 const entrypoint = process.argv[1];
 const currentFilePath = fileURLToPath(import.meta.url);

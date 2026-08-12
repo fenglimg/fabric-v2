@@ -1,4 +1,4 @@
-import { detectUnboundProject } from "./doctor-unbound-project.js";
+import { detectUnboundProject } from "./doctor/doctor-unbound-project.js";
 import type { GateWarning } from "./first-reconcile-gate.js";
 
 /**

@@ -134,7 +134,11 @@ describe("fabric audit (W3-D group)", () => {
   });
 
   describe("audit conflicts", () => {
-    it("invokes runDoctorConflictLint and passes --deep through", async () => {
+    // `--deep` was removed: it needed an injected ConflictJudge the CLI cannot
+    // supply, so it could only ever print "no judge wired yet". The command now
+    // calls the service with no options at all — asserting that is what keeps a
+    // future flag from being re-added without a judge behind it.
+    it("invokes runDoctorConflictLint with no caller-supplied options", async () => {
       const conflictSpy = vi.fn().mockResolvedValue({
         candidate_count: 0,
         conflict_count: 0,
@@ -148,14 +152,14 @@ describe("fabric audit (W3-D group)", () => {
       const stdout = captureStdout();
       try {
         await conflictsCommand.run?.({
-          args: { target: "/tmp/itg-audit", deep: true, json: false },
+          args: { target: "/tmp/itg-audit", json: false },
         } as never);
       } finally {
         stdout.restore();
       }
 
       expect(conflictSpy).toHaveBeenCalledTimes(1);
-      expect(conflictSpy.mock.calls[0][1]).toEqual({ deep: true });
+      expect(conflictSpy.mock.calls[0][1]).toBeUndefined();
     });
   });
 
@@ -263,7 +267,7 @@ describe("fabric audit — flat-design structure (NO_COLOR)", () => {
     const { conflictsCommand } = await import("../../src/commands/audit.ts");
     const stdout = captureStdout();
     try {
-      await conflictsCommand.run?.({ args: { target: "/tmp/itg-audit", json: false, deep: false } } as never);
+      await conflictsCommand.run?.({ args: { target: "/tmp/itg-audit", json: false } } as never);
     } finally {
       stdout.restore();
     }

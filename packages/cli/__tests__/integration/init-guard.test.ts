@@ -16,11 +16,12 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { initFabric } from "../../src/commands/install.ts";
 import {
   cleanupFixtureRoot,
+  createInstalledFixtureRoot,
   createWerewolfFixtureRoot,
   runInit,
+  runScaffoldOnly,
   writeFixtureFile,
 } from "../helpers/init-test-utils.ts";
 
@@ -40,10 +41,9 @@ function sha256(content: Buffer | string): string {
 // success (diff-mode contract). Drift on a managed file aborts.
 describe("I2: init guard — diff-mode behavior", () => {
   it("does NOT throw on an already-initialized canonical workspace when no flags are set", async () => {
-    const target = createWerewolfFixtureRoot("itg-init-guard-nof");
+    const target = await createInstalledFixtureRoot("itg-init-guard-nof");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // rc.14 TASK-002: re-run without any flags is a no-op success (was a
     // throw under rc.13 planFreshPath semantics). Diff-mode classifies all
@@ -53,10 +53,9 @@ describe("I2: init guard — diff-mode behavior", () => {
   });
 
   it("aborts with a drift message when a managed hook script has been byte-modified", async () => {
-    const target = createWerewolfFixtureRoot("itg-init-guard-drift");
+    const target = await createInstalledFixtureRoot("itg-init-guard-drift");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Occupy a managed scaffold FILE location (.fabric/events.jsonl) with a
     // directory so the per-file classifier detects user-modification.
@@ -88,7 +87,7 @@ describe("I2: init guard — diff-mode behavior", () => {
     writeFixtureFile(target, ".fabric/bootstrap/README.md", original);
 
     // v2.0 init writes its own layout but does not touch the legacy file.
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     expect(readFileSync(join(target, ".fabric/bootstrap/README.md"), "utf8")).toBe(original);
   });
@@ -100,10 +99,9 @@ describe("I2: init guard — diff-mode behavior", () => {
 // rc.15; W5 I1 retired the co-location agents.meta.json scaffold.)
 describe("I3: init default-install idempotency", () => {
   it("produces byte-identical fabric-config.json on second `fabric install` (no flags)", async () => {
-    const target = createWerewolfFixtureRoot("itg-init-idem-config");
+    const target = await createInstalledFixtureRoot("itg-init-idem-config");
     tempRoots.push(target);
 
-    await runInit(target);
 
     await runInit(target);
     const hash1 = sha256(readFileSync(join(target, ".fabric", "fabric-config.json")));
@@ -115,10 +113,9 @@ describe("I3: init default-install idempotency", () => {
   });
 
   it("preserves events.jsonl prefix byte-identically across default re-runs", async () => {
-    const target = createWerewolfFixtureRoot("itg-init-idem-events");
+    const target = await createInstalledFixtureRoot("itg-init-idem-events");
     tempRoots.push(target);
 
-    await runInit(target);
 
     const eventsPath = join(target, ".fabric", "events.jsonl");
     const sentinel = JSON.stringify({
@@ -131,8 +128,9 @@ describe("I3: init default-install idempotency", () => {
       stream_id: "s1",
       message: null,
     });
-    // Prepend sentinel WITHOUT clobbering whatever the install pipeline
-    // already wrote during the first runInit (notably install_diff_applied).
+    // Prepend the sentinel WITHOUT clobbering whatever the install pipeline
+    // already wrote during the first runInit — the point of the test is that
+    // re-running install preserves pre-existing ledger bytes.
     const existing = readFileSync(eventsPath, "utf8");
     writeFileSync(eventsPath, sentinel + "\n" + existing, "utf8");
 
@@ -162,7 +160,7 @@ describe("T4: preexisting root markdown preservation", () => {
     const original = "# My Project\n\nUser instructions here.\n";
     writeFixtureFile(target, "CLAUDE.md", original);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     expect(readFileSync(join(target, "CLAUDE.md"), "utf8")).toBe(original);
   });
@@ -174,7 +172,7 @@ describe("T4: preexisting root markdown preservation", () => {
     const original = "# Agents\n\nCustom agent instructions.\n";
     writeFixtureFile(target, "AGENTS.md", original);
 
-    await initFabric(target);
+    await runScaffoldOnly(target);
 
     expect(readFileSync(join(target, "AGENTS.md"), "utf8")).toBe(original);
   });

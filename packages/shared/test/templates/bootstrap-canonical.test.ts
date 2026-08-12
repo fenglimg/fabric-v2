@@ -9,49 +9,17 @@ import {
 
 describe("bootstrap-canonical", () => {
   describe("BOOTSTRAP_CANONICAL_ZH", () => {
-    it("starts with the locked header + opening clause", () => {
-      expect(BOOTSTRAP_CANONICAL_ZH.startsWith("# Fabric Bootstrap\n\n本项目")).toBe(
-        true,
-      );
-    });
-
-    it("contains all required H2 sections", () => {
-      // rc.35 TASK-11 (P0-13/P1-9): For Developers section sits between the
-      // intro paragraph and the existing AI-facing sections. ≤5 lines,
-      // second-person, points dev at USER-QUICKSTART.md to deflect the
-      // "AGENTS.md is dev onboarding" misread Batch 7 caught.
-      expect(BOOTSTRAP_CANONICAL_ZH).toContain("## For Developers");
+    // T-3: the prose H2 headings + section ordering + byte floor moved to
+    // bootstrap-canonical.wording.test.ts (PROMPT_WORDING=1, outside the PR
+    // gate). What stays here is the PATH the dev section must point at — a path
+    // is a contract with the repo, a heading is a wording choice.
+    it("points developers at the quickstart doc that actually exists", () => {
       expect(BOOTSTRAP_CANONICAL_ZH).toContain("docs/USER-QUICKSTART.md");
-      expect(BOOTSTRAP_CANONICAL_ZH).toContain("## 行为规则");
-      expect(BOOTSTRAP_CANONICAL_ZH).toContain("## 知识库(KB)");
-      expect(BOOTSTRAP_CANONICAL_ZH).toContain("## Cite policy");
-    });
-
-    it("For Developers section precedes the AI-facing sections", () => {
-      const devIdx = BOOTSTRAP_CANONICAL_ZH.indexOf("## For Developers");
-      const aiIdx = BOOTSTRAP_CANONICAL_ZH.indexOf("## 行为规则");
-      expect(devIdx).toBeGreaterThan(0);
-      expect(aiIdx).toBeGreaterThan(devIdx);
-    });
-
-    it("is at least 800 bytes (utf-8)", () => {
-      // rc.24: grew from ≥400 with cite-contract syntax bullets (operators +
-      // skip-reason dictionary + type routing + personal-layer mention).
-      expect(Buffer.byteLength(BOOTSTRAP_CANONICAL_ZH, "utf8")).toBeGreaterThanOrEqual(
-        800,
-      );
     });
 
     describe("cite policy invariants", () => {
       it("contains the KB cite reply-line format anchor", () => {
         expect(BOOTSTRAP_CANONICAL_ZH).toContain("KB: <id>");
-      });
-
-      it("teaches recall auto-accounting as the core (zero first-line burden)", () => {
-        // v2.2 C1 (W2): the cite contract is internalised — recall auto-accounts
-        // the citation; no hand-written first reply line is required.
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("自动记账");
-        expect(BOOTSTRAP_CANONICAL_ZH).toContain("无需手写");
       });
 
       it("keeps the dismissed/override speak-up path", () => {
@@ -169,13 +137,14 @@ describe("bootstrap-canonical", () => {
     });
   });
 
-
   describe("pre-action gating + archive-as-truth (peer micro-transfer)", () => {
+    // T-3: the two Chinese framing phrases moved to the wording file; the two
+    // identifiers below are the actual contract — if the bootstrap stops naming
+    // `fab_recall(paths=` / `session_id=`, agents are taught a call shape the
+    // MCP surface does not accept.
     it("teaches fab_recall(paths= with session_id before edit", () => {
       expect(BOOTSTRAP_CANONICAL_ZH).toContain("fab_recall(paths=");
       expect(BOOTSTRAP_CANONICAL_ZH).toContain("session_id=");
-      expect(BOOTSTRAP_CANONICAL_ZH).toContain("修改任何文件前");
-      expect(BOOTSTRAP_CANONICAL_ZH).toContain("Pre-action gating");
     });
 
     it("states pending→review as only path into canonical", () => {

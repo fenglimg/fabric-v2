@@ -27,17 +27,19 @@ export default defineConfig({
     environment: "node",
     include: ["__tests__/**/*.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
-    // Run test FILES serially. The install/uninstall/clone integration suites do
-    // real bootstrap writes (~93 hook/skill files each via atomic temp-file +
-    // rename). Under high file-parallelism (many-core dev boxes spawn one fork
-    // per core, each running a full 93-file install at once), those concurrent
-    // rename() syscalls sporadically race the OS filesystem — ENOENT on the .tmp
-    // source mid-rename → `install errors=1` → an incomplete tree → flaky
-    // byte-exact assertions (30+ non-deterministic failures locally, all green
-    // serially). Production never runs 14 installs at once, so this is a
-    // test-load artifact, not a product bug; serial file execution makes the
-    // suite deterministic on any core count without weakening a single assertion.
-    fileParallelism: false,
+    // The install/uninstall integration suites each do a real ~93-file bootstrap
+    // write, so one test can spend most of a second in the filesystem. Under
+    // file-parallelism every core runs one such suite at once and each test slows
+    // by roughly 5x through CPU/IO contention, pushing the heaviest ones just past
+    // vitest’s 5s default. That produced ~31 failures which looked
+    // non-deterministic but were plain timeouts, not the rename() race an earlier
+    // revision of this comment blamed: the integration directory run
+    // parallel-but-alone is green, and the full suite is green on three
+    // consecutive parallel runs once the budget fits the contended timings.
+    // Serialising cost ~2x wall (103s → 47s) and hid the real cause, so the budget
+    // is raised instead and no assertion is weakened.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "json-summary"],

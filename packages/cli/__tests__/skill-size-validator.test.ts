@@ -19,7 +19,7 @@ import {
   estimateSkillTokens,
   inspectStaleInstall,
   validateSkillCanonicalSize,
-} from "../src/install/skills-and-hooks.ts";
+} from "../src/install/install-skills.ts";
 
 describe("estimateSkillTokens (rc.34 TASK-02)", () => {
   it("returns 0 for empty string", () => {

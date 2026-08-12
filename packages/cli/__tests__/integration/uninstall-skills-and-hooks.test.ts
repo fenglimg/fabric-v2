@@ -29,6 +29,7 @@ import {
 } from "../../src/commands/uninstall.ts";
 import {
   cleanupFixtureRoot,
+  createInstalledFixtureRoot,
   createWerewolfFixtureRoot,
   runInit,
   snapshotTree,
@@ -77,10 +78,9 @@ async function runUninstall(
 
 describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
   it("removes fabric-owned files from .claude tree (skills + hook scripts)", async () => {
-    const target = createWerewolfFixtureRoot("itg-uninstall-t1-fresh");
+    const target = await createInstalledFixtureRoot("itg-uninstall-t1-fresh");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Pre-conditions: fabric-owned files exist after init.
     expect(existsSync(join(target, ".claude", "skills", "fabric-archive", "SKILL.md"))).toBe(true);
@@ -102,7 +102,9 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
     // Fabric-owned hook scripts are removed.
     expect(existsSync(join(target, ".claude", "hooks", "fabric-hint.cjs"))).toBe(false);
     expect(existsSync(join(target, ".claude", "hooks", "knowledge-hint-broad.cjs"))).toBe(false);
-    expect(existsSync(join(target, ".claude", "hooks", "knowledge-hint-narrow.cjs"))).toBe(false);
+    // W4 I2: narrow lives under hooks/lib/ now, so assert THAT path — asserting
+    // the old top-level one would pass without removeHookLibs doing anything.
+    expect(existsSync(join(target, ".claude", "hooks", "lib", "knowledge-hint-narrow.cjs"))).toBe(false);
 
     // rc.16 TASK-004 (F2-tests): fabric-owned hook libs are removed too.
     // Symmetric inverse of installHookLibs — the lib `.cjs` files plus the
@@ -159,10 +161,9 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
   // dogfood left an orphaned shared-policy.md + empty skills/lib/ on every
   // client. Symmetric inverse must sweep the lib files AND the empty dir.
   it("removes the shared skill lib (skills/lib/*.md) and its empty dir", async () => {
-    const target = createWerewolfFixtureRoot("itg-uninstall-skill-lib");
+    const target = await createInstalledFixtureRoot("itg-uninstall-skill-lib");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Pre-condition: shared-policy.md shipped to every client's skills/lib/.
     for (const clientDir of [".claude", ".codex"]) {
@@ -191,10 +192,9 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
   // clients but the uninstall path never removed the script OR pruned the
   // config entry. Round-trip must leave zero cite-policy-evict residue.
   it("removes cite-policy-evict.cjs scripts and prunes its config entries (F3)", async () => {
-    const target = createWerewolfFixtureRoot("itg-uninstall-cite-evict");
+    const target = await createInstalledFixtureRoot("itg-uninstall-cite-evict");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Pre-condition: the cite-policy-evict script exists on every client.
     for (const dir of [".claude", ".codex"]) {
@@ -230,6 +230,53 @@ describe("TASK-005 uninstall round-trip: T1 fresh init → uninstall", () => {
         expect(text).not.toContain("knowledge-pretooluse.cjs");
       }
     }
+  });
+
+  // Pre-v2.1 installs wired cite-policy-evict under UserPromptSubmit; the
+  // current template does not ship that slot at all. `hooks.UserPromptSubmit`
+  // therefore looks like a dead entry in HOOK_CONFIG_ARRAY_PATHS — removing it
+  // breaks nothing on the install side, because deepMerge never touches a slot
+  // Fabric's own config lacks. It is load-bearing HERE: unmerge only walks the
+  // paths it is handed, so dropping it would strand the legacy entry forever.
+  it("prunes a legacy UserPromptSubmit fabric entry while keeping the user's", async () => {
+    const target = createWerewolfFixtureRoot("itg-uninstall-legacy-ups");
+    tempRoots.push(target);
+
+    const legacyFabricCommand = "${CLAUDE_PROJECT_DIR}/.claude/hooks/cite-policy-evict.cjs";
+    writeFixtureFile(
+      target,
+      ".claude/settings.json",
+      JSON.stringify(
+        {
+          hooks: {
+            UserPromptSubmit: [
+              { matcher: "*", hooks: [{ type: "command", command: legacyFabricCommand }] },
+              {
+                matcher: "*",
+                hooks: [{ type: "command", command: ".claude/hooks/my-ups-hook.cjs" }],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    await runInit(target);
+    await runUninstall(target);
+
+    const settingsPath = join(target, ".claude", "settings.json");
+    expect(existsSync(settingsPath)).toBe(true);
+    const restored = JSON.parse(readFileSync(settingsPath, "utf8")) as {
+      hooks?: { UserPromptSubmit?: Array<{ hooks?: Array<{ command?: string }> }> };
+    };
+    const commands = (restored.hooks?.UserPromptSubmit ?? [])
+      .flatMap((entry) => entry.hooks ?? [])
+      .map((h) => h.command);
+
+    expect(commands).toContain(".claude/hooks/my-ups-hook.cjs");
+    expect(commands).not.toContain(legacyFabricCommand);
   });
 });
 
@@ -300,10 +347,9 @@ describe("TASK-005 uninstall round-trip: T2 user settings.json preservation", ()
 
 describe("TASK-005 uninstall round-trip: T3 knowledge preserved without --purge", () => {
   it("user-authored .fabric/knowledge entry is byte-identical and state files are removed", async () => {
-    const target = createWerewolfFixtureRoot("itg-uninstall-t3-knowledge");
+    const target = await createInstalledFixtureRoot("itg-uninstall-t3-knowledge");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Seed a user-authored knowledge entry. W5 I1: install no longer scaffolds
     // the .fabric/knowledge cabinet, so the user creates the dir on demand.
@@ -350,10 +396,9 @@ describe("TASK-005 uninstall round-trip: T4 personal root always preserved", () 
     const personalContent = "# Personal\n\nCross-project, must survive uninstall.\n";
     writeFileSync(personalEntry, personalContent, "utf8");
 
-    const target = createWerewolfFixtureRoot("itg-uninstall-t4-purge");
+    const target = await createInstalledFixtureRoot("itg-uninstall-t4-purge");
     tempRoots.push(target);
 
-    await runInit(target);
 
     // Seed a project-local knowledge entry to verify team knowledge survives.
     // W5 I1: install no longer scaffolds the cabinet — create the dir on demand.
@@ -382,10 +427,9 @@ describe("TASK-005 uninstall round-trip: T4 personal root always preserved", () 
 
 describe("TASK-005 uninstall round-trip: T5 idempotent re-run", () => {
   it("second uninstall after first uninstall reports every step as skipped", async () => {
-    const target = createWerewolfFixtureRoot("itg-uninstall-t5-idempotent");
+    const target = await createInstalledFixtureRoot("itg-uninstall-t5-idempotent");
     tempRoots.push(target);
 
-    await runInit(target);
 
     await runUninstall(target);
     const second = await runUninstall(target);

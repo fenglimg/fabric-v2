@@ -36,7 +36,7 @@ exports[`tool contracts > fab-archive-scan contract matches snapshot 1`] = `
             "type": "string",
           },
         ],
-        "description": "Phase 0 scope: explicit session_id[] to constrain the scan, or the 'all' sentinel. Omitted = scan everything since the last knowledge_proposed anchor.",
+        "description": "Phase 0 scope. OMIT for the default incremental scan (only sessions newer than the last knowledge_proposed anchor) — this is what a caller with no range hint MUST send. Pass session_id[] to scan exactly those sessions. Pass 'all' ONLY when the user explicitly asked for full history: it ignores the anchor and re-walks the entire ledger.",
       },
       "session_id": {
         "description": "Current client session id; recorded for cross-session debt tracking.",
@@ -179,7 +179,7 @@ exports[`tool contracts > fab-extract-knowledge contract matches snapshot 1`] = 
         "type": "array",
       },
       "must_read_if": {
-        "description": "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/commands/hooks.ts'). Optional — omit when no single strong trigger fits.",
+        "description": "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/install/'). Optional — omit when no single strong trigger fits.",
         "type": "string",
       },
       "onboard_slot": {

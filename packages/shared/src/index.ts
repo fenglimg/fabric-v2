@@ -5,7 +5,6 @@ export * from "./schemas/agents-meta.js";
 export * from "./schemas/knowledge-test-index.js";
 export * from "./schemas/api-contracts.js";
 export * from "./schemas/ledger-entry.js";
-export * from "./schemas/human-lock.js";
 export * from "./schemas/fabric-config.js";
 export * from "./schemas/fabric-config-introspect.js";
 export * from "./schemas/config-profiles.js";
@@ -20,7 +19,6 @@ export * from "./resolver/project-context-resolver.js";
 export * from "./resolver/git-worktree-identity.js";
 export * from "./resolver/store-resolver.js";
 export * from "./resolver/store-disk-reader.js";
-export * from "./resolver/store-qualified-id.js";
 export * from "./resolver/resolution.js";
 export * from "./store/core.js";
 export * from "./store/store-counters.js";
@@ -32,23 +30,30 @@ export * from "./store/git-remote-allowlist.js";
 export * from "./scanner/scan-recommendations.js";
 export * from "./store/cross-store-lint.js";
 export * from "./store/observability.js";
-export * from "./schemas/provenance.js";
-export * from "./schemas/mcp-store-contracts.js";
 export * from "./schemas/bindings-snapshot.js";
 export * from "./store/bindings.js";
 export * from "./store/store-lifecycle.js";
 export * from "./schemas/forensic-report.js";
 export * from "./schemas/init-context.js";
-export * from "./schemas/events.js";
+// W4 B6: `./schemas/events.js` deleted. Its 5-variant `fabricEventSchema`
+// discriminated union was the v1.8 HTTP server's SSE event model and had no
+// consumer left once that package went; the live event model is
+// `event-ledger.js` below. Two files named "events" with unrelated schemas was
+// itself a hazard — the dead one is the shorter, more obvious-looking import.
 export * from "./schemas/event-ledger.js";
 export * from "./templates/index.js";
 export { parseCiteLine, normalizeCiteTag } from "./cite-line-parser.js";
 // G3 (GRL-STOPHOOK-AIONLY-20260709): archive high-value predicate canonical
-// SST — server imports this; hook has a byte-parity .cjs twin at
-// packages/cli/templates/hooks/lib/high-value-predicate.cjs.
+// SST — the server imports this; the hook runs lib/high-value-predicate.cjs,
+// which is compiled from the same source (B8).
 // Only the predicate is public API; the underlying event-type set and
 // keyword list remain internal (avoid semver commitment on SST details).
 export { isHighValueArchiveCandidate } from "./high-value-predicate.js";
+// The hook registration table both `fabric install` (ships the configs) and
+// `fabric doctor` (checks they are still wired) read from.
+export * from "./hook-registrations.js";
+export * from "./install-manifest.js";
+export * from "./mcp-root-pin.js";
 // v2.2 A-INFRA-2 (W1-T1-CJK): CJK-aware tokenizer for BM25 content scoring.
 export { tokenize } from "./text-tokenize.js";
 export type {

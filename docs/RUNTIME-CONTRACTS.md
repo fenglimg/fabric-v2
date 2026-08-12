@@ -4,37 +4,9 @@
 
 ## CLI Contract
 
-当前 top-level CLI registry 在 `packages/cli/src/commands/index.ts`。
+命令全集以 `packages/cli/src/commands/index.ts` 的 `allCommands` 为准 —— 每个条目自带一条注释说明它为什么在这儿（含 `serve` 为何不接线、`preview` 为何不是 `serve` 复活）。这里**不再重列**：手抄过一次,漂了 —— 文档写着"9 human-facing"并逐条列举时,registry 里已经有 13 个。
 
-Public commands (W3-F: 9 human-facing, on the Knowledge / Project / Maintain axes):
-
-- `store`
-- `sync`
-- `install`
-- `uninstall`
-- `config`
-- `info`（`info scope <coord>` 为真子命令）
-- `inspect`（W3-F 由 `context` 改名）
-- `doctor`
-- `audit`（`audit metrics` 取代了顶层 `metrics`）
-
-Retired (W3-F / earlier waves — removed from the registry, no aliases kept):
-
-- `whoami` / `status` → `info`（早期波）
-- `scope-explain` → `info scope`（W3-F：4 skill JSON 调用已迁移）
-- `metrics` → `audit metrics`（W3-F）
-- `context` → `inspect`（W3-F）
-
-Hidden or script-facing commands:
-
-- `plan-context-hint`
-- `onboard-coverage`
-
-Removed from mainline:
-
-- `serve`：HTTP server 已 quarantine 到 `packages/server-http-experimental`
-- `scan`：顶层命令已移除，deterministic scanner 只作为 install / doctor 内部能力
-- `hooks install`：不再是 public command，hook 写入由 `fabric install` pipeline 管理
+已退休的命令名同理不在这里维护:权威表是 `packages/server/src/services/doctor/doctor-retired-references-lint.ts` 的 `RETIRED_TOKENS`（`token` → `replacement` → 为什么改），它同时是 `fabric doctor` 用来扫出陈旧引用的那张表。文档抄一份只会多一个会漂的副本。
 
 Install 参数以 `packages/cli/src/commands/install-v2.ts` 和 `InitArgs` 为准。
 
@@ -140,7 +112,7 @@ Store routing:
 Audit-grade event ledger 与 metrics sidecar 的格式以 shared schema 和 server service 为准：
 
 - event schema：`packages/shared/src/schemas/event-ledger.ts`
-- doctor / history / cite coverage：`packages/server/src/services/doctor*.ts`
+- doctor / history / cite coverage：`packages/server/src/services/doctor/`
 - metrics：`packages/server/src/services/metrics.ts`
 
 文档可以描述用途，但不应复制事件字段全集。

@@ -13,7 +13,7 @@ import {
 } from "@fenglimg/fabric-shared";
 
 import { extractKnowledge } from "./extract-knowledge.js";
-import { reviewKnowledge, reviewPending } from "./review.js";
+import { reviewKnowledge, reviewPending } from "./review/review.js";
 import { planContext } from "./plan-context.js";
 import { contextCache } from "../cache.js";
 

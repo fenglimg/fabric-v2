@@ -129,7 +129,7 @@ const _requirementProfileSchema = z.object({
 
 // v2.0-rc.5 A1: `_selectionPolicySchema` retired with the L0/L1/L2 protocol.
 // v2.0-rc.7 T9: `_candidateFullContentSchema` retired with the degenerate
-// single-stage mode. See docs/decisions/rc5-a3-superseded.md.
+// single-stage mode.
 export const planContextInputSchema = z.object({
   paths: z
     .array(z.string())
@@ -195,8 +195,8 @@ export const planContextInputSchema = z.object({
 // counts. `selection_token` is REQUIRED on every successful response and the
 // Agent must follow up with `fab_get_knowledge_sections` to load bodies (that
 // tool emits the `knowledge_consumed` event needed for rc.5 C5 closure). The
-// inline `candidates_full_content` degenerate-mode field is gone. See
-// docs/decisions/rc5-a3-superseded.md. The per-entry `.passthrough()` escape
+// inline `candidates_full_content` degenerate-mode field is gone. The
+// per-entry `.passthrough()` escape
 // from TASK-005 is removed — entries now have a fixed shape.
 // v2.0.0-rc.38 UX-1 (D-MCP fold ①): `entries[].description_index` is gone.
 // Since rc.37 A1 removed server-side relevance filtering every per-path index
@@ -589,7 +589,7 @@ const _recallEntrySchema = z.object({
 });
 
 export const recallOutputSchema = z.object({
-  // Retained: client hook cache key (packages/cli/.claude/hooks/knowledge-hint-narrow.cjs)
+  // Retained: client hook cache key (templates/hooks/lib/knowledge-hint-narrow.cjs)
   revision_hash: z.string(),
   // ux-w2-4: single unified entry list (was candidates[] + paths[] + per-path
   // requirement-profile entries[]). Each item carries description + read_path +
@@ -641,7 +641,7 @@ export const archiveScanInputSchema = z.object({
     .union([z.array(z.string()).min(1), z.literal("all")])
     .optional()
     .describe(
-      "Phase 0 scope: explicit session_id[] to constrain the scan, or the 'all' sentinel. Omitted = scan everything since the last knowledge_proposed anchor.",
+      "Phase 0 scope. OMIT for the default incremental scan (only sessions newer than the last knowledge_proposed anchor) — this is what a caller with no range hint MUST send. Pass session_id[] to scan exactly those sessions. Pass 'all' ONLY when the user explicitly asked for full history: it ignores the anchor and re-walks the entire ledger.",
     ),
   now_ms: z
     .number()
@@ -882,7 +882,7 @@ const _FabExtractKnowledgeInputBaseSchema = z.object({
     .string()
     .optional()
     .describe(
-      "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/commands/hooks.ts'). Optional — omit when no single strong trigger fits.",
+      "One-line strong trigger; when this condition holds the entry is considered required reading. Single line ≤160 chars (e.g. 'touching anything under packages/cli/src/install/'). Optional — omit when no single strong trigger fits.",
     ),
   // v2.0.0-rc.37 NEW-37 (werewolf dogfood remediation): optional tags array.
   // Werewolf实测发现 100% canonical entries 的 `tags: []` 为空,主题聚类与
@@ -1592,7 +1592,7 @@ export const fabPendingAnnotations = {
 // CLI contract — `fabric doctor --cite-coverage`
 //
 // v2.0.0-rc.24 TASK-09: Zod schema mirroring the `CiteCoverageReport` runtime
-// type that lives in `packages/server/src/services/doctor.ts` (TASK-08). The
+// type that lives in `packages/server/src/services/doctor/doctor.ts` (TASK-08). The
 // shape is intentionally duplicated here so the CLI renderer (TASK-10) can
 // validate JSON output and downstream tooling can consume a single typed
 // surface without taking a server-package import.
@@ -1770,73 +1770,16 @@ export const citeCoverageReportSchema = z.object({
 export type CiteCoverageReport = z.infer<typeof citeCoverageReportSchema>;
 
 // ---------------------------------------------------------------------------
-// Existing API contract schemas
+// W4 B6: the "Existing API contract schemas" section stood here — request/query
+// shapes for the v1.8 HTTP endpoints (`ledgerQuery`, `historyStateQuery`,
+// `humanLockApprove`, `humanLockFileParams`, `annotateIntent`, plus their
+// `ledgerSource` / `timestampFilter` helpers). Their only callers were the HTTP
+// routes, deleted in W4 B7; the sole remaining references were two shared
+// round-trip tests, i.e. the schemas existed to prove they could parse
+// themselves. The section header ("Existing") is the tell: it dated from a
+// migration where everything else got a purpose-named banner and this got
+// "whatever was already here".
 // ---------------------------------------------------------------------------
-
-export const ledgerSourceSchema = z.enum(["ai", "human"]);
-
-const timestampFilterSchema = z.preprocess((value) => {
-  if (value === undefined || value === null || value === "") {
-    return undefined;
-  }
-
-  if (typeof value === "number") {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-
-    if (trimmed.length === 0) {
-      return undefined;
-    }
-
-    if (/^\d+$/.test(trimmed)) {
-      return Number.parseInt(trimmed, 10);
-    }
-
-    const parsed = Date.parse(trimmed);
-    return Number.isNaN(parsed) ? value : parsed;
-  }
-
-  return value;
-}, z.number().int().nonnegative());
-
-export const ledgerQuerySchema = z.object({
-  source: ledgerSourceSchema.optional(),
-  since: timestampFilterSchema.optional(),
-});
-
-export const historyStateQuerySchema = z.object({
-  ledger_id: z.string().trim().min(1).optional(),
-  ts: timestampFilterSchema.optional(),
-}).superRefine((value, ctx) => {
-  const provided = [value.ledger_id, value.ts].filter((entry) => entry !== undefined);
-
-  if (provided.length !== 1) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Provide exactly one of ledger_id or ts.",
-      path: ["ledger_id"],
-    });
-  }
-});
-
-export const humanLockApproveRequestSchema = z.object({
-  file: z.string().min(1),
-  start_line: z.number().int().positive(),
-  end_line: z.number().int().positive(),
-  new_hash: z.string().min(1),
-});
-
-export const humanLockFileParamsSchema = z.object({
-  file: z.string().min(1),
-});
-
-export const annotateIntentRequestSchema = z.object({
-  ledger_entry_id: z.string().min(1),
-  annotation: z.string().trim().min(1),
-});
 
 // ---------------------------------------------------------------------------
 // v2.0 Knowledge entry schema
@@ -1871,18 +1814,13 @@ export type Layer = z.infer<typeof LayerSchema>;
 export const StableIdSchema = z.string().regex(/^K[PT]-(MOD|DEC|GLD|PIT|PRO)-\d{4,}$/);
 export type StableId = z.infer<typeof StableIdSchema>;
 
-// v2.0 frontmatter — ALL flat scalars, no nested objects
-export const KnowledgeEntryFrontmatterSchema = z.object({
-  id: StableIdSchema, // e.g., "KT-DEC-0042"
-  type: KnowledgeTypeSchema, // one of 5 types
-  maturity: MaturitySchema, // draft | verified | proven
-  layer: LayerSchema, // personal | team
-  created_at: z.string(), // ISO 8601 timestamp
-  // v-next grill D4: runtime already treats superseded_by as first-class
-  // (retire writes review-write-actions.ts:827, parse reads :180, doctor lint consumes).
-  superseded_by: z.string().optional(),
-});
-export type KnowledgeEntryFrontmatter = z.infer<typeof KnowledgeEntryFrontmatterSchema>;
+// W4 B6: `KnowledgeEntryFrontmatterSchema` lived here and had ZERO consumers —
+// it looked like the frontmatter contract but nothing ever parsed with it. The
+// real parser is the hand-written regex reader in knowledge-meta-builder.ts,
+// whose own comment admitted the divergence. A schema nobody validates against
+// is worse than none: readers trust it as the contract while the runtime obeys
+// something else. `MaturitySchema` / `LayerSchema` / `StableIdSchema` above are
+// live and stay.
 
 // Helper: type-code mapping (plural keys → 3-letter ID-prefix code)
 export const KNOWLEDGE_TYPE_CODES = {

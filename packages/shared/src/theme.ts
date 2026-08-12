@@ -2,20 +2,22 @@
 // multi-colour semantic palette + the render primitives that paint with it.
 //
 // WHY SHARED: the CLI (this TS module, consumed directly) and the .cjs hooks
-// (the byte-locked `lib/theme.cjs` mirror) must render Fabric's output with ONE
-// palette. A drift between them is a silent UX seam — the same "Created" / "ok"
-// / drift marker rendered a different colour depending on whether it came from
-// `fabric install` or a SessionStart hook. The G-THEME parity test
-// (theme-parity.test.ts) asserts the TS palette and the .cjs mirror are
-// byte-identical, so the two can never quietly diverge (KT-DEC-0039: shared
-// renderer over per-surface copies).
+// must render Fabric's output with ONE palette. A drift between them is a
+// silent UX seam — the same "Created" / "ok" / drift marker rendered a different
+// colour depending on whether it came from `fabric install` or a SessionStart
+// hook (KT-DEC-0039: shared renderer over per-surface copies).
+//
+// B8: the hook side used to be a hand-authored `lib/theme.cjs` twin held in step
+// by a parity test. It is now COMPILED from this file by
+// scripts/build-hook-project-context.mjs, so divergence is unrepresentable and
+// the parity test is retired. Edit here; never edit the generated .cjs.
 //
 // This is the Ink-exit prerequisite (W3-A): a self-contained ANSI palette with
 // no Ink / picocolors dependency, so the CLI render path can drop Ink onto these
 // pure-function primitives without a second migration.
 
 // Vivid truecolor (24-bit) foreground codes. Picked for high-contrast legibility
-// on both dark and light terminals — the "鲜明多色" palette locked in NS-00.
+// on both dark and light terminals — the "鲜明多色" palette this file locks in.
 // Each value is the SGR escape that opens the colour; RESET closes any of them.
 export const ANSI = {
   reset: "[0m",
@@ -54,7 +56,7 @@ export const PALETTE_256: Record<ThemeToken, string> = {
 // NO_COLOR (https://no-color.org) is an unconditional opt-out; FORCE_COLOR is its
 // dual (force ON regardless of TTY). When neither is set, fall back to the TTY
 // check. Pure function of the passed env (defaults to process.env) so it is unit
-// testable and identical to the .cjs mirror.
+// testable; the hook-side .cjs is compiled from it.
 export function isColorEnabled(env: NodeJS.ProcessEnv = process.env, isTTY?: boolean): boolean {
   if (env.NO_COLOR) return false;
   const force = env.FORCE_COLOR;
@@ -81,7 +83,7 @@ export function detectColorDepth(
 
 // Paint `text` with a semantic token, closing with RESET. When colour is
 // disabled the raw text is returned verbatim (zero escapes) — the byte contract
-// the parity test pins.
+// the generated hook lib inherits verbatim.
 export function paint(
   token: ThemeToken,
   text: string,
@@ -103,9 +105,9 @@ export function symbol(kind: keyof typeof SYMBOL_ASCII, colorOn = isColorEnabled
   return colorOn ? paint(SYMBOL_TOKEN[kind], SYMBOL_GLYPH[kind], true) : SYMBOL_ASCII[kind];
 }
 
-// W3-B structural primitives — HUD-shared layer (C-003): kept parity-trivial so
-// the .cjs hook mirror (lib/theme.cjs) stays byte-identical. Complex tree/grid
-// are CLI-only (packages/cli/src/tui/structure.ts), never mirrored here.
+// W3-B structural primitives — HUD-shared layer (C-003). Complex tree/grid are
+// CLI-only (packages/cli/src/tui/structure.ts) and deliberately stay out of this
+// module, which is compiled wholesale into the hook runtime.
 
 // Section header: accent bold ▌ bar + title (truecolor) / `# ` prefix (none).
 export function sectionBar(title: string, colorOn = isColorEnabled()): string {
@@ -117,7 +119,7 @@ export function sectionBar(title: string, colorOn = isColorEnabled()): string {
 // the flat replacement for the `▌` sectionBar block, shared across BOTH the CLI
 // output layer (re-exported by tui/structure.ts) and the .cjs hook surface so
 // the two render an identical header (KT-DEC-0039: shared renderer over
-// per-surface copies). Mirrored byte-identically in lib/theme.cjs (theme-parity).
+// per-surface copies). Compiled into lib/theme.cjs for the hook surface.
 // Brand accent is `human` (turquoise #1ABC9C), NOT `accent` (amethyst): purple
 // reads oppressive on a dark terminal and, repeated across every command header,
 // stops being a "light touch". Teal is a calm high-luminance brand signature that

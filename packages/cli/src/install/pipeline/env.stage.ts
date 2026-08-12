@@ -14,6 +14,7 @@ import { migrateRootConfig } from "../migrate-root-config.js";
 import type { Stage, InstallContext, StageResult, ScaffoldResult, DiffFileState, InitWriteAction } from "./types.js";
 import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 import { writeDefaultFabricConfig as writeDefaultFabricConfigShared } from "../install-scaffold-config.js";
+import { installDriftAbortError, isInstallDriftAbortError } from "../install-diff.js";
 
 // ---------------------------------------------------------------------------
 // Env Stage
@@ -55,6 +56,19 @@ export class EnvStage implements Stage {
         return stageSkipped("env", "dry-run: scaffold planned without writing files");
       }
 
+      // T-2: drift-abort gate. Fires at mutation time only (planOnly returned
+      // above), matching the rc.15 contract the i18n catalog still promises via
+      // `cli.install.diff.drift-abort`.
+      //
+      // This gate existed only in the retired v1 installer. The pipeline classified
+      // paths as "user-modified" (classifyPath below) but NOTHING consumed the
+      // verdict — `diffStateToWriteAction` ignores its argument and the scaffold
+      // writer only branches on `eventsState === "missing"`. So a managed path
+      // occupied by a directory made `fabric install` report SUCCESS while leaving
+      // a workspace Fabric cannot write its ledger into. The guard was still green
+      // in CI because its test drove the v1 code path directly.
+      this.assertNoDrift(scaffold);
+
       // Execute scaffold (create directories and files)
       const { scaffold: created, materialChange } = await this.executeScaffold(scaffold, target);
 
@@ -74,6 +88,14 @@ export class EnvStage implements Stage {
 
       return stageRan("env", installed, [], created, materialChange);
     } catch (error) {
+      // A drift abort is a structured, user-actionable error (message + actionHint).
+      // stageFailedFromError would flatten it into an `errors[]` string and the
+      // pipeline would re-wrap that as `Stage env failed: <text>`, dropping the
+      // actionHint. Rethrowing hands it to the pipeline's own catch, which keeps
+      // the error object intact.
+      if (isInstallDriftAbortError(error)) {
+        throw error;
+      }
       return stageFailedFromError("env", error);
     }
   }
@@ -158,6 +180,29 @@ export class EnvStage implements Stage {
       configWrote || gitignoreWrote || eventsWrote || scaffold.agentsMdAction === "created";
 
     return { scaffold, materialChange };
+  }
+
+  /**
+   * Abort the install when any managed scaffold path is in a non-canonical
+   * state. Mirrors the rc.15 v1 gate: `.fabric` occupied by a non-directory, or
+   * any classified path drifted / user-modified. The message points at
+   * `fabric doctor` (inspect) and `fabric uninstall && fabric install` (reset).
+   */
+  private assertNoDrift(scaffold: ScaffoldResult): void {
+    if (existsSync(scaffold.fabricDir) && !statSync(scaffold.fabricDir).isDirectory()) {
+      throw installDriftAbortError(scaffold.fabricDir);
+    }
+
+    const classified: ReadonlyArray<readonly [string, DiffFileState]> = [
+      [scaffold.eventsPath, scaffold.eventsState],
+      [scaffold.forensicPath, scaffold.forensicState],
+    ];
+    const drifted = classified.find(
+      ([, state]) => state === "drifted" || state === "user-modified",
+    );
+    if (drifted !== undefined) {
+      throw installDriftAbortError(drifted[0]);
+    }
   }
 
   private classifyPath(

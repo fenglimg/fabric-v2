@@ -3,7 +3,8 @@
 //
 // Keeps the testing strategy entry anchored to real package scripts and CI
 // gates. Does NOT re-litigate methodology keyword coverage — deep docs live
-// under .workflow/ and are linked from TESTING.md Appendix.
+// under docs/methodology/ (pinned by `methodologyArtifacts` below) and are
+// linked from the TESTING.md Appendix.
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -89,6 +90,7 @@ for (const scriptName of [
   "test:strategy",
   "test:store-only-e2e",
   "test:upgrade-e2e",
+  "test:dangling-refs",
   "lint",
   "typecheck",
 ]) {
@@ -105,27 +107,42 @@ for (const command of [
   "pnpm test:strategy",
   "pnpm test:store-only-e2e",
   "pnpm test:upgrade-e2e",
+  "pnpm test:dangling-refs",
   "node scripts/perf-benchmark.mjs",
 ]) {
   requireIncludes(".github/workflows/reusable-validate.yml", reusableValidate, command);
 }
 
-// NO_COLOR gate: must still run under NO_COLOR for CLI snapshot/reskin tests.
-// Prefer scoped vitest (reskin/i18n only) — full CLI re-run after coverage is redundant.
-if (!reusableValidate.includes("NO_COLOR=1 pnpm --filter @fenglimg/fabric-cli")) {
-  fail(
-    '.github/workflows/reusable-validate.yml missing a NO_COLOR=1 fabric-cli step ' +
-      '(scoped vitest or full package test)',
-  );
-}
-if (
-  !reusableValidate.includes("install-renderer-reskin") &&
-  !reusableValidate.includes("pnpm --filter @fenglimg/fabric-cli test")
-) {
-  fail(
-    ".github/workflows/reusable-validate.yml NO_COLOR step must cover reskin/i18n snapshots " +
-      "(install-renderer-reskin and/or full fabric-cli test)",
-  );
+// NO_COLOR gate (T-4): the snapshot/reskin tests assert color-free output, so
+// something must guarantee NO_COLOR. CI used to guarantee it with a dedicated
+// step that re-ran these four files under `NO_COLOR=1` — but each file already
+// forces NO_COLOR itself (`vi.stubEnv` / direct assignment), which was verified
+// empirically: the four pass identically with NO_COLOR unset AND under
+// FORCE_COLOR=1. The step was therefore a no-op duplicate of the coverage run and
+// was removed.
+//
+// That deletion rests entirely on the self-stubbing invariant, so the invariant is
+// now the thing under gate: if a file stops forcing NO_COLOR, its snapshot silently
+// becomes dependent on ambient CI env, and this gate fails instead.
+const NO_COLOR_SNAPSHOT_TESTS = [
+  "packages/cli/__tests__/i18n.test.ts",
+  "packages/cli/__tests__/install-renderer-reskin.test.ts",
+  "packages/cli/__tests__/doctor-reskin.test.ts",
+  "packages/cli/__tests__/hud-reskin.test.ts",
+];
+
+for (const testPath of NO_COLOR_SNAPSHOT_TESTS) {
+  const source = readText(testPath);
+  const selfStubs =
+    source.includes('vi.stubEnv("NO_COLOR"') || source.includes('process.env.NO_COLOR =');
+  if (!selfStubs) {
+    fail(
+      `${testPath} no longer forces NO_COLOR itself. Its snapshots assert color-free ` +
+        `output, so it must stub NO_COLOR in-file (vi.stubEnv("NO_COLOR", "1") or a ` +
+        `direct process.env.NO_COLOR assignment) — otherwise the rendered output ` +
+        `depends on ambient CI env and the snapshot drifts silently.`,
+    );
+  }
 }
 
 for (const command of [

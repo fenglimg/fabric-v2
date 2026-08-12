@@ -59,9 +59,11 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     // rc.6 TASK-019 (E1): SessionStart broad-injection hook validates per client.
     expect(skippedJoined).toContain(join(target, ".claude", "hooks", "knowledge-hint-broad.cjs"));
     expect(skippedJoined).toContain(join(target, ".codex", "hooks", "knowledge-hint-broad.cjs"));
-    // rc.6 TASK-020 (E2 + E4): PreToolUse narrow-injection hook validates per client.
-    expect(skippedJoined).toContain(join(target, ".claude", "hooks", "knowledge-hint-narrow.cjs"));
-    expect(skippedJoined).toContain(join(target, ".codex", "hooks", "knowledge-hint-narrow.cjs"));
+    // rc.6 TASK-020 (E2 + E4) / W4 I2: narrow validates per client, now under
+    // hooks/lib/ — it is a lib the pretooluse orchestrator hard-requires, not a
+    // registered entry point, so validation follows it to its real location.
+    expect(skippedJoined).toContain(join(target, ".claude", "hooks", "lib", "knowledge-hint-narrow.cjs"));
+    expect(skippedJoined).toContain(join(target, ".codex", "hooks", "lib", "knowledge-hint-narrow.cjs"));
     for (const client of [".claude", ".codex"]) {
       expect(
         existsSync(join(target, client, "hooks", "lib", "project-context-runtime.cjs")),
@@ -86,7 +88,7 @@ describe("installHooks — rc.5 TASK-010 cross-client hook path validation", () 
     );
     // rc.6 TASK-020: PreToolUse sibling — same one-row-per-client shape.
     const narrowValidate = result.skipped.filter((p) =>
-      p.endsWith(join("hooks", "knowledge-hint-narrow.cjs")),
+      p.endsWith(join("hooks", "lib", "knowledge-hint-narrow.cjs")),
     );
     // ISS-20260711-260: cite-policy-evict is hard-required by knowledge-pretooluse.
     const citeValidate = result.skipped.filter((p) =>

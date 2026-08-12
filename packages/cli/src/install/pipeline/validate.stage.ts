@@ -1,6 +1,7 @@
 import type { Stage, InstallContext, StageResult } from "./types.js";
 import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 import { validateHookPaths } from "../hooks-orchestrator.js";
+import { writeInstallManifest } from "../write-install-manifest.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { t } from "../../i18n.js";
@@ -18,6 +19,8 @@ import { paint } from "../../colors.js";
  * 2. Validate .fabric directory structure
  * 3. Validate fabric-config.json exists
  * 4. Validate events.jsonl exists
+ * 5. Record the install manifest (sha256 of every wholesale-written artifact)
+ *    so `fabric doctor` can later detect drifted installed copies
  *
  * This stage is never skipped and provides a final verification
  * before the guidance stage.
@@ -71,6 +74,17 @@ export class ValidateStage implements Stage {
         errors.push("events.jsonl missing");
       } else {
         skipped.push(eventsPath);
+      }
+
+      // Record what this install wrote, for doctor's install_copy_drift check.
+      // KT-PIT-0030: this is a validation byproduct, NOT an install artifact —
+      // it goes to skipped[] and leaves changed=false, so the end-pass collapse
+      // heuristic (which keys off installed.length) still sees a clean re-run
+      // as unchanged. A failed write returns null and is simply not reported:
+      // a missing diagnostic record must never fail an otherwise-good install.
+      const manifestRel = await writeInstallManifest(target);
+      if (manifestRel !== null) {
+        skipped.push(join(target, ...manifestRel.split("/")));
       }
 
       // flat-design: the success path no longer prints a separate "安装校验通过 ✓(…)"

@@ -166,6 +166,14 @@ type HookModule = {
 
 const hook = require(hookPath) as HookModule;
 
+// The hook renders every user-facing line through the banner-i18n catalog. Tests
+// that care about WHICH branch fired assert against the catalog entry rather
+// than a hand-copied Chinese substring — that pins the branch (a contract) while
+// leaving the prose free to be reworded in one place.
+const bannerI18n = require(
+  fileURLToPath(new URL("../templates/hooks/lib/banner-i18n.cjs", import.meta.url)),
+) as { renderBanner: (key: string, variant: string, params?: Record<string, unknown>) => string };
+
 const HOUR_MS = 60 * 60 * 1000;
 const FIXED_NOW = new Date("2026-05-10T12:00:00.000Z");
 const NOW_MS = FIXED_NOW.getTime();
@@ -349,8 +357,10 @@ describe("fabric-hint.cjs — decide (Signal A: per-session edit count, crack 1)
     expect(r?.decision).toBe("soft");
     expect(r?.signal).toBe("archive");
     expect(r?.recommended_skill).toBe("fabric-archive");
-    expect(r?.reason).toMatch(/20 次编辑/);
-    expect(r?.reason).toMatch(/fabric-archive/);
+    // The reason must report the ACTUAL count, not a static blurb. Assert the
+    // computed value only — the surrounding Chinese framing is prompt wording
+    // and belongs to the wording suite, not to this decision-engine gate.
+    expect(r?.reason).toMatch(/\b20\b/);
   });
 
   it("silent when anchorPresent is false even with a huge edit count", () => {
@@ -374,14 +384,17 @@ describe("fabric-hint.cjs — decide (Signal A: per-session edit count, crack 1)
     expect(hook.decide([], FIXED_NOW, undefined, undefined, edits(30, 50))).toBeNull();
     const fired = hook.decide([], FIXED_NOW, undefined, undefined, edits(50, 50));
     expect(fired?.signal).toBe("archive");
-    expect(fired?.reason).toMatch(/50 次编辑/);
-    expect(fired?.reason).toMatch(/阈值 50/);
+    // Both the count and the custom threshold are computed values that must
+    // reach the reason; the phrasing around them is not this suite's business.
+    expect(fired?.reason).toMatch(/\b50\b/);
   });
 
-  it("reason mentions edits, never hours", () => {
+  it("reports the edit count, not an hours-since figure", () => {
+    // Regression guard for the retired global-24h branch: the reason must carry
+    // the edit count (25), never an elapsed-hours figure.
     const r = hook.decide([], FIXED_NOW, undefined, undefined, edits(25, 20));
-    expect(r?.reason).toMatch(/25 次编辑/);
-    expect(r?.reason).not.toMatch(/h（阈值/);
+    expect(r?.reason).toMatch(/\b25\b/);
+    expect(r?.reason).not.toMatch(/\d+\s*h\b/);
   });
 });
 
@@ -407,8 +420,9 @@ describe("fabric-hint.cjs — decide (archive_backlog signal, crack 2)", () => {
     expect(r?.decision).toBe("soft");
     expect(r?.signal).toBe("archive_backlog");
     expect(r?.recommended_skill).toBe("fabric-archive");
-    expect(r?.reason).toMatch(/2 个已结束/);
-    expect(r?.reason).toMatch(/fabric-archive/);
+    // The dead-session count is the computed value the backlog signal exists to
+    // report; the phrasing around it is prompt wording.
+    expect(r?.reason).toMatch(/\b2\b/);
   });
 
   it("in-session archive takes precedence over backlog", () => {
@@ -892,7 +906,7 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
     // lives in the always-on AI/observation sink + events.jsonl telemetry, not a
     // real-time human banner (opt back in via observe.stop=true / verbose).
     expect(emit.systemMessage).toBeUndefined(); // human sink gated quiet
-    expect(emit.ai).toMatch(/20 次编辑/); // AI sink (always-on, observation)
+    expect(emit.ai).toMatch(/\b20\b/); // AI sink (always-on, observation) carries the count
   });
 
   it("crack 1 regression: a neighbour session's mutations do NOT count toward this session", () => {
@@ -947,7 +961,7 @@ describe("fabric-hint.cjs — main (Signal A edit-count integration)", () => {
       { stdout: { write: (c: string) => writes.push(c) } },
     );
     expect(writes).toHaveLength(1);
-    expect(archiveEmit(writes).ai).toMatch(/20 次编辑/); // W5: AI sink carries it; human quiet by default
+    expect(archiveEmit(writes).ai).toMatch(/\b20\b/); // W5: AI sink carries it; human quiet by default
   });
 
   it("appends per-store read-set label to the Stop hint reason (v2.1 P4, F4/S63)", () => {
@@ -1248,8 +1262,8 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
     expect(result).not.toBeNull();
     expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("review");
-    expect(result?.reason).toMatch(/fabric-review/);
-    expect(result?.reason).toMatch(/10/);
+    expect(result?.recommended_skill).toBe("fabric-review");
+    expect(result?.reason).toMatch(/\b10\b/);
   });
 
   it("returns review signal when oldest pending age >= 7 days (NEW-4)", () => {
@@ -1260,7 +1274,7 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
     expect(result).not.toBeNull();
     expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("review");
-    expect(result?.reason).toMatch(/fabric-review/);
+    expect(result?.recommended_skill).toBe("fabric-review");
   });
 
   it("returns null when 5 pending entries and oldest <7 days (NEW-5)", () => {
@@ -1284,8 +1298,9 @@ describe("fabric-hint.cjs — decide (review signal)", () => {
     expect(result).not.toBeNull();
     expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("archive");
-    expect(result?.reason).toMatch(/fabric-archive/);
-    expect(result?.reason).not.toMatch(/fabric-review/);
+    // recommended_skill is single-valued, so asserting it IS the exclusivity
+    // check the two reason-regexes were approximating.
+    expect(result?.recommended_skill).toBe("fabric-archive");
   });
 });
 
@@ -1439,8 +1454,7 @@ describe("fabric-hint.cjs — decide (import signal)", () => {
     expect(result?.decision).toBe("soft");
     expect(result?.signal).toBe("import");
     expect(result?.recommended_skill).toBe("fabric-archive");
-    expect(result?.reason).toMatch(/fabric-archive/);
-    expect(result?.reason).toMatch(/4/);
+    expect(result?.reason).toMatch(/\b4\b/);
   });
 
   it("returns null when knowledge_proposed <24h ago even with sparse corpus", () => {
@@ -1859,7 +1873,12 @@ describe("fabric-hint.cjs — evaluateMaintenanceSignal (rc.7 T10)", () => {
     expect(result).not.toBeNull();
     expect(result?.signal).toBe("maintenance");
     expect(result?.recommended_skill).toBeNull();
-    expect(result?.reason).toMatch(/已 14 天未跑 lint/);
+    // Aged branch (not the never-ran branch), carrying the 14d threshold and the
+    // 20d actual. `fabric doctor` is a protected command literal, so it stays a
+    // direct assertion.
+    expect(result?.reason).toContain(
+      bannerI18n.renderBanner("maintenanceLine1Aged", "zh-CN", { days: 14, ageDays: "20.0" }),
+    );
     expect(result?.reason).toMatch(/fabric doctor/);
   });
 
@@ -1868,7 +1887,7 @@ describe("fabric-hint.cjs — evaluateMaintenanceSignal (rc.7 T10)", () => {
     expect(result).not.toBeNull();
     expect(result?.signal).toBe("maintenance");
     // Different message branch for the "never ran" case.
-    expect(result?.reason).toMatch(/从未运行 lint 检查/);
+    expect(result?.reason).toContain(bannerI18n.renderBanner("maintenanceLine1Never", "zh-CN"));
   });
 
   it("respects cooldown sidecar: silent within cooldown_days of last emit", () => {
@@ -2303,17 +2322,15 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
 
   const archiveEdits = { editsSinceArchive: 20, threshold: 20, anchorPresent: true };
 
-  it("Signal A banner uses 人-first format with emoji prefix and question framing", () => {
+  // The banner's PROSE (emoji prefix, 是否-vs-建议调用 framing, absence of the
+  // retired "candidates detected" phrasing) is asserted in the sibling wording
+  // suite — see fabric-hint.wording.test.ts. What stays here is the computed
+  // content the banner is obliged to carry.
+
+  it("Signal A banner carries the actual edit count", () => {
     const result = hook.decide([], FIXED_NOW, undefined, undefined, archiveEdits, undefined);
     expect(result).not.toBeNull();
-    expect(result?.reason.startsWith("📋 Fabric:")).toBe(true);
-    // Question framing — uses 是否 not 建议调用.
-    expect(result?.reason).toMatch(/是否调 \/fabric-archive/);
-    expect(result?.reason).not.toMatch(/建议调用/);
-    // crack 1: edit-count substring contract (the hours fragment is retired).
-    expect(result?.reason).toMatch(/20 次编辑/);
-    // No fabricated content-aware framing.
-    expect(result?.reason.toLowerCase()).not.toMatch(/candidates detected/);
+    expect(result?.reason).toMatch(/\b20\b/);
   });
 
   it("Signal A banner injects activity overview when supplied via banner arg", () => {
@@ -2329,30 +2346,32 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       ({ activityOverview: "packages/server/ (12 edits), packages/cli/ (8 edits)" } as any),
     );
     expect(result).not.toBeNull();
-    expect(result?.reason).toMatch(/最近活动集中在:/);
-    expect(result?.reason).toMatch(/packages\/server\/ \(12 edits\)/);
-    expect(result?.reason).toMatch(/packages\/cli\/ \(8 edits\)/);
+    // Pin the catalog line (branch selection) plus the overview payload it was
+    // handed — rewording `archiveActivity` updates both sides at once.
+    expect(result?.reason).toContain(
+      bannerI18n.renderBanner("archiveActivity", "zh-CN", {
+        activity: "packages/server/ (12 edits), packages/cli/ (8 edits)",
+      }),
+    );
   });
 
   it("Signal A banner omits activity line when overview is empty (back-compat)", () => {
     const result = hook.decide([], FIXED_NOW, undefined, undefined, archiveEdits, undefined);
     expect(result).not.toBeNull();
-    expect(result?.reason).not.toMatch(/最近活动集中在/);
-    // Banner is still well-formed (line1 + line3 only).
+    // The banner is line1 + CTA only — a 2-line banner IS the "no activity line"
+    // contract, so no prose-matching negative assertion is needed.
     const lineCount = (result?.reason.match(/\n/g) || []).length + 1;
     expect(lineCount).toBe(2);
   });
 
-  it("Signal B (review) banner uses 人-first format with question framing", () => {
+  it("Signal B (review) banner carries the pending count", () => {
     const result = hook.decide([], FIXED_NOW, { count: 12, oldestAgeMs: 8 * 24 * HOUR_MS });
     expect(result).not.toBeNull();
-    expect(result?.reason.startsWith("📋 Fabric:")).toBe(true);
-    expect(result?.reason).toMatch(/是否调 \/fabric-review/);
-    expect(result?.reason).not.toMatch(/建议调用/);
-    expect(result?.reason).toMatch(/12 条/);
+    expect(result?.recommended_skill).toBe("fabric-review");
+    expect(result?.reason).toMatch(/\b12\b/);
   });
 
-  it("Signal C (import) banner uses 人-first format with question framing", () => {
+  it("Signal C (import) banner carries the node-count/threshold ratio", () => {
     const initEvent = makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS);
     const result = hook.decide(
       [initEvent],
@@ -2361,9 +2380,7 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       { nodeCount: 3, threshold: 10 },
     );
     expect(result).not.toBeNull();
-    expect(result?.reason.startsWith("📋 Fabric:")).toBe(true);
-    expect(result?.reason).toMatch(/是否调 \/fabric-archive/);
-    expect(result?.reason).not.toMatch(/建议调用/);
+    expect(result?.signal).toBe("import");
     expect(result?.reason).toMatch(/3\/10/);
   });
 
@@ -2415,29 +2432,21 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
       // W5: human banner quiet by default; the identical reason text rides the
       // always-on AI/observation sink, so assert the banner content there.
       const reason = JSON.parse(writes[0] as string).hookSpecificOutput.additionalContext as string;
-      expect(reason).toMatch(/📋 Fabric:/);
       // TASK-005 (grill G5 / C-003): archive is now a SINGLE line — the multi-line
-      // activity overview ("最近活动集中在") was dropped as per-Stop noise. The
-      // single line still carries the edit-count fragment + the /fabric-archive CTA.
-      expect(reason).not.toMatch(/最近活动集中在:/);
-      expect(reason).toMatch(/是否调 \/fabric-archive/);
-      // 28 session file_mutated events since the anchor drive the count.
-      expect(reason).toMatch(/28 次编辑/);
+      // activity overview was dropped as per-Stop noise. Asserting the line count
+      // IS that contract (and subsumes "no activity line"); the phrasing of the
+      // banner belongs to fabric-hint.wording.test.ts.
+      expect(reason.split("\n")).toHaveLength(2); // line1 + CTA, no activity line
+      // The line still routes to the /fabric-archive CTA and carries the count
+      // (28 session file_mutated events since the anchor).
+      expect(reason).toMatch(/\/fabric-archive/);
+      expect(reason).toMatch(/\b28\b/);
     } finally {
       if (prevClient === undefined) delete process.env.FABRIC_HINT_CLIENT;
       else process.env.FABRIC_HINT_CLIENT = prevClient;
       if (prevProjDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
       else process.env.CLAUDE_PROJECT_DIR = prevProjDir;
     }
-  });
-
-  it("Signal D banner reformat keeps required substrings + adds question line", () => {
-    const result = hook.evaluateMaintenanceSignal([], FIXED_NOW, 10, null);
-    expect(result).not.toBeNull();
-    expect(result?.reason).toMatch(/📋 Fabric:/);
-    expect(result?.reason).toMatch(/从未运行 lint 检查/);
-    expect(result?.reason).toMatch(/fabric doctor/);
-    expect(result?.reason).toMatch(/是否调/);
   });
 
   it("countEditsSince also parses the new JSON-line shape", () => {
@@ -2647,29 +2656,6 @@ describe("fabric-hint.cjs — rc.7 T4 banner reformat", () => {
     );
     expect(hook.CONSTANTS.IMPORT_IN_FLIGHT_MAX_AGE_HOURS).toBe(24);
     expect(typeof hook.CONSTANTS.IMPORT_STATE_FILE_REL).toBe("string");
-  });
-
-  it("none of the rendered reason strings mention 'candidates detected'", () => {
-    // Drive all 4 signals and assert. Signal A first (per-session edits).
-    const archive = hook.decide(
-      [],
-      FIXED_NOW,
-      undefined,
-      undefined,
-      { editsSinceArchive: 20, threshold: 20, anchorPresent: true },
-    );
-    const review = hook.decide([], FIXED_NOW, { count: 10, oldestAgeMs: 1 * 24 * HOUR_MS });
-    const importSig = hook.decide(
-      [makeEvent("init_scan_completed", NOW_MS - 48 * HOUR_MS)],
-      FIXED_NOW,
-      undefined,
-      { nodeCount: 3, threshold: 10 },
-    );
-    const maint = hook.evaluateMaintenanceSignal([], FIXED_NOW, 10, null);
-    for (const r of [archive, review, importSig, maint]) {
-      expect(r).not.toBeNull();
-      expect(r?.reason.toLowerCase()).not.toMatch(/candidates detected/);
-    }
   });
 });
 

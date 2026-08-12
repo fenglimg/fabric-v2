@@ -4,7 +4,7 @@ description: 归档对话洞察 + 冷启动从 git/docs 回灌到 pending knowle
 allowed-tools: Read, Glob, Grep, Bash, mcp__fabric__fab_archive_scan, mcp__fabric__fab_propose, mcp__fabric__fab_pending, mcp__fabric__fab_review
 ---
 
-> **Surface**: Skill (LLM judgment over session digests). See [`docs/surfaces.md`](https://github.com/fenglimg/fabric/blob/main/docs/surfaces.md).
+> **Surface**: Skill (LLM judgment over session digests).
 
 ## Precondition
 
@@ -33,6 +33,26 @@ rc.37 NEW-9 collapsed the flow to **3 macro-phases**; the legacy fine-grained ph
 
 Sub-step chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 3.7 → 4 → 4.5`. Each below is a navigator stub — full procedure, decision tables, and worked examples live in `ref/`.
 
+### 快速通道 (fast path) — one obvious entry, zero ref hops
+
+The full chain exists for ambiguous batches. Most archives are not that: the user said `以后 X` and there is exactly one thing to write down. Walking eleven sub-steps and reading three ref files to persist one unambiguous entry is the friction that stops archives from happening at all — and an archive that does not happen loses 100% of the knowledge, which is strictly worse than one classified imperfectly.
+
+**Take the fast path when ALL of these hold:**
+
+1. Exactly **one** candidate.
+2. The signal is **user-driven normative** (`以后` / `always` / `never` / `记一下` / a decision the user just locked in) — i.e. the user already said the thing; you are transcribing, not inferring.
+3. **No scope ambiguity**: no 强 personal signal (→ `layer=team`), and either no `active_project` or the entry is plainly about this project.
+
+**Then run exactly this, reading NO ref files:**
+
+`fab_recall(paths=[<the code paths this candidate is about>])` (dedupe vs canonical — a near-duplicate is the highest-noise failure, never skip it) + `fab_pending action="list"` (dedupe vs the pending backlog) → classify with the layer heuristic and the 5 types **already stated in this file** → `fab_propose` → Phase 4.5 emit → show `pending_path`.
+
+> **Do NOT dedupe with `fab_pending action="search"`.** Its query is a SUBSTRING gate, and dedupe is precisely the case where you do not know the words the existing entry used — an empty result there means "your guessed terms missed", not "no duplicate". `fab_recall` is the ranked retrieval path and finds the near-duplicate you cannot name; the pending backlog is small enough to just `list` and read. Search is the right tool for a human browsing BY a known keyword, which is a different job.
+
+**Bail out to the full chain** the moment any of the three conditions breaks — two candidates, a signal you had to infer, or a layer/audience call you are unsure of. Uncertainty is exactly what the long path is for; the fast path is not a licence to guess faster.
+
+The WRITE Rules at the bottom of this file are **not** waived on the fast path — one `fab_propose` per candidate, no `id` field, no direct filesystem write, no `KT→KP` edge.
+
 ## Source Mode — cold-start bootstrap (W3-C: 吸收原 fabric-import)
 
 **Default mode** GATHERs candidates from the cross-session digest ledger (Phase 1, `fab_archive_scan`). **Source mode** swaps ONLY the GATHER source: it mines `git log` + `docs/*.md` for one-time per-project cold-start — the REVIEW (classify / layer / scope / semantic_scope) and PERSIST (`fab_propose`) pipeline below is **shared, byte-for-byte the same contract**. No new write path: mined entries land as `team`-layer pending via the same `fab_propose`, then dedupe vs canonical via `fab_review`.
@@ -41,20 +61,28 @@ Sub-step chain: `0 → 0.5 → 1 → [1.5] → 2 → 2.5 → 3 → 3.5 → 3.7 �
 
 Source-mode pipeline (replaces GATHER; REVIEW+PERSIST unchanged):
 
-1. **Init / checkpoint** — read/init `.fabric/.import-state.json` (single resumability source; atomic `Write .tmp` → `Bash mv`). Corruption → `Read ref/source-state-recovery.md`. Full state schema + 6-step resume → `Read ref/source-checkpoint.md`.
-2. **Init-scan reference (NO re-implement)** — `fabric onboard-coverage --json` + `fab_pending action="search"` to learn existing canonical titles for the negative filter. `fabric install` already produced the baseline; source mode references it, never redoes it.
-3. **Mine (git + docs)** — `git log --since="<window> months ago"` (conventional prefix → type signal) + `docs/*.md`; classify into the 5 types; `fab_propose` per candidate. **Source-mode scope lock (NON-NEGOTIABLE): every mined entry `relevance_scope="broad"` + `relevance_paths=[]`** — LLM-inferred narrow lies about applicability; narrowing is deferred to `fab_review.modify` post-import. Cap `import_max_pending_per_run` (default 10). Full mining procedure, conventional-prefix table, `--dry-run` template → `Read ref/source-mining.md`.
-4. **Dedupe vs canonical** — for each pending, `fab_pending action="search"` (top 5 by type), classify duplicate / subsumption / subsumption-with-novelty / contradiction / genuinely-new, then `fab_review` reject / modify. `fab_pending` does NOT compare meaning — semantic compare is the LLM's job. Full 5-way classification → `Read ref/source-dedup.md`.
+1. **Init / checkpoint** — read/init `.fabric/.import-state.json` (single resumability source; atomic `Write .tmp` → `Bash mv`). Full state schema, 6-step resume, and the crash-recovery path → `Read ref/source-mode.md` (sections D + E).
+2. **Init-scan reference (NO re-implement)** — `fabric onboard-coverage --json` + `fab_pending action="list"` to learn existing canonical titles for the negative filter. `fabric install` already produced the baseline; source mode references it, never redoes it.
+3. **Mine (git + docs)** — `git log --since="<window> months ago"` (conventional prefix → type signal) + `docs/*.md`; classify into the 5 types; `fab_propose` per candidate. **Source-mode scope lock (NON-NEGOTIABLE): every mined entry `relevance_scope="broad"` + `relevance_paths=[]`** — LLM-inferred narrow lies about applicability; narrowing is deferred to `fab_review.modify` post-import. Cap `import_max_pending_per_run` (default 10). Full mining procedure, conventional-prefix table, `--dry-run` template → `Read ref/source-mode.md` (section A).
+4. **Dedupe vs canonical** — for each pending, `fab_recall(paths=[...])` on the paths the entry is about (ranked retrieval, not a substring gate), classify duplicate / subsumption / subsumption-with-novelty / contradiction / genuinely-new, then `fab_review` reject / modify. Neither tool compares MEANING — semantic compare is the LLM's job; recall's job is to put the right candidates in front of it. Full 5-way classification → `Read ref/source-mode.md` (section B).
 
 Source-mode config knobs (read from `.fabric/fabric-config.json`, defaults if absent): `import_window_first_run_months` (60), `import_window_rerun_months` (2), `import_max_pending_per_run` (10), `import_max_commits_scan` (500), `import_skip_canonical_threshold` (50).
 
-Source-mode output roll-up + worked examples → `Read ref/source-output-contract.md` / `ref/source-worked-examples.md`. Source mode requires an **explicit target store** (E7) — never auto-route mined entries; resolve writable candidates via `fabric info scope team` and `AskUserQuestion` for the alias when more than one exists.
+Source-mode output roll-up → `Read ref/source-mode.md` (section C). **One file covers the whole mode** — read it once on entry rather than hopping per sub-step. Source mode requires an **explicit target store** (E7) — never auto-route mined entries; resolve writable candidates via `fabric info scope team` and `AskUserQuestion` for the alias when more than one exists.
 
 ### Phase 0 — Range Resolution
 
-Parse user's prompt for time-window (`今日` / `last week`), topic keyword (`rc.20`), or literal `session_id` reference; emit `session_id[]` OR `"all"` sentinel that constrains Phase 1 collection. LLM-as-parser contract — no parser code.
+Parse the user's prompt into ONE of three values for Phase 1's `fab_archive_scan({ range })`:
 
-`Read ref/phase-0-range-resolution.md` for the confidence decision rule, bilingual time-window patterns, session_id resolution, AskUserQuestion fallback, and worked examples.
+| Situation | `range` |
+|---|---|
+| Prompt carries a time-window (`今日` / `last week`), topic keyword (`rc.20`), or literal session_id | `session_id[]` (the resolved list) |
+| User **explicitly** asked for full history (`全部` / `从头` / `把积压都扫一遍` / `all history`) | `"all"` — ignores the anchor, re-walks the whole ledger |
+| **Everything else, including a parse-miss** | **OMIT `range` entirely** — the default incremental scan (only sessions newer than the last `knowledge_proposed`) |
+
+**The no-hint default is OMIT, never `"all"` (ISS-20260806-001).** `"all"` used to be the no-hint fallback, which quietly disabled the anchor cutoff on every skill-driven archive: each run re-walked all history, candidates exploded, cost climbed. `"all"` is an explicit user intent, not a fallback. The authoritative statement of this lives in `archiveScanInputSchema.range`'s `describe` — read it there if this table and the tool disagree.
+
+`Read ref/phase-0-range-resolution.md` for the bilingual time-window patterns, topic-keyword extraction, the session_id resolution algorithm, and the AskUserQuestion fallback.
 
 ### Phase 0.5 — Config Load
 
@@ -72,7 +100,7 @@ Read machine-wide `~/.fabric/fabric-global.json` `language` (`zh-CN` | `en` only
 
 ### Phase 1 — Collect Cross-Session Digests (server-side ledger scan, rc.37 NEW-9)
 
-The deterministic ledger scan now runs **server-side** — call `fab_archive_scan({ range, session_id })` (range = Phase 0's `session_id[]` or `"all"`/omitted). It returns:
+The deterministic ledger scan now runs **server-side** — call `fab_archive_scan({ range, session_id })` with the `range` Phase 0 resolved (omit the key entirely when Phase 0 said OMIT). It returns:
 
 - `anchor_ts` — ts of the last `knowledge_proposed` (the lower bound).
 - `session_ids[]` — distinct in-scope sessions since the anchor, ALREADY filtered through the outcome-ledger state machine (drops `user_dismissed`, sessions inside the 12h anti-loop cooldown, and watermarked sessions with no new high-value signal). First-seen order.
@@ -114,7 +142,7 @@ Gather raw evidence: tail `.fabric/events.jsonl` since last `knowledge_proposed`
 
 Coarse viability check. **PASS**: user_explicit_invoke OR ≥1 archive signal hit. rc.37 NEW-4 folds the legacy 8 signals into **3 categories**: (1) **User-driven knowledge expression** (normative language `always`/`never`/`以后`/`记一下`/`永远不要`, OR decision-with-rationale, OR dismissal-with-reason); (2) **Reflective discovery** (wrong-turn-and-revert, OR long diagnostic loop, OR a named reusable pattern); (3) **Concrete artifact change** (new dependency diff, OR a formalized multi-step procedure).
 
-Pre-PASS HARD gate (rc.37 NEW-4): per candidate, run `fab_pending action="search"` against the mounted read-set; duplicate canonical → drop the candidate (anti-signal #4). Silently writing a near-duplicate is the highest-noise failure mode.
+Pre-PASS HARD gate (rc.37 NEW-4): per candidate, run `fab_recall(paths=[...])` against the mounted read-set (plus `fab_pending action="list"` for the un-reviewed backlog); duplicate canonical → drop the candidate (anti-signal #4). Silently writing a near-duplicate is the highest-noise failure mode — and a substring `search` that returns nothing does NOT clear this gate, see the fast-path note above.
 
 **FAIL → branch**: E1/E3/E5 silent-skip (`outcome='skipped_no_signal'`); E2/E4 render gate-FAIL (`outcome='viability_failed'`) and MUST include the force-archive escape hatch (zh-CN: `如需强制归档，请显式调用 fabric-archive` / en: `To force-archive, explicitly invoke fabric-archive`).
 
@@ -134,25 +162,25 @@ For each candidate, propose **type** ∈ {model, decision, guideline, pitfall, p
 
 Resolution: 强 team first; assign personal only if 强 personal dominates AND no 强 team applies; else default team.
 
-`Read ref/phase-3-classify.md` for per-type worth-archive vs skip signals, slug samples, decision tree, and en + zh-CN batch review templates. User MAY inline-edit `type` / `layer` / `slug` / `relevance_scope` / `relevance_paths` / `semantic_scope` before confirming; scope edits trigger Phase 3.5 re-derivation.
+`Read ref/phase-3-review.md` (one hop for 3 / 3.5 / 3.6 / 3.7) for per-type worth-archive vs skip signals, slug samples, decision tree, and en + zh-CN batch review templates. User MAY inline-edit `type` / `layer` / `slug` / `relevance_scope` / `relevance_paths` / `semantic_scope` before confirming; scope edits trigger Phase 3.5 re-derivation.
 
 ### Phase 3.5 — Scope Decision + relevance_paths Derivation
 
 Assign `relevance_scope` ∈ {narrow, broad} + derive `relevance_paths` BEFORE batch review. **narrow** = candidate tied to specific module/file with single-module evidence in edit_paths; **broad** = cross-cutting/methodological/general (default on uncertainty). **Personal layer ALWAYS forces broad + `relevance_paths=[]`** (cross-project, paths don't generalize).
 
-`Read ref/phase-3-5-scope.md` for the 6-step relevance_paths derivation pseudocode, the worked example, and narrow↔broad inline-edit re-derivation rules.
+`Read ref/phase-3-review.md` §3.5 for the 6-step relevance_paths derivation pseudocode, the worked example, and narrow↔broad inline-edit re-derivation rules.
 
 ### Phase 3.6 — Related-edge Extraction (§7 graph generation)
 
 For each candidate, record the `related` graph edges (store-qualified `stable_id`s this entry links to) as one line inside `session_context` (e.g. `related: team:KT-DEC-0007`) so they survive to approve-time frontmatter authoring. Cite only ids you actually saw via `fab_recall` — NEVER invent. **§4 privacy iron law: `KT→KP` is FORBIDDEN** (a team entry MUST NOT point at a personal id); when unsure a target is personal, OMIT the edge.
 
-`Read ref/phase-3-6-related-edges.md` for the allowed/forbidden edge matrix and worked examples.
+`Read ref/phase-3-review.md` §3.6 for the allowed/forbidden edge matrix and worked examples.
 
 ### Phase 3.7 — Semantic scope (audience axis, multi-project)
 
 Sets the entry's **audience** `semantic_scope` (orthogonal to `layer`=store and `relevance_scope`=display). ONLY when `layer=team` AND `.fabric/fabric-config.json` has a non-empty `active_project`; else SKIP — the engine derives it. Default = OMIT → `project:<active_project>` (this-project-only). Escape hatch: pass explicit `semantic_scope: team` to keep a cross-project team-wide entry from being narrowed to this project. Phase 3 picks the STORE; this picks the AUDIENCE within the team store.
 
-`Read ref/phase-3-7-semantic-scope.md` for the three-axis model, the this-project-only vs team-wide decision tree, and worked examples.
+`Read ref/phase-3-review.md` §3.7 for the three-axis model, the this-project-only vs team-wide decision tree, and worked examples.
 
 ### Phase 4 — Persist via MCP
 
@@ -221,9 +249,25 @@ After a **significant decision** lands, or an edit batch reaches config `archive
 - NEVER paraphrase the verbatim layer heuristic block above — the Chinese text is contract-locked.
 - MUST preserve protected tokens exactly: `stable_id`, `knowledge_proposed`, `knowledge_archive_aborted`, `knowledge_scope_degraded`, `fab_propose`, `relevance_paths`, `relevance_scope`, `narrow`, `broad`, `edit_paths`, `source_sessions`, `proposed_reason`, `session_context`, `intent_clues`, `impact`, `must_read_if`, `pending_path`, `layer`, `semantic_scope`, `active_project`, `team`, `personal`, `MUST`, `NEVER`, `强 team`, `强 personal`, `默认 team`, `related`, `KT→KP`.
 
-## Worked Examples / E5 Cron / Dry-run (ref-only)
+## Dry-run Scope
+
+`dry_run = true` requires the invocation to carry the verbatim token `--dry-run` (rc.37 NEW-10 dropped the substring fallback on bare `dry-run` / `dry_run` / `预览`, which false-positived on incidental mentions mid-prompt). It suspends every side-effecting write; read-side machinery (Phase 1 digest collection, Phase 2.5 gate, Phase 3 candidate render) runs normally so the user previews what WOULD happen.
+
+| Write operation | Dry-run |
+|---|---|
+| `fab_propose` (Phase 4) | SKIPPED — render a "would write N pending entries" preview table instead |
+| `session_archive_attempted` (Phase 4.5) | SKIPPED entirely; no ledger entry |
+| `fab_review reject` (Phase 3 user-dismissed branch) | SKIPPED — render the dismissal, perform no MCP write |
+| `fabric config dismiss-slot` (Phase 1.5 fill-all / dismiss-all) | SKIPPED — show "would dismiss/propose" |
+| digest reads, Stop-hook / ledger inspection | Unchanged (read-side, safe) |
+
+Prefix every phase header with `[DRY-RUN]` (e.g. `[DRY-RUN] Phase 3 — Batch Review`). Exit with: `[DRY-RUN complete] would have written N entry/entries; no .fabric/ files were modified. Re-invoke without --dry-run to commit.`
+
+**When you add a new write side-effect to any phase, add its row here** — this table is the single catalogue. It lived in its own ref file until 2026-08-11 and carried a standing instruction to keep two places in sync, which is exactly how a catalogue goes stale (W3 T4).
+
+## Worked Examples / E5 Cron (ref-only)
 
 - **Worked examples** (3 end-to-end fab_propose calls: decision/team, pitfall/team, guideline/personal): `Read ref/worked-examples.md`
 - **E5 Scheduled Daily Recap** (only when entry_point=E5_cron — OS cron, `/loop`, or scheduled trigger): `Read ref/e5-cron-recap.md`
-- **Dry-run Scope** (authoritative catalogue of all writes suspended by `--dry-run`): `Read ref/dry-run-scope.md`
-- **RC history** (background-only migration notes; load only when auditing legacy release behaviour or why an old rc archive path differs): `Read ref/rc-history.md`
+
+> The `rc-history` ref was deleted 2026-08-11: it was a changelog of what changed in rc.7/20/23/24/25/27/28, which `git log` already answers, and its own header admitted the hot path never needed it (W3 T3).

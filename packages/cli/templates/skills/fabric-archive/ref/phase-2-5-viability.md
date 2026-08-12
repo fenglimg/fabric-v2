@@ -36,7 +36,9 @@ These force the gate to FAIL **unless** an archive signal also fires (i.e. anti-
 1. **Typo-only edits** — the entire session is whitespace / spelling / formatting changes. No semantic content to archive.
 2. **Pure refactor** — rename / move / extract with no behavior change AND no naming convention being established.
 3. **Narrow rename request** — user asked to rename one symbol / file with no rationale. Zero generalization potential.
-4. **Duplicate of existing canonical** — v2.0.0-rc.37 NEW-4: this check is now **mandatory** (was "do a quick Glob before deciding"). Pre-PASS MUST step: for each candidate, call `fab_pending action="search"` scoped by type/slug keywords so the MCP read path searches mounted stores. If duplicate found → drop candidate. Silently writing a near-duplicate is the highest-noise failure mode.
+4. **Duplicate of existing canonical** — v2.0.0-rc.37 NEW-4: this check is now **mandatory** (was "do a quick Glob before deciding"). Pre-PASS MUST step: for each candidate, call `fab_recall(paths=[<the code paths the candidate is about>])` so the MCP read path RANKS the mounted stores against it, and `fab_pending action="list"` for the un-reviewed backlog. If duplicate found → drop candidate. Silently writing a near-duplicate is the highest-noise failure mode.
+
+   **MUST NOT use `fab_pending action="search"` for this gate.** Its query is a substring match over title/summary/tags/path, so an empty result means your guessed terms missed — not that no duplicate exists. Observed: six hand-picked terms returned nothing while two of the three candidates duplicated canonical entries that `fab_recall` surfaced immediately on the same paths. A control query proves the PROBE is alive, never that the TERMS were right.
 
 ## Gate-FAIL user messages (E2 / E4 only)
 

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { knowledgeProvenanceSchema } from "../../src/schemas/provenance.js";
 import { resolveCandidates } from "../../src/resolver/resolution.js";
-import { resolveStoreQualifiedId } from "../../src/resolver/store-qualified-id.js";
 import { lintCrossStoreReferences } from "../../src/store/cross-store-lint.js";
 import { hasSecrets, redactSecrets, scanForSecrets } from "../../src/store/secret-scan.js";
 
@@ -13,45 +11,13 @@ const TEAM = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const PLATFORM = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const PERSONAL = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
-describe("P2 provenance schema", () => {
-  it("validates a full store-qualified provenance envelope", () => {
-    expect(() =>
-      knowledgeProvenanceSchema.parse({
-        store_uuid: TEAM,
-        alias: "team",
-        local_id: "KT-DEC-0001",
-        global_ref: `${TEAM}:KT-DEC-0001`,
-        semantic_scope: "team",
-      }),
-    ).not.toThrow();
-  });
-});
-
-describe("P2 store-qualified id resolution (S61)", () => {
-  const candidates = [
-    { store_uuid: TEAM, alias: "team", local_id: "KT-DEC-0001" },
-    { store_uuid: PLATFORM, alias: "platform", local_id: "KT-DEC-0001" },
-    { store_uuid: PERSONAL, alias: "personal", local_id: "KP-PIT-0007" },
-  ];
-
-  it("resolves a store-qualified ref by alias", () => {
-    const r = resolveStoreQualifiedId("platform:KT-DEC-0001", candidates);
-    expect(r.resolved?.store_uuid).toBe(PLATFORM);
-    expect(r.ambiguous).toBe(false);
-  });
-
-  it("resolves a unique bare id", () => {
-    const r = resolveStoreQualifiedId("KP-PIT-0007", candidates);
-    expect(r.resolved?.store_uuid).toBe(PERSONAL);
-  });
-
-  it("flags a shadowed bare id as ambiguous (NOT silently merged)", () => {
-    const r = resolveStoreQualifiedId("KT-DEC-0001", candidates);
-    expect(r.resolved).toBeNull();
-    expect(r.ambiguous).toBe(true);
-    expect(r.matches).toHaveLength(2);
-  });
-});
+// W4 B6: the "P2 provenance schema" and "P2 store-qualified id resolution"
+// blocks were deleted along with their subjects. `knowledgeProvenanceSchema`
+// and `resolveStoreQualifiedId` had no production caller anywhere — these
+// tests WERE the only consumers, so they tested that the code they were
+// written against still compiled, nothing more. The shadowed-id semantics they
+// described are enforced for real by `resolveCandidates` below (the
+// `shadowed_local_id` warning), which the live recall path actually calls.
 
 describe("P2 resolution engine (double-axis + tie-break)", () => {
   it("orders by scope specificity then store tie-break, surfaces shadowing", () => {

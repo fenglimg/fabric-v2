@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => {
   return {
     ok,
     okList,
-    cleanupDeprecatedSkills: vi.fn(() => okList("skill-deprecated-cleanup")),
     installFabricArchiveSkill: vi.fn(() =>
       Promise.resolve([
         {
@@ -22,11 +21,13 @@ const mocks = vi.hoisted(() => {
     installFabricReviewSkill: vi.fn(() => okList("skill-review-install")),
     installFabricSyncSkill: vi.fn(() => okList("skill-sync-install")),
     installFabricStoreSkill: vi.fn(() => okList("skill-store-install")),
-    installFabricPlaybookSkill: vi.fn(() => okList("skill-playbook-install")),
     installFabricRecallPlaybookSkill: vi.fn(() => okList("skill-recall-playbook-install")),
+    installFabricConfigSkill: vi.fn(() => okList("skill-config-install")),
+    installKnowledgePretoolUseHook: vi.fn(() => okList("hook-pretooluse-script")),
     installSharedSkillLib: vi.fn(() => okList("skill-shared-lib")),
     installArchiveHintHook: vi.fn(() => okList("hook-script")),
     installKnowledgeHintBroadHook: vi.fn(() => okList("hook-broad-script")),
+    installKnowledgeHintSubagentHook: vi.fn(() => okList("hook-subagent-script")),
     installKnowledgeHintNarrowHook: vi.fn(() => okList("hook-narrow-script")),
     installCitePolicyEvictHook: vi.fn(() => okList("hook-cite-policy-evict-script")),
     installSessionEndMarkerHook: vi.fn(() => okList("hook-session-end-script")),
@@ -43,22 +44,41 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("../src/install/skills-and-hooks.js", () => ({
-  cleanupDeprecatedSkills: mocks.cleanupDeprecatedSkills,
+// One mock per writer module the stage imports. The stage is under test here,
+// so every writer it calls must be stubbed — a module left real would load the
+// filesystem plumbing and the stage's own error accounting would report the
+// mock harness's failures as install failures (which is what the single
+// pre-split mock of `skills-and-hooks.js` silently did: it omitted three
+// installers, and their "not defined on the mock" errors rode along in
+// `result.errors` next to the two this test actually asserts).
+vi.mock("../src/install/install-skills.js", () => ({
   installFabricArchiveSkill: mocks.installFabricArchiveSkill,
   installFabricReviewSkill: mocks.installFabricReviewSkill,
   installFabricSyncSkill: mocks.installFabricSyncSkill,
   installFabricStoreSkill: mocks.installFabricStoreSkill,
+  installFabricRecallPlaybookSkill: mocks.installFabricRecallPlaybookSkill,
+  installFabricConfigSkill: mocks.installFabricConfigSkill,
   installSharedSkillLib: mocks.installSharedSkillLib,
+}));
+
+vi.mock("../src/install/install-hook-scripts.js", () => ({
   installArchiveHintHook: mocks.installArchiveHintHook,
   installKnowledgeHintBroadHook: mocks.installKnowledgeHintBroadHook,
+  installKnowledgeHintSubagentHook: mocks.installKnowledgeHintSubagentHook,
   installKnowledgeHintNarrowHook: mocks.installKnowledgeHintNarrowHook,
+  installKnowledgePretoolUseHook: mocks.installKnowledgePretoolUseHook,
   installCitePolicyEvictHook: mocks.installCitePolicyEvictHook,
   installSessionEndMarkerHook: mocks.installSessionEndMarkerHook,
   installPostTooluseMutationHook: mocks.installPostTooluseMutationHook,
   installHookLibs: mocks.installHookLibs,
+}));
+
+vi.mock("../src/install/hook-config-merge.js", () => ({
   mergeClaudeCodeHookConfig: mocks.mergeClaudeCodeHookConfig,
   mergeCodexHookConfig: mocks.mergeCodexHookConfig,
+}));
+
+vi.mock("../src/install/bootstrap-propagation.js", () => ({
   writeClaudeBootstrapThinShell: mocks.writeClaudeBootstrapThinShell,
   writeCodexBootstrapManagedBlock: mocks.writeCodexBootstrapManagedBlock,
 }));
@@ -98,9 +118,12 @@ describe("install v2 HooksStage", () => {
 
       expect(result.disposition).toBe("failed");
       expect(result.name).toBe("hooks");
-      expect(result.errors).toEqual(
-        expect.arrayContaining(["skill-install: skill copy denied", "codex-hook-config: codex config locked"]),
-      );
+      // Exactly two, not "at least two": an incomplete mock shows up as extra
+      // error rows, and arrayContaining would have swallowed them.
+      expect(result.errors).toEqual([
+        "skill-install: skill copy denied",
+        "codex-hook-config: codex config locked",
+      ]);
       expect(result.installed).toContain("claude-hook-config.ok");
       expect(result.installed).not.toContain(".codex/skills/fabric-archive/SKILL.md");
       expect(String(stderrSpy.mock.calls.join("\n"))).toContain("skill copy denied");

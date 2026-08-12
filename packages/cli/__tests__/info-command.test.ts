@@ -15,7 +15,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// W3-F (NS-01 §1/I1): `info scope` was a positional-detected pseudo-subcommand;
+// W3-F: `info scope` was a positional-detected pseudo-subcommand;
 // it is now a real citty subCommand so `fabric info scope --help` works and the
 // coordinate is a citty-validated required positional (the old hand-rolled
 // "missing scope" branch is gone — citty enforces it).

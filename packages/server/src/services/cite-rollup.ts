@@ -19,7 +19,7 @@ import { readFile } from "node:fs/promises";
 
 import { createLedgerWriteQueue } from "@fenglimg/fabric-shared/node/atomic-write";
 
-import type { CiteCoverageReport } from "./doctor.js";
+import type { CiteCoverageReport } from "./doctor/doctor.js";
 import { ensureParentDirectory, getCiteRollupPath, isNodeError } from "./_shared.js";
 
 // W1-01 (ISS-015): serialize appends to cite-rollup.jsonl through the same
