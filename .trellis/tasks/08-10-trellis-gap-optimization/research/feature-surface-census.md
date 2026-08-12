@@ -213,9 +213,9 @@
 | **A′** | ~~store 的 hidden/visible 划分自相矛盾:迁移专用的可见、日常用的被藏~~ | **又被推翻** | — | ❌ 见下方 A″ |
 | **A″** | 四条迁移命令的描述硬编码英文、绕过 `t()`;`folded-note` 举的例子点名 `migrate`(唯一没被折叠的那批) | 确凿 | 极低 | ✅ 已做 |
 | **B′** | `audit conflicts --deep` 是自陈的空 flag(「no judge wired yet」):删 flag,保留 service 层 judge 注入缝 | **确凿**(自陈) | 低 | ✅ 已做,变异验证 |
-| **G** | `fabric store link` 整条特性 DOA:命令没注册、i18n key 一个不存在、ESM 里写 `require()`;`store-link.ts` 还带一份重复副本 | **确凿**(三条独立证据) | — | 待你裁决 |
+| **G** | `fabric store link` 整条特性 DOA:命令没注册、i18n key 一个不存在、ESM 里写 `require()`;`store-link.ts` 还带一份重复副本 | **确凿**(三条独立证据) | — | ✅ 已删(`fecd7d93`) |
 | **F3** | 定性 4 个真存疑 event_type | 强(账本 oracle + 逐条追 emitter) | — | ✅ 查完:**0 个该删**,反而查出 1 个 bug |
-| **F4** | `init_scan_completed` 有读侧无写侧 → Signal C 冷启动提醒在生产里永远不触发 | **确凿** | 中(要补 emitter) | 待你裁决 |
+| **F4** | `init_scan_completed` 有读侧无写侧 → Signal C 冷启动提醒在生产里永远不触发 | **确凿** | 中 | ✅ 已补 emitter(`7d0ccafe`) |
 | F0 | 统一 event_type 计数口径 | — | — | ✅ 46;权威快照本来就在 `event-ledger-census.test.ts` |
 | D | hook lib 合并 | **弱,先别动** | 中 | 不做 |
 

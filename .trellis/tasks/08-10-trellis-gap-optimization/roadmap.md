@@ -158,10 +158,12 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **B′** `audit conflicts --deep` 自陈「no judge wired yet」的空 flag | ✅ 删 flag(service 层 judge 注入缝保留),变异验证 | `ed64da59` |
 | **F0** event_type 口径 46 vs 65 | ✅ 46。**权威快照本来就在仓里** —— `event-ledger-census.test.ts` 从运行时 `optionsMap` 读全集并钉死 | `d048cf46` |
 | **F3** 4 个存疑 event_type | ✅ **0 个该删**。3 个有生产 emitter;`mcp_event` 被 ~60 处测试断言当通用夹具钉着,删它换 10 行 schema 不划算(KT-PIT-0075 正例) | `d048cf46` |
-| **F4** `init_scan_completed` 有生产读侧、零生产写侧 → Signal C 冷启动提醒**永远不触发** | 🔴 **待裁决**:补 emitter 还是连 gate 带配置项一起删 | — |
-| **G** `fabric store link` 整条特性 DOA(命令没注册 / 5 个 i18n key 全不存在 / ESM 里 `require()` 一用就抛 / `store-link.ts` 还有第二份重复副本) | 🔴 **待裁决**。这是本轮唯一一处真死功能,而且是查一个**错误前提**时顺手撞上的 —— 不在初稿点名的 5 处里任何一处 | 已留 DOA 注释 |
+| **F4** `init_scan_completed` 有生产读侧、零生产写侧 → Signal C 冷启动提醒**永远不触发** | ✅ **补 emitter**(用户裁决)。`emitInitScanCompletedOnce` once-**ever** 而非 once-per-install —— 消费侧取最新一条,按次发会让每次 install 都把静默窗推后,而 install 是幂等的、用户会重跑,于是换个成因复现同一个 bug。用「账本里已有」做闸口顺带回填了老工作区 | `7d0ccafe` |
+| **G** `fabric store link` 整条特性 DOA(命令没注册 / 5 个 i18n key 全不存在 / ESM 里 `require()` 一用就抛 / `store-link.ts` 还有第二份重复副本) | ✅ **已删**(用户裁决)。本轮唯一一处真死功能,而且是查一个**错误前提**时顺手撞上的 —— 不在初稿点名的 5 处里任何一处 | `fecd7d93` |
 
 **轨F 最大的方法学产出**:四次同类错误(把"读起来像什么"当成"注册成什么"),补救手法都是同一个 —— **去看注册/装配的那一处,不是声明的那一处**。以及 F4/G 都由同一个 oracle 抓出:producer-consumer 往返,声明面在、一侧空。
+
+**F4 补完时又踩了一次同形的洞,值得单记**:第一版往返测试(真 emitter → hook 自己的 `readLedger` → 真 `decide`)三条断言写得很足,变异 M1(emitter 空转)杀 3/4、M2(去掉 once-ever)杀 1 —— 看着已经盖住了。但 **M3(`runInitCommand` 不再调用 emitter)全绿**。测试证明了「emitter 能发、hook 能收」,没有证明「有人调 emitter」—— 正是原 bug 的形状往上挪了一层。补了驱动真 `runInitCommand` 的调用点断言才杀掉 M3。**往返测试要一路返到真正的调用入口,停在"两个组件能对接"就还是半个洞。**
 
 ### 4.5 轨T · 文档瘦身 / code-as-truth(用户 2026-08-10 新增原则)
 
