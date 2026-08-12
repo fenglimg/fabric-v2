@@ -72,6 +72,7 @@ describe("forensic scanner helpers", () => {
           snippet: 'import { _decorator, Component } from "cc";\n@ccclass("Game")\nexport class Game extends Component {}',
           pattern_analysis: {
             pattern: "cocos-component-class",
+            type: "pattern",
             confidence: "HIGH",
             evidence_lines: ['from "cc"', "@ccclass(", "extends Component"],
             co_occurring: ["cc-import", "ccclass-decorator", "component-base"],
@@ -87,6 +88,7 @@ describe("forensic scanner helpers", () => {
           snippet: 'import { _decorator, Component } from "cc";\n@ccclass("Player")\nexport class Player extends Component {}',
           pattern_analysis: {
             pattern: "cocos-component-class",
+            type: "pattern",
             confidence: "HIGH",
             evidence_lines: ['from "cc"', "@ccclass(", "extends Component"],
             co_occurring: ["cc-import", "ccclass-decorator", "component-base"],
@@ -109,6 +111,7 @@ describe("forensic scanner helpers", () => {
           snippet: "console.log('boot');",
           pattern_analysis: {
             pattern: "vite-main-entry",
+            type: "pattern",
             confidence: "MEDIUM",
             evidence_lines: ["console.log"],
             co_occurring: ["main-entry"],
@@ -123,6 +126,7 @@ describe("forensic scanner helpers", () => {
           pattern_hint: "source-entry",
           pattern_analysis: {
             pattern: "source-entry",
+            type: "pattern",
             confidence: "LOW",
             evidence_lines: ["secondary"],
             co_occurring: [],
@@ -143,6 +147,7 @@ describe("forensic scanner helpers", () => {
           pattern_hint: "source-entry",
           pattern_analysis: {
             pattern: "source-entry",
+            type: "pattern",
             confidence: "LOW",
             evidence_lines: ["boot"],
             co_occurring: [],
@@ -156,6 +161,7 @@ describe("forensic scanner helpers", () => {
           pattern_hint: "source-entry",
           pattern_analysis: {
             pattern: "source-entry",
+            type: "pattern",
             confidence: "LOW",
             evidence_lines: ["helper"],
             co_occurring: [],
@@ -189,6 +195,7 @@ describe("forensic scanner helpers", () => {
         pattern_hint: "vite-main-entry",
         pattern_analysis: {
           pattern: "vite-main-entry",
+          type: "pattern",
           confidence: "HIGH",
           evidence_lines: ["src/main"],
           co_occurring: ["main-entry", "import-meta"],
@@ -203,6 +210,7 @@ describe("forensic scanner helpers", () => {
         pattern_hint: "cocos-component-class",
         pattern_analysis: {
           pattern: "cocos-component-class",
+          type: "pattern",
           confidence: "HIGH",
           evidence_lines: ["extends Component"],
           co_occurring: ["component-base", "jsx-component"],

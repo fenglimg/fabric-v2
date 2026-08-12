@@ -41,6 +41,7 @@ function baseContext(target: string): InstallContext {
     options: { planOnly: true, skipBootstrap: false, skipHooks: false, skipMcp: false },
     mcpInstallMode: "global",
     claudeMcpScope: "project",
+    mcpRootPolicy: { mode: "dynamic" },
     interactive: false,
     wizardEnabled: false,
     stageResults: [],

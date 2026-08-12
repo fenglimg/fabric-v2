@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -109,7 +110,7 @@ const REGISTRY_REQUIRED_TOKENS = [
 ];
 
 async function collectFiles(directory: string): Promise<string[]> {
-  let entries: Awaited<ReturnType<typeof readdir>>;
+  let entries: Dirent[];
   try {
     entries = await readdir(directory, { withFileTypes: true });
   } catch (error) {
@@ -202,7 +203,7 @@ export function validateSkillRefReachability(
 
 async function listSkillRefFiles(skillFilePath: string): Promise<string[]> {
   const refDir = path.join(path.dirname(skillFilePath), "ref");
-  let entries: Awaited<ReturnType<typeof readdir>>;
+  let entries: Dirent[];
   try {
     entries = await readdir(refDir, { withFileTypes: true });
   } catch (error) {

@@ -28,6 +28,8 @@ const resolveInput: StoreResolveInput = {
     { store_uuid: TEAM, alias: "team", remote: "git@h:r.git", writable: true, personal: false },
   ],
   requiredStores: [{ id: "team" }],
+  // No scope-aware routing in this fixture — activeWriteAlias alone decides.
+  writeRoutes: [],
   activeWriteAlias: "team",
 };
 

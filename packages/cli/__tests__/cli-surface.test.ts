@@ -20,6 +20,7 @@ import firstHitCommand from "../src/commands/first-hit.ts";
 // longer exists in main and is not part of the CLI surface contract.
 import uninstallCommand from "../src/commands/uninstall.ts";
 import { allCommands } from "../src/commands/index.ts";
+import { nameOf } from "./helpers/citty-meta.ts";
 
 // Drift gate guidance — surfaced via snapshot hint and assertion failure messages.
 // Keep in sync with docs/test-seed/cli.md §1 Feature Surface.
@@ -102,15 +103,15 @@ describe("CLI surface drift gate (docs/test-seed/cli.md §1)", () => {
   // ISS-20260711-187: install surface is gated via install-v2 (live registry).
   it("core public seed includes install/doctor/uninstall/config and first-hit", () => {
     const names = [
-      installCommand.meta?.name,
-      doctorCommand.meta?.name,
-      uninstallCommand.meta?.name,
-      configCmd.meta?.name,
-      firstHitCommand.meta?.name,
+      nameOf(installCommand, "install.meta"),
+      nameOf(doctorCommand, "doctor.meta"),
+      nameOf(uninstallCommand, "uninstall.meta"),
+      nameOf(configCmd, "config.meta"),
+      nameOf(firstHitCommand, "first-hit.meta"),
     ].sort();
     expect(names).toEqual(["config", "doctor", "first-hit", "install", "uninstall"]);
     expect(Object.keys(allCommands)).toContain("first-hit");
-    expect(firstHitCommand.meta?.name).toBe("first-hit");
+    expect(nameOf(firstHitCommand, "first-hit.meta")).toBe("first-hit");
   });
 
   // Critical-flag layer: even if a future refactor renames descriptions, these

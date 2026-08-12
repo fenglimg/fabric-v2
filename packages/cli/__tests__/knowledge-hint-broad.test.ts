@@ -749,7 +749,7 @@ describe("knowledge-hint-broad.cjs — main", () => {
     payload?: Payload | null;
     cwd?: string;
     census?: unknown;
-    alwaysBodies?: unknown;
+    alwaysBodies?: unknown[];
   }): string[] {
     const writes: string[] = [];
     const stderr = { write: (chunk: string) => writes.push(chunk) };

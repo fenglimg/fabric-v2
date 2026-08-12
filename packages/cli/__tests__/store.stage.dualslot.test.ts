@@ -13,7 +13,8 @@ import { select } from "@clack/prompts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StoreStage } from "../src/install/pipeline/store.stage.js";
-import type { InstallContext, OutputRenderer } from "../src/install/pipeline/types.js";
+import type { InstallContext } from "../src/install/pipeline/types.js";
+import type { OutputRenderer } from "../src/tui/types.js";
 import { loadGlobalConfig, saveGlobalConfig } from "../src/store/global-config-io.js";
 import { loadProjectConfig, saveProjectConfig } from "../src/store/project-config-io.js";
 import { personalStoreCandidates, storeCreate } from "../src/store/store-ops.js";

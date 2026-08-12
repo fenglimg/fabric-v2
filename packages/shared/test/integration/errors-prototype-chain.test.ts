@@ -18,7 +18,7 @@ import { FabricError } from '../../src/errors/index.js'
 type ErrorCtor = new (message: string, opts: { actionHint: string }) => Error
 
 // Every exported class that descends from Error.
-const exportedErrorClasses = Object.entries(errors).filter(
+const exportedErrorClasses = Object.entries(errors as Record<string, unknown>).filter(
   (entry): entry is [string, ErrorCtor] =>
     typeof entry[1] === 'function' && entry[1].prototype instanceof Error,
 )

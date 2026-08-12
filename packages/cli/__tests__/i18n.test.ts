@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { cleanupFixtureRoot, createWerewolfFixtureRoot, setProcessTty } from "./helpers/init-test-utils.ts";
+import { metaOf } from "./helpers/citty-meta.ts";
 
 const tempRoots: string[] = [];
 const originalFabLang = process.env.FAB_LANG;
@@ -100,20 +101,20 @@ async function collectSnapshots(locale: "en" | "zh-CN") {
   vi.resetModules();
   const uninstallMod = await import("../src/commands/uninstall.ts");
   const uninstallCmd = uninstallMod.default;
-  const usageFirstLine = `fabric uninstall - ${uninstallCmd.meta?.description ?? ""}`;
+  const usageFirstLine = `fabric uninstall - ${metaOf(uninstallCmd, "uninstall.meta").description ?? ""}`;
   const uninstallEntry = {
-    description: uninstallCmd.meta?.description ?? "",
+    description: metaOf(uninstallCmd, "uninstall.meta").description ?? "",
     usage: usageFirstLine,
   };
 
   return sanitizeSnapshot({
     locale,
     install: {
-      description: installCommand.meta.description,
+      description: metaOf(installCommand, "install.meta").description,
       ...installOutput,
     },
     config: {
-      description: configCmd.meta?.description,
+      description: metaOf(configCmd, "config.meta").description,
       ...configOutput,
     },
     // serve snapshot removed in v2.0.0-rc.37 Wave A2 (quarantine).
@@ -175,7 +176,10 @@ function sanitizeSnapshot(value: unknown): unknown {
   return value;
 }
 
-function restoreEnv(name: "FAB_LANG" | "NO_COLOR" | "HOME", value: string | undefined): void {
+function restoreEnv(
+  name: "FAB_LANG" | "NO_COLOR" | "HOME" | "FABRIC_HOME",
+  value: string | undefined,
+): void {
   if (value === undefined) {
     delete process.env[name];
     return;

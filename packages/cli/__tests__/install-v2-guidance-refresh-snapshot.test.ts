@@ -83,6 +83,7 @@ function guidanceContext(target: string, globalRoot: string): InstallContext {
     options: { planOnly: false, skipBootstrap: false, skipHooks: false, skipMcp: false },
     mcpInstallMode: "global",
     claudeMcpScope: "project",
+    mcpRootPolicy: { mode: "dynamic" },
     interactive: false,
     wizardEnabled: false,
     stageResults: [],

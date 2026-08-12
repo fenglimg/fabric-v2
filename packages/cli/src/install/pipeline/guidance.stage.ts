@@ -48,7 +48,7 @@ export class GuidanceStage implements Stage {
 
   async execute(context: InstallContext): Promise<StageResult> {
     try {
-      const translate = ((context as { translate?: typeof t }).translate ?? t);
+      const translate = context.translate ?? t;
       // Skip guidance output if planOnly mode
       if (context.options.planOnly) {
         return stageRan("guidance", [], []);

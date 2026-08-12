@@ -101,6 +101,7 @@ function createContext(): InstallContext {
     options: {},
     mcpInstallMode: "global",
     claudeMcpScope: "user",
+    mcpRootPolicy: { mode: "dynamic" },
     interactive: false,
     wizardEnabled: false,
     stageResults: [],

@@ -102,10 +102,10 @@ describe("W6 install --global: policy defaults reach an existing global config",
   it("never overwrites a `defaults` segment the user already has", async () => {
     const globalRoot = isolatedGlobalRoot();
     await installGlobalCore(opts(globalRoot));
-    await mutateGlobalConfig(
-      (current) => ({ ...(current as never), defaults: { nudge_mode: "verbose" } }),
-      globalRoot,
-    );
+    await mutateGlobalConfig((current) => {
+      if (current === null) throw new Error("global config missing after installGlobalCore");
+      return { ...current, defaults: { nudge_mode: "verbose" } };
+    }, globalRoot);
 
     const result = await installGlobalCore(opts(globalRoot));
 
@@ -116,7 +116,10 @@ describe("W6 install --global: policy defaults reach an existing global config",
   it("leaves an intentionally-emptied `defaults` empty (present ≠ absent)", async () => {
     const globalRoot = isolatedGlobalRoot();
     await installGlobalCore(opts(globalRoot));
-    await mutateGlobalConfig((current) => ({ ...(current as never), defaults: {} }), globalRoot);
+    await mutateGlobalConfig((current) => {
+      if (current === null) throw new Error("global config missing after installGlobalCore");
+      return { ...current, defaults: {} };
+    }, globalRoot);
 
     await installGlobalCore(opts(globalRoot));
 

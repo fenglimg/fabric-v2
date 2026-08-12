@@ -1,5 +1,6 @@
 import type { ClaudeMcpScope } from "../../config/json.js";
 import type { McpRootPolicy } from "../../config/writer.js";
+import type { Translator } from "@fenglimg/fabric-shared";
 import type { OutputRenderer, StepInfo } from "../../tui/types.js";
 
 // ---------------------------------------------------------------------------
@@ -136,6 +137,12 @@ export interface InstallContext {
   state: InstallState;
   /** TUI output renderer (EPIC-005/006/007/008) */
   renderer?: OutputRenderer;
+  /**
+   * Project-resolved translator. Stages that emit user-facing copy prefer this
+   * over the module-level `t` so the project's language wins. Optional: when
+   * absent the stage falls back to the process-level translator.
+   */
+  translate?: Translator;
   /**
    * TASK-004/Bug-B: when set (re-install buffering active), a stage about to issue
    * an interactive prompt calls this FIRST so buffered context (slot status, prior

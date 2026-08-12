@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { MCPError } from '../src/errors/index'
 import { enforcePayloadLimit, trimToPayloadBudget } from '../src/node/mcp-payload-guard'
 
+// `MCPError` is abstract, so its type is not `new (...) => Error` and vitest's
+// `toThrowError` overload rejects it. The runtime match is prototype-based and
+// works fine for an abstract base — only the declared type needs the nudge.
+const MCPErrorCtor = MCPError as unknown as new (...args: never[]) => Error
+
 const DEFAULT_WARN = 16384  // 16KB
 const DEFAULT_HARD = 65536  // 64KB
 
@@ -69,7 +74,7 @@ describe('enforcePayloadLimit', () => {
 
     it('thrown error is instanceof MCPError', () => {
       const payload = makePayload(DEFAULT_HARD + 1)
-      expect(() => enforcePayloadLimit(payload)).toThrowError(MCPError)
+      expect(() => enforcePayloadLimit(payload)).toThrowError(MCPErrorCtor)
     })
 
     it('thrown error has code MCP_PAYLOAD_TOO_LARGE', () => {
@@ -132,7 +137,7 @@ describe('enforcePayloadLimit', () => {
     it('respects custom hardBytes override — throws above it', () => {
       const customHard = 200
       const payload = makePayload(customHard + 1)
-      expect(() => enforcePayloadLimit(payload, { warnBytes: 100, hardBytes: customHard })).toThrowError(MCPError)
+      expect(() => enforcePayloadLimit(payload, { warnBytes: 100, hardBytes: customHard })).toThrowError(MCPErrorCtor)
     })
 
     it('does not throw below custom hardBytes', () => {

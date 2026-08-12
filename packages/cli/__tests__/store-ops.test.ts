@@ -30,6 +30,7 @@ import {
 import { regenerateBindingsSnapshot } from "../src/store/bindings-io.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { runCtx, subCommandOf } from "./helpers/citty-meta.ts";
 
 // v2.1.0-rc.1 P3 — `fabric store {list,add,remove,explain}` integration tests
 // against an isolated global root (no FABRIC_HOME / real ~/.fabric touched).
@@ -311,7 +312,6 @@ describe("fabric store bind / switch-write (project config)", () => {
     saveProjectConfig(
       {
         project_id: "11111111-1111-4111-8111-111111111111",
-        fabric_language: "en",
         required_stores: [{ id: "platform" }],
       },
       projectRoot,
@@ -333,11 +333,9 @@ describe("fabric store bind / switch-write (project config)", () => {
     process.env.FABRIC_HOME = dirname(globalRoot);
     process.chdir(projectRoot);
     try {
-      const command = storeCommand.subCommands?.["switch-write"] as
-        | { run?: (ctx: { args: { alias: string } }) => void }
-        | undefined;
+      const command = subCommandOf(storeCommand, "switch-write");
       expect(command?.run).toBeTypeOf("function");
-      command?.run?.({ args: { alias: "platform" } });
+      if (command) command.run?.(runCtx(command, { alias: "platform" }));
     } finally {
       process.chdir(prevCwd);
       if (prevHome === undefined) delete process.env.FABRIC_HOME;

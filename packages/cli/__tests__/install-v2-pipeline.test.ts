@@ -358,7 +358,7 @@ describe("install-v2 pipeline UX", () => {
     saveGlobalConfig(globalConfigSchema.parse({ uid: "u-test", stores: [] }), globalRoot);
 
     const target = await tempProject();
-    saveProjectConfig({ fabric_language: "en" }, target);
+    saveProjectConfig({}, target);
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     const stage = new StoreStage();
@@ -391,7 +391,7 @@ describe("install-v2 pipeline UX", () => {
     });
 
     const target = await tempProject();
-    saveProjectConfig({ fabric_language: "en" }, target);
+    saveProjectConfig({}, target);
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     const stage = new StoreStage();
@@ -437,7 +437,7 @@ describe("install-v2 pipeline UX", () => {
     });
 
     const target = await tempProject();
-    saveProjectConfig({ fabric_language: "en" }, target);
+    saveProjectConfig({}, target);
     vi.spyOn(console, "log").mockImplementation(() => {});
 
     const stage = new StoreStage();

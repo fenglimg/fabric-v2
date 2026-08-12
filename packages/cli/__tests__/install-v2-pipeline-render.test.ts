@@ -6,6 +6,7 @@
 //   C-18 — a failed stage renders the error box on the renderer path (which the
 //          interactive install now always has), not just a bare console.error.
 import { describe, expect, it, vi } from "vitest";
+import type { Mocked } from "vitest";
 
 import { createTranslator } from "@fenglimg/fabric-shared";
 
@@ -14,7 +15,11 @@ import type { InstallContext, Stage } from "../src/install/pipeline/types.js";
 import type { OutputRenderer } from "../src/tui/types.js";
 import { t } from "../src/i18n.js";
 
-function stubRenderer(): OutputRenderer & Record<string, ReturnType<typeof vi.fn>> {
+// `Mocked<T>` (vitest) maps every method to a Mock, so `.mock.calls` is typed.
+// The previous `OutputRenderer & Record<string, ReturnType<typeof vi.fn>>` did
+// NOT work: a declared property beats an index signature, so every method still
+// resolved to the plain OutputRenderer signature and `.mock` was invisible.
+function stubRenderer(): Mocked<OutputRenderer> {
   return {
     renderStep: vi.fn(),
     renderSuccess: vi.fn(),
@@ -25,7 +30,7 @@ function stubRenderer(): OutputRenderer & Record<string, ReturnType<typeof vi.fn
     renderSection: vi.fn(),
     renderComplete: vi.fn(),
     cleanup: vi.fn(async () => {}),
-  } as OutputRenderer & Record<string, ReturnType<typeof vi.fn>>;
+  } as unknown as Mocked<OutputRenderer>;
 }
 
 function rendererContext(

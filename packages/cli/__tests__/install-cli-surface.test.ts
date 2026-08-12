@@ -10,6 +10,7 @@ import {
   runScaffoldOnly,
 } from "./helpers/init-test-utils.ts";
 import { installCommand, resolveMcpRootPolicy } from "../src/commands/install-v2.js";
+import { argsOf } from "./helpers/citty-meta.ts";
 
 // Reader-consumed fields enumerated in init.ts writeDefaultFabricConfig.
 // Source-of-truth: packages/shared/src/schemas/fabric-config.ts +
@@ -63,8 +64,8 @@ afterEach(() => {
 
 describe("init CLI surface", () => {
   it("exposes dynamic MCP root defaults and validates pinned combinations", () => {
-    expect(installCommand.args?.["mcp-root-mode"]).toBeDefined();
-    expect(installCommand.args?.["mcp-project-root"]).toBeDefined();
+    expect(argsOf(installCommand, "install.args")["mcp-root-mode"]).toBeDefined();
+    expect(argsOf(installCommand, "install.args")["mcp-project-root"]).toBeDefined();
     expect(resolveMcpRootPolicy({})).toEqual({ mode: "dynamic" });
     expect(resolveMcpRootPolicy({ "mcp-root-mode": "pinned", "mcp-project-root": "/tmp/project/.." })).toEqual({
       mode: "pinned",

@@ -23,7 +23,9 @@ const hook = require("../templates/hooks/fabric-hint.cjs") as {
   renderDismissOption: (signal: string, variant: string) => string;
   DISMISSABLE_SIGNALS: string[];
   main: (
-    env: { cwd: string; now: Date },
+    // `stdin_payload` is the hook's documented test seam (fabric-hint.cjs:571) —
+    // a pre-parsed stdin payload so the digest path runs without a real pipe.
+    env: { cwd: string; now: Date; stdin_payload?: unknown },
     stdio: { stdout: { write: (s: string) => void } },
   ) => void;
 };

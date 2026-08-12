@@ -54,6 +54,7 @@ function createContext(target: string, args: Record<string, unknown> = {}): Inst
     options: {},
     mcpInstallMode: "global",
     claudeMcpScope: "user",
+    mcpRootPolicy: { mode: "dynamic" },
     interactive: false,
     wizardEnabled: false,
     stageResults: [],

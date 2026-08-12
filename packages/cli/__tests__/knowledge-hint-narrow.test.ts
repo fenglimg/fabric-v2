@@ -103,6 +103,8 @@ type HookModule = {
     targetPaths: string[],
     currentRevisionHash: string,
   ) => { render: boolean; narrow: NarrowEntry[]; cache: SessionHintsCache };
+  /** Absolute in-tree paths -> project-relative form (out-of-tree paths dropped). */
+  toProjectRelativePaths: (cwd: string, paths: unknown) => string[];
   narrowDedupWindowPath: (projectRoot: string, sessionId: string) => string;
   readNarrowDedupWindow: (
     projectRoot: string,
@@ -639,8 +641,7 @@ describe("knowledge-hint-narrow.cjs — main (E2 narrow render)", () => {
     expect(() =>
       captureStderr({
         cwd: root,
-        // @ts-expect-error — feeding garbage to exercise defensive path
-        payload: { tool_name: "Edit", tool_input: { file_path: 42 } },
+        payload: { tool_name: "Edit", tool_input: { file_path: 42 as unknown as string } },
       }),
     ).not.toThrow();
   });

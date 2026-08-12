@@ -80,7 +80,7 @@ export function setProcessTty(
   return () => {
     for (const [stream, descriptor] of descriptors) {
       if (descriptor === undefined) {
-        delete (stream as NodeJS.WriteStream & { isTTY?: boolean }).isTTY;
+        delete (stream as unknown as { isTTY?: boolean }).isTTY;
         continue;
       }
 

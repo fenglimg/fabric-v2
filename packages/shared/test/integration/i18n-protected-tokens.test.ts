@@ -55,7 +55,7 @@ describe('protected tokens: translator', () => {
   const t = createTranslator('en')
 
   it('translator returns a non-empty string for every defined key', () => {
-    for (const key of Object.keys(enMessages) as Array<keyof typeof enMessages>) {
+    for (const key of Object.keys(enMessages)) {
       const result = t(key)
       expect(typeof result).toBe('string')
       expect(result.length).toBeGreaterThan(0)
@@ -90,7 +90,7 @@ describe('protected tokens: translator', () => {
 describe('i18n: zh-CN locale falls back to en', () => {
   it('zh-CN translator does not throw for any en key', () => {
     const t = createTranslator('zh-CN')
-    for (const key of Object.keys(enMessages) as Array<keyof typeof enMessages>) {
+    for (const key of Object.keys(enMessages)) {
       expect(() => t(key)).not.toThrow()
     }
   })

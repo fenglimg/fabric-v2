@@ -6,6 +6,7 @@ import { globalConfigSchema } from "@fenglimg/fabric-shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import storeCommand from "../src/commands/store.js";
+import { subCommandOf, subCommandsOf } from "./helpers/citty-meta.ts";
 import { saveGlobalConfig } from "../src/store/global-config-io.js";
 
 const originalExitCode = process.exitCode;
@@ -87,7 +88,8 @@ describe("fabric store command surface", () => {
     // reuses the word for knowledge-coordinate rewrites (scope/promote/backfill);
     // W2/TASK-005 adds `reroot` (folder-layout relocation). Assert it carries
     // exactly these ops, so the dead dual-root meaning cannot creep back.
-    const migrateSubs = Object.keys(storeCommand.subCommands?.migrate?.subCommands ?? {});
+    const migrate = subCommandOf(storeCommand, "migrate");
+    const migrateSubs = migrate ? Object.keys(subCommandsOf(migrate, "store.migrate.subCommands")) : [];
 
     expect(migrateSubs).toEqual(["scope", "promote", "backfill", "reroot"]);
   });
@@ -98,7 +100,8 @@ describe("fabric store command surface", () => {
       errors.push(value === undefined ? "" : String(value));
     });
 
-    await storeCommand.subCommands?.migrate?.subCommands?.reroot?.run?.({
+    const reroot = subCommandOf(subCommandOf(storeCommand, "migrate")!, "reroot", "store.migrate.subCommands");
+    await reroot?.run?.({
       args: { store: "ghost", "dry-run": true },
     } as never);
 
@@ -112,7 +115,7 @@ describe("fabric store command surface", () => {
       lines.push(value === undefined ? "" : String(value));
     });
 
-    await storeCommand.subCommands?.remove?.run?.({ args: { alias: "ghost" } } as never);
+    await subCommandOf(storeCommand, "remove")?.run?.({ args: { alias: "ghost" } } as never);
 
     expect(process.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("no store aliased 'ghost'");
@@ -124,7 +127,7 @@ describe("fabric store command surface", () => {
       lines.push(value === undefined ? "" : String(value));
     });
 
-    await storeCommand.subCommands?.explain?.run?.({ args: { alias: "ghost" } } as never);
+    await subCommandOf(storeCommand, "explain")?.run?.({ args: { alias: "ghost" } } as never);
 
     expect(process.exitCode).toBe(1);
     expect(lines.join("\n")).toContain("no store aliased 'ghost'");
@@ -165,7 +168,7 @@ describe("fabric store list — flat-design rendering (NO_COLOR)", () => {
       lines.push(value === undefined ? "" : String(value));
     });
 
-    storeCommand.subCommands?.list?.run?.({ args: {} } as never);
+    subCommandOf(storeCommand, "list")?.run?.({ args: {} } as never);
     const out = lines.join("\n");
 
     // No raw ANSI under NO_COLOR.
@@ -184,7 +187,7 @@ describe("fabric store list — flat-design rendering (NO_COLOR)", () => {
       lines.push(value === undefined ? "" : String(value));
     });
 
-    storeCommand.subCommands?.list?.run?.({ args: {} } as never);
+    subCommandOf(storeCommand, "list")?.run?.({ args: {} } as never);
     const out = lines.join("\n");
 
     expect(out).toMatch(/-{8,}/); // title rule still renders

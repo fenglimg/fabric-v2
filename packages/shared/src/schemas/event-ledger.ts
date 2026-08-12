@@ -904,8 +904,15 @@ export type EventLedgerEvent =
   | KnowledgeBodyReadEvent
   | GraphEdgeCandidateRequestedEvent;
 export type EventLedgerEventType = EventLedgerEvent["event_type"];
-type EventLedgerEventInputFor<T extends EventLedgerEvent> = T extends EventLedgerEvent
+// Derived from `z.input`, NOT `z.infer`: a field carrying `.default(...)` is
+// required on the PARSED event but optional for the caller — that is the whole
+// point of the default. Deriving from the output type made every defaulted field
+// (e.g. session_archive_attempted's candidates_proposed / knowledge_proposed_ids)
+// mandatory at the call site, contradicting the schema's own contract.
+type EventLedgerEventInputFor<T> = T extends unknown
   ? Omit<T, "kind" | "id" | "ts" | "schema_version" | "correlation_id" | "session_id"> &
-      Partial<Pick<T, "id" | "ts" | "correlation_id" | "session_id">>
+      Partial<Pick<T, Extract<keyof T, "id" | "ts" | "correlation_id" | "session_id">>>
   : never;
-export type EventLedgerEventInput = EventLedgerEventInputFor<EventLedgerEvent>;
+export type EventLedgerEventInput = EventLedgerEventInputFor<
+  z.input<typeof eventLedgerEventSchema>
+>;

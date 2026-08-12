@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { runCtx, subCommandOf } from "./helpers/citty-meta.ts";
 
 // rc.16 TASK-007 (F1-tests): coverage for the `fabric config` clack TUI panel.
 // Tests mock @clack/prompts and exercise configCmd.run() end-to-end against
@@ -103,7 +104,7 @@ describe("rc.16 TASK-007: fabric config panel — uninit gate", () => {
     const dir = makeWorkspace(false);
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+    await configCmd.run!(runCtx(configCmd, { target: dir }));
 
     expect(process.exitCode).toBe(1);
     expect(errSpy).toHaveBeenCalledTimes(1);
@@ -117,7 +118,7 @@ describe("rc.16 TASK-007: fabric config panel — uninit gate", () => {
     mkdirSync(join(dir, ".fabric"), { recursive: true });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+    await configCmd.run!(runCtx(configCmd, { target: dir }));
 
     expect(process.exitCode).toBe(1);
     expect(errSpy).toHaveBeenCalledTimes(1);
@@ -137,7 +138,7 @@ describe("rc.16 TASK-007: fabric config panel — uninit gate", () => {
     const savedArgv = process.argv;
     process.argv = ["node", "fab", "config", "--target", dir, "dismiss-slot"];
     try {
-      await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+      await configCmd.run!(runCtx(configCmd, { target: dir }));
     } finally {
       process.argv = savedArgv;
     }
@@ -161,7 +162,7 @@ describe("rc.16 TASK-007: fabric config panel — exit path", () => {
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     try {
       selectMock.mockResolvedValueOnce("__exit__");
-      await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+      await configCmd.run!(runCtx(configCmd, { target: dir }));
       // Exiting without editing leaves the config byte-identical and never saves.
       expect(readConfig(dir)).toEqual(beforeJson);
       expect(logSuccessMock).not.toHaveBeenCalled();
@@ -203,7 +204,7 @@ describe("rc.16 TASK-007: fabric config panel — Group A enum field roundtrip",
         .mockResolvedValueOnce("en")
         .mockResolvedValueOnce("__exit__");
 
-      await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+      await configCmd.run!(runCtx(configCmd, { target: dir }));
 
       // Language landed in the GLOBAL config, not the project file.
       const globalAfter = JSON.parse(readFileSync(globalConfigPath, "utf8")) as Record<string, unknown>;
@@ -255,7 +256,7 @@ describe("rc.16 TASK-007: fabric config panel — Group B int field roundtrip", 
         .mockResolvedValueOnce("__exit__");
       textMock.mockResolvedValueOnce("48");
 
-      await configCmd.run!({ args: { target: dir }, rawArgs: [], cmd: configCmd, data: undefined });
+      await configCmd.run!(runCtx(configCmd, { target: dir }));
 
       // CONSUMER side: the shipped hook reader, resolving from the same
       // FABRIC_HOME the panel just wrote to.
@@ -346,7 +347,7 @@ describe("flat-design: config slot subcommands (i18n + flat glyph)", () => {
 
   async function subCmd(name: "dismiss-slot" | "onboard-reset") {
     const configCmd = await loadConfigCmd();
-    const sub = configCmd.subCommands?.[name];
+    const sub = subCommandOf(configCmd, name, "config.subCommands");
     if (sub === undefined) throw new Error(`subcommand ${name} not found`);
     return sub;
   }
@@ -366,7 +367,7 @@ describe("flat-design: config slot subcommands (i18n + flat glyph)", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const dismiss = await subCmd("dismiss-slot");
-    await dismiss.run!({ args: { slot: SLOT, target: dir }, rawArgs: [], cmd: dismiss, data: undefined });
+    await dismiss.run!(runCtx(dismiss, { slot: SLOT, target: dir }));
     let out = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(out).toContain("✓");
     expect(out).toContain(SLOT);
@@ -375,7 +376,7 @@ describe("flat-design: config slot subcommands (i18n + flat glyph)", () => {
 
     logSpy.mockClear();
     const reset = await subCmd("onboard-reset");
-    await reset.run!({ args: { slot: SLOT, target: dir }, rawArgs: [], cmd: reset, data: undefined });
+    await reset.run!(runCtx(reset, { slot: SLOT, target: dir }));
     out = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(out).toContain("✓");
     expect(readConfig(dir).onboard_slots_opted_out).toEqual([]);
@@ -386,7 +387,7 @@ describe("flat-design: config slot subcommands (i18n + flat glyph)", () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const dismiss = await subCmd("dismiss-slot");
-    await dismiss.run!({ args: { slot: "not-a-slot", target: dir }, rawArgs: [], cmd: dismiss, data: undefined });
+    await dismiss.run!(runCtx(dismiss, { slot: "not-a-slot", target: dir }));
 
     const err = errSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(err).toContain("✗");

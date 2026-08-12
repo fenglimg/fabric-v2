@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { runInspect } from "../src/commands/inspect.js";
+import type { PlanContextHintOutput } from "../src/commands/plan-context-hint.js";
 
 // Block 5 (Option X) / W3-F: `fabric inspect` shares ONE renderer with the
 // SessionStart hook (buildSessionStartSinks), so its output is BYTE-IDENTICAL to
@@ -45,7 +46,7 @@ function tmpProject(): string {
 
 // Canned plan-context-hint payload that yields BOTH a human census and an AI
 // spine (always-active guideline body + a broad decision REFERENCE entry).
-function cannedPayload() {
+function cannedPayload(): PlanContextHintOutput {
   return {
     version: 2,
     revision_hash: "sha256:deadbeefcafe",
@@ -69,6 +70,10 @@ function cannedPayload() {
     census: {
       by_type: { guidelines: 1, decisions: 1 },
       by_layer: { team: 2, personal: 0, project: 0 },
+      // Invariant (cross-store-recall.ts): sum(broad_by_type) + narrow_total == total.
+      // Both canned entries are broad, so narrow_total is 0.
+      broad_by_type: { guidelines: 1, decisions: 1 },
+      narrow_total: 0,
       dropped_other_project: 0,
       total: 2,
     },
@@ -144,7 +149,7 @@ describe("fabric inspect — shared renderer, byte-identical to hook injection",
 
   it("empty payload → empty render (no crash)", async () => {
     const cwd = tmpProject();
-    const emptyPayload = {
+    const emptyPayload: PlanContextHintOutput = {
       version: 2,
       revision_hash: "sha256:0",
       target_paths: ["**"],
@@ -153,7 +158,14 @@ describe("fabric inspect — shared renderer, byte-identical to hook injection",
       narrow_count: 0,
       broad_only_count: 0,
       always_bodies: [],
-      census: { by_type: {}, by_layer: { team: 0, personal: 0, project: 0 }, dropped_other_project: 0, total: 0 },
+      census: {
+        by_type: {},
+        by_layer: { team: 0, personal: 0, project: 0 },
+        broad_by_type: {},
+        narrow_total: 0,
+        dropped_other_project: 0,
+        total: 0,
+      },
     };
     const out = await runInspect({ render: "ai", target: cwd, payload: emptyPayload });
     expect(out).toBe("");
