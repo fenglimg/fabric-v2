@@ -16,7 +16,20 @@
 
 | 删除项 | 查过的消费者面 | 结论 |
 |---|---|---|
-| `packages/cli/C:`(160 文件 / 1.9M) | git 跟踪计数 = 0;被 `tmp/` 规则整片挡住 | 纯垃圾。**源头未修**:某个没处理 Windows 绝对路径的测试把 `C:\tmp\...` 当相对目录创建。本次只清症状 + 让复发可见 |
+| `packages/cli/C:`(160 文件 / 1.9M) | git 跟踪计数 = 0;被 `tmp/` 规则整片挡住 | 纯垃圾,已删 |
+
+> **源头追查(2026-08-12 补测,更正上面初判)。** 收口时写的是「源头未修,只清症状」——
+> 实测不成立。三条证据:① `git log --all -- 'packages/cli/C:'` **无任何记录** ——
+> 它从未进过版本历史,一直被那条过宽的 `tmp/` 规则挡着,所以从没人见过它;
+> ② 唯一带 `"C:/tmp/fabric-project"` 字面量的测试是
+> `packages/cli/__tests__/install-v2-hooks-stage.test.ts:99`,其写路径全部被
+> `vi.mock` 拦掉,单独跑**不产生**该目录;③ 本次会话跑了多轮三包全量测试,
+> `C:` **一次都没重现**。
+>
+> 结论:**泄漏源已不活跃**,那 160 个文件是历史残留,不是持续产出。
+> 措辞上仍克制 —— 这是"当前测试套件不泄漏"的实测,不是"永远不会"的证明。
+> 真正的长期保障是 `.gitignore` 改成 `/tmp/` 之后**复发会立刻出现在 `git status` 里**;
+> 之前正是因为看不见,它才能长到 160 个文件。
 | `schemas/fabric-config.json` | zod schema(dual-truth 比对)、`scripts/`、`.github/workflows/`、`package.json` npm scripts、全仓 `String.includes` 普查 | 陈旧 dual-truth:只描述 43+ 字段中的 3 个,其中 `externalFixturePath` 已死,`$id` 是假的(未发布),零消费者。**删它是修 dual-truth,不是清理** |
 | `src/services/__snapshots__/doctor-i18n.test.ts.snap` | 与迁移后新快照 `diff` | **逐字节相同**。新建快照会自动通过,只有比内容才算数 |
 

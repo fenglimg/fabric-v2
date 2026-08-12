@@ -65,6 +65,11 @@ packages/cli/.codex/
 .DS_Store
 .antigravitycli
 .ace-tool/
+# ccw 工具的 spec 索引缓存。曾有两份 89 字节的空索引(`entries: []`,建于
+# 2026-04-21)被一次 "checkpoint remaining workspace changes" 顺手提交进
+# packages/server/ —— 只落在一个包下、四个月没更新、内容全空,是纯工具产物。
+.ccw/
+**/.ccw/
 
 
 # ── 4. 运行时与遥测数据 ──────────────────────────────────────────────────────
