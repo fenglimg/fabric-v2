@@ -174,7 +174,26 @@
 
 **其他仓库级**:
 
-- `tmp/` **535M**(ignored): 8 个 vendored 调研仓 — trellis 246M / GitNexus 172M / mem0 53M / EagleRAG 20M / spec-kit / Spexcode / OpenSpec / obsidian-releases。`local_cache/` 91M(ignored)。`.fabric/` 16M(dogfood 遥测,仅 4 文件 tracked)。
+- `tmp/` **535M**(ignored): 实为 **10** 个 vendored 调研仓。`local_cache/` 91M(ignored)。`.fabric/` 16M(dogfood 遥测,仅 4 文件 tracked)。
+  - **✅ 两者均已于 2026-08-12 删除。** 删除依据不是"占地方"而是**可逆性经过核对**:
+    10 个克隆全部 `dirty=0` / 未推提交 `=0` / 有公开 remote,即本地零改动,`git clone` 可原样取回;
+    `local_cache/` 是 fastembed **修复前**的 cwd 相对默认值残留,与 `~/.fabric/cache/embed/` 下
+    代码实际读取的那份是同一模型的重复副本(`model_optimized.onnx` 两边均 94,781,076 字节),
+    删除不触发重新下载。判据见 `vector-retrieval.ts#defaultEmbedCacheDir` 的注释。
+  - 调研仓清单(想复现对照阅读时按此重新 clone):
+
+    | 仓库 | 体积 | remote |
+    |---|---|---|
+    | trellis | 246M | https://github.com/mindfold-ai/trellis |
+    | GitNexus | 172M | https://github.com/abhigyanpatwari/GitNexus |
+    | mem0 | 53M | https://github.com/mem0ai/mem0 |
+    | EagleRAG | 20M | https://github.com/zhiweio/EagleRAG |
+    | spec-kit | 12M | https://github.com/github/spec-kit |
+    | Spexcode | 12M | https://github.com/shuxueshuxue/Spexcode |
+    | OpenSpec | 10M | https://github.com/Fission-AI/OpenSpec |
+    | obsidian-releases | 6.4M | https://github.com/obsidianmd/obsidian-releases |
+    | Superpowers | 2.4M | https://github.com/obra/Superpowers |
+    | obsidian-api | 424K | https://github.com/obsidianmd/obsidian-api |
 - **根目录空壳/孤儿**: `.tmp-config-loader-tests/`(空,Jul 28)、`.tmp-config-loader-ttl/`(空,**Aug 6 — 测试仍在根目录拉屎**)、`.worktrees/`(空,Jul 15)、`schemas/`(仅 1 个 fabric-config.json,Apr 22,全仓唯一引用是它自己的 `$id` 字段 → 孤儿)。
 - **scripts/ — 17 文件 / 2,653 行,5 个零接线 orphan**: habit-funnel.mjs / i18n-audit.mjs / migrate-two-layer-stores.mjs / nofake-audit.mjs / red-team-safety.mjs 在 package.json、3 个 workflow、lefthook.yml、RELEASING.md、docs/tooling-manifest.json 中均无引用;其余 12 个全部有 CI/package.json/lefthook 接线。
 - **knip.config.ts 死条目**: ignoreDependencies 里 8 个包在**任何** package.json 中已不存在 — ink、@inkjs/ui、express、@preact/signals-core、autoprefixer、postcss、tailwindcss、picocolors(注释还在讲 "Dashboard: signals-core used via preact/signals"、"TODO: review during 1.8.x patch")。
