@@ -20,8 +20,8 @@ import {
   resolveStoreCanonicalBase,
   resolveStorePendingBase,
   resolveWriteTargetStoreDir,
-} from "./cross-store-write.js";
-import { atomicWriteText, ensureParentDirectory } from "./_shared.js";
+} from "../cross-store-write.js";
+import { atomicWriteText, ensureParentDirectory } from "../_shared.js";
 import { extractReviewSlug, isPendingKnowledgePath } from "./review-path.js";
 import {
   parseFrontmatter,
@@ -30,7 +30,7 @@ import {
   type ParsedFrontmatter,
   type FrontmatterScalarPatch,
 } from "./review-frontmatter.js";
-import { hasUnresolvedDismissal } from "./promotion-gate.js";
+import { hasUnresolvedDismissal } from "../promotion-gate.js";
 import {
   bindReviewWriteDeps,
   D,

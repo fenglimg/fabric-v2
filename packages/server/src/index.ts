@@ -111,7 +111,7 @@ export {
 // (W4 allocateStoreKnowledgeId). cross-store-recall still consumes
 // deriveRuleIdentity / extractRuleDescription directly from the module.
 export { extractKnowledge } from "./services/extract-knowledge.js";
-export { reviewKnowledge, reviewPending } from "./services/review.js";
+export { reviewKnowledge, reviewPending } from "./services/review/review.js";
 // KT-GLD-0006: review-time cold-eval self-sufficiency judge protocol + batch builder
 // (driven offline by the fabric-review skill via maestro delegate; no hot-path LLM call).
 export {

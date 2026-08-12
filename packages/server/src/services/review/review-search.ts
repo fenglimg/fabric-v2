@@ -38,13 +38,13 @@ import {
   buildScoringContext,
   rankDescriptionItems,
   type ScoringContext,
-} from "./plan-context.js";
-import { computeReadSetRevision } from "./cross-store-recall.js";
+} from "../plan-context.js";
+import { computeReadSetRevision } from "../cross-store-recall.js";
 import {
   resolveStoreCanonicalBase,
   resolveStorePendingBase,
-} from "./cross-store-write.js";
-import { extractBody } from "./_shared.js";
+} from "../cross-store-write.js";
+import { extractBody } from "../_shared.js";
 import { parseFrontmatter, type ParsedFrontmatter } from "./review-frontmatter.js";
 
 // --- Types mirrored from review.ts (kept local to avoid circular imports) ---

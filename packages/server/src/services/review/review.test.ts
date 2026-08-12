@@ -14,8 +14,8 @@ import {
   storeRelativePathForMount,
 } from "@fenglimg/fabric-shared";
 
-import { appendEventLedgerEvent, readEventLedger } from "./event-ledger.js";
-import { inspectStoreBroadReviewRecheck } from "./doctor/doctor-knowledge-review-recheck.js";
+import { appendEventLedgerEvent, readEventLedger } from "../event-ledger.js";
+import { inspectStoreBroadReviewRecheck } from "../doctor/doctor-knowledge-review-recheck.js";
 import {
   __getReviewSearchIndexCacheStatsForTests,
   __isPendingKnowledgePathForTest,
@@ -29,7 +29,7 @@ import {
   __resetReadSetWalkCacheForTests,
   buildAlwaysActiveBodies,
   buildCrossStoreRawItems,
-} from "./cross-store-recall.js";
+} from "../cross-store-recall.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;

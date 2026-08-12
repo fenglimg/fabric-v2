@@ -19,11 +19,11 @@ import {
   resolveStoreCanonicalBase,
   resolveStorePendingBase,
   resolveWriteTargetStoreDir,
-} from "./cross-store-write.js";
-import { extractBody } from "./_shared.js";
+} from "../cross-store-write.js";
+import { extractBody } from "../_shared.js";
 import { parseFrontmatter, type ParsedFrontmatter } from "./review-frontmatter.js";
-import { mergePendingTwins } from "./pending-dedupe.js";
-import { appendEventLedgerEvent } from "./event-ledger.js";
+import { mergePendingTwins } from "../pending-dedupe.js";
+import { appendEventLedgerEvent } from "../event-ledger.js";
 
 type PluralType = KnowledgeType;
 export type Layer = "team" | "personal";

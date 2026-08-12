@@ -75,7 +75,7 @@ function storeCountersFile(layer: "team" | "personal"): string {
 
 import { runDoctorReport } from "../../src/services/doctor/doctor.js";
 import { readEventLedger } from "../../src/services/event-ledger.js";
-import { reviewKnowledge, reviewPending } from "../../src/services/review.js";
+import { reviewKnowledge, reviewPending } from "../../src/services/review/review.js";
 import { registerReview } from "../../src/tools/review.js";
 import { registerPending } from "../../src/tools/pending.js";
 
