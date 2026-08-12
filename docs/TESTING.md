@@ -27,7 +27,8 @@
 | `pnpm -r build` | 构建（E2E / typecheck 前置） |
 | `pnpm -r test` | 包级 vitest |
 | `pnpm -r --if-present test:coverage` | 带 coverage 门槛 |
-| `pnpm typecheck` | 全仓 `tsc --noEmit` |
+| `pnpm typecheck` | 全仓 `tsc --noEmit` —— **只覆盖 `src/`** |
+| `pnpm typecheck:tests` | `src/` **外**的测试文件类型检查(棘轮,见下) |
 | `pnpm lint` | knip |
 | `pnpm test:strategy` | 本文件 ↔ scripts ↔ CI 锚点 |
 | `pnpm test:store-only-e2e` | 装/绑/写/审/召回黑盒（需先 build） |
@@ -44,6 +45,7 @@
 
 1. `pnpm -r build`
 2. `pnpm -r exec tsc --noEmit`
+2b. `pnpm typecheck:tests`（棘轮，见下）
 3. `pnpm lint`
 4. `pnpm -r --if-present test:coverage`
 5. `pnpm test:strategy`
@@ -131,8 +133,33 @@ tsconfig，vitest 也没开 `typecheck`）。由此有一条**从未被写下来
 
 **结论:不统一。** 统一的收益是观感,代价是要么把 144 个 cli 测试搬进 `src/`(污染
 发布面 + 撑大 `rootDir`),要么把 94 个 server 测试搬出去(丢掉类型覆盖)。两条都比
-现状差。**要动的话,该动的是给测试加一份 tsconfig 把那 197 个文件纳入检查,
-而不是搬目录** —— 那是独立的一件事,不是布局问题。
+现状差。**该动的是给测试加一份 tsconfig 把那 197 个文件纳入检查,而不是搬目录。**
+
+### 测试类型检查棘轮(`pnpm typecheck:tests`)
+
+上面那条已落地:三个包各有一份 `tsconfig.test.json`(`extends` 本包配置,解除
+`rootDir`、`noEmit`、按 vitest 的 bundler 语义解析模块),由
+`scripts/typecheck-tests.mjs` 驱动。
+
+**它是棘轮不是普通门禁。** 首次运行报出 **29 个文件 / 120 个既存错误** ——
+直接挂红会变成没人保持绿的门禁(`lint-dangling-refs.mjs` 为自己 1445 命中的
+第一版记过同样的账);挂成建议又会变成没人看的门禁。所以规则是:
+
+- **不在基线里的文件必须零错误** → 新写的测试从第一天起就被检查。
+- **基线里的文件只能变少,不能变多** → 既存债只能还,不能加。
+- 还完债跑 `node scripts/typecheck-tests.mjs --update-baseline` 锁定收益。
+  **调高基线数字是非法的**,脚本会拒绝。
+
+基线在 `scripts/typecheck-tests-baseline.json`。⚠️ **不要用 `as any` 消错** ——
+那比不检查更糟:它让门禁变绿的同时把类型信息也删了。
+
+门禁自身经三条构造式断言验证会红:① 新增带错的测试文件 → `NEW`;
+② 基线文件错误数 +1 → `WORSE`;③ 两者还原 → `PASS`。
+
+**首次运行的实际收获**:`banner-i18n.test.ts` 里一个 `enMustNotContain` 契约字段,
+声明了 `ISS-20260712-017` 的回归意图却**没有任何断言消费它**。(该保护本身没失守
+—— 同文件的 `expect(out).not.toMatch(/[一-鿿]/)` 是更强的整类字符断言,已覆盖;
+死的是这个冗余字段。)这类东西测试全绿时永远看不见。
 
 ## Do not
 

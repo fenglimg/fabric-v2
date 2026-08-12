@@ -19,6 +19,7 @@
     "dogfood:quality-flywheel": "node scripts/dogfood-quality-flywheel.mjs",
     "lint": "knip --strict",
     "typecheck": "pnpm -r exec tsc --noEmit",
+    "typecheck:tests": "node scripts/typecheck-tests.mjs",
     "prepare": "lefthook install"
   },
   "devDependencies": {

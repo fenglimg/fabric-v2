@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": null,
+    "outDir": null,
+    "noEmit": true,
+    // 测试由 vitest 解析(bundler 语义), 不走 Node16 的显式扩展名规则。
+    // 这份配置必须描述测试**实际**的解析方式, 否则报的全是约定噪声不是缺陷。
+    "moduleResolution": "bundler",
+    "module": "esnext",
+    "allowImportingTsExtensions": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "__tests__/**/*.ts", "*.test.ts"]
+}
