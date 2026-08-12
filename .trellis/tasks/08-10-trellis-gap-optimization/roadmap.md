@@ -115,7 +115,7 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 
 ### P2(结构化,分批慢做)
 
-- **B10 server services/ 平铺治理**: 96 文件 24,874 行(源码 90.8%)零子目录,doctor-* 前缀 46 文件 11,445 行(46%)→ 按前缀落子目录(doctor/ retrieval/ ledger/ …),纯移动+改 import。
+- ~~**B10 server services/ 平铺治理**~~ ❌ **审计后不做**(2026-08-12 裁决)。原提案是按前缀落子目录,纯移动+改 import。**收益侧站不住**: 提案自己承认「纯移动」—— 零行为变化、零缺陷密度变化,唯一产出是目录树好看一点。而 `doctor-*` 这个前缀本身已经在扮演目录的角色: 46 个文件在任何按名排序的视图里天然聚成一簇,`Glob doctor-*` 与 `Glob doctor/**` 检索力等价。**代价侧是实的**: 96 个文件的路径全变 → 整个包的 `git blame` / `git log --follow` 断链,而这个包刚经历 B11 两轮相位分解,blame 正是接下来判断「这段逻辑为什么长这样」的主要工具。判据同 B11: **文件位置该不该动,看的是「它里面有没有不属于它的东西」,不是「同级文件有几个」** —— B10 没提出任何一个错位文件。
 - **B11 巨型文件拆分**: 🔶 **部分完成**(2026-08-11, `de2634bf`)。**判据从「行数」改成「文件里有没有不属于它的东西」** —— 函数级普查显示 doctor.ts 30 个函数最大 351 行,两个最大的就是枚举 53 项检查的编排器,长是固有的,按行数硬拆是纯 churn。真问题是 `enrichDescriptions`(知识树 mutation,由 `fabric audit` 驱动,doctor 两条流水线都不调)连同其专属依赖链寄居在此 → 搬进 `doctor-enrich-descriptions.ts`,2014→1701。顺带修三处**孤儿注释**(前次拆分搬走代码却把「为什么」留在原地,两边单独读都读不懂)。
   - **`runDoctorCiteCoverage` 单函数 960 → 335 行**: ✅ **完成**(2026-08-11, `89441661`,专门一轮相位分解)。先验证测试网真能咬(5 个变异全被杀)再动手,按「接口最窄的先动」抽 9 段,每段跑一次全量 server 测试 + tsc。
     - **当初拆不动的一大半原因是类型别名声明在函数体内** —— 抽出去的 helper 参数类型在模块作用域根本不存在。所以第一步不是抽代码,是把 8 个 type 提到模块作用域。
@@ -124,10 +124,16 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
     - **行为保持不靠绿测试**: 重构后重跑同一批 5 个变异,仍全部被杀,与重构前一致。顺带删掉一处 dual-truth(kb 索引头上的「build from agents.meta.json」旧注释,紧跟着的新注释已说明 W5 R6 读侧 cutover 后改从 store 构建)。
   - api-contracts.ts(1854)/ locale 文件(1593+1472): **不动**。扁平 schema 与词条清单本来就该长,拆了是 churn。
   - extract-knowledge.ts(1225): 21 个函数,最大 454 行,结构正常,**优先级低于 cite-coverage**。
-- **B12 伪共享下沉**: shared 69 模块中 26 个单端消费(theme 13 exports 仅 cli、event-ledger 132 exports 仅 server)→ 逐步下沉回消费包,shared 收敛到 24 个真共享。
-  - ⚠️ **度量方法警告**(2026-08-11 实证): 按「谁按路径 import 了这个模块」数消费者会得到**全错**的答案 —— shared 模块几乎都经 `index.ts` 桶文件以 `@fenglimg/fabric-shared` 被消费,直接路径只会数到桶本身。用该法测出「54/67 单消费者」,而其中 `hook-registrations.ts` 同一会话刚被 CLI 侧改过。上面 roadmap 原文的**符号级**度量(某模块 N 个 export 仅被某一端用)才是对的口径,动手前按它重测。
-- **B13 .workflow 尸体清理**: tracked 的 blueprint 37 + 完结 active 28 + scratch 20 个目录是尸体,roadmap.md 07-12 后停更 → 归档或删;**kg/embedding/wiki-index 是活的 maestro 产物别动**。
-- **B14 巨型测试拆分**: doctor-cite-coverage.test.ts 2,887 行有 9 个 describe 缝;review.test.ts 2,398。
+- ~~**B12 伪共享下沉**~~ ❌ **审计后不做**(2026-08-12 裁决)。原提案: shared 69 模块中 26 个单端消费 → 下沉回消费包,收敛到 24 个真共享。
+  - ⚠️ **度量方法警告**(2026-08-11 实证): 按「谁按路径 import 了这个模块」数消费者会得到**全错**的答案 —— shared 模块几乎都经 `index.ts` 桶文件以 `@fenglimg/fabric-shared` 被消费,直接路径只会数到桶本身。用该法测出「54/67 单消费者」,而其中 `hook-registrations.ts` 同一会话刚被 CLI 侧改过。
+  - **本轮按符号级口径实测两个点名样本**(逐 export 名全后缀 `includes`,不按路径):
+    - `theme.ts` 13 exports → cli 命中 7(`paint`/`headerRule`/`sectionBar`/`scopeBadge`/`ThemeToken`/`isColorEnabled`/…),server 命中 1 —— 而那 1 个是 `symbol`,**纯子串假阳性**(任何文件出现 "symbol" 都算命中)。**提案的判断成立: theme 确为单端。**
+    - `schemas/event-ledger.ts` 96 exports → cli 命中 2(`EventLedgerEvent` / `DoctorRunEvent`),server 命中 5,**两端都在用。提案的「仅 server」被推翻。**
+  - **仍然不做,理由从「判据不稳」换成「成立也无收益」**: 即便 theme 确实单端,下沉它买到的是「shared 目录少一个文件」,卖出去的是这个模块的 blame 连续性,以及 server 将来要用时的一次反向搬迁 —— 而 W5-#6 已经出现过 hook 渲染链吃 CLI 侧渲染器的先例,反向需求不是假想。**真正该守的不变量是 W1 已还过清白的那条: 依赖方向干净、无循环。** shared 里多几个当前单端消费的模块不违反它,搬来搬去反而制造违反的机会。
+  - ⚠️ **顺带留一个待查线索(不在本轮范围)**: `schemas/event-ledger.ts` 声明 96 个 export,两端源码合计只命中 6 个名字。要么是大量死 export(B6 那轮 34 符号普查没覆盖到这个文件),要么是探针低估(schema 经 `z.infer` / barrel 类型位置消费,名字不出现在源码文本里)。**两种可能的处置完全相反,查清楚前不要动它** —— 这正是 KT-PIT-0073「名字探针两个方向都会骗人」的形状。
+- ~~**B13 .workflow 尸体清理**~~ ✅ **已完成**(被 W4 的 T2 顺手吃掉,当时漏了回填)。核实(2026-08-12): `git ls-files .workflow` 现在只剩 **6 个** —— `issues/`(2)+ `state.json` + `worktrees.json` + `worktree-scope.json` + `harvest`,全是 T2 census 明确判定要保留的 **maestro 运行时账本**(见 T2 教训 ③)。blueprint / active / scratch 三簇尸体已随 T2 那 88 份删除。
+- ~~**B14 巨型测试拆分**~~ ❌ **审计后不做**(2026-08-12 裁决)。原提案按行数点名 `doctor-cite-coverage.test.ts`(2,887)/ `review.test.ts`(2,398)。**判据不成立,理由与 B11 同源**: B11 已把「该不该拆」从行数改成「文件里有没有不属于它的东西」,而这两个文件里的东西全都属于它 —— 提案自己说的「9 个 describe 缝」正是同一被测单元的 9 个场景分组,拆开后每份都要重建同一套 fixture 与 setup,**dual-truth 风险直接上升**(setup 漂了一份,另外 8 份数的就不是同一个总体 —— 这正是 `runDoctorCiteCoverage` 那轮刻意把 18 个聚合留在一个 helper 里的同一条理由)。
+  - 更要紧的是**测试文件的价值判据不是可读性而是杀伤力**(KT-GLD-0019): 这两个文件所测的 `runDoctorCiteCoverage` 刚在 `89441661` 那轮用 5 个变异验证过「测试网真能咬」。**一个已证明有判别力的测试套件,纯为行数去动它是负期望**——重构测试没有测试来保护。
 - **B15 pending 检索双栈评估**: review-search.ts 475 行自带 cache 与主检索栈(~3,900 行)并行——评估并栈或明确分工文档化。
 
 ### 4.4 轨F · 功能面必要性挑战(用户 2026-08-11 新增:「太臃肿了」)
@@ -212,10 +218,15 @@ verdict 说明: **steal** = 学设计重写(禁抄码,AGPL) / **have** = fabric 
 | **W2 配置防御** | ✅ **全部完成**(2026-08-10): #2 hook 配置可解析性/注册在位升一等检查且分 broken/missing 两码并接入 `--fix`(commit 97ce7c5d/2e4dc057);#16 安装副本漂移 sha256 清单 + doctor 比对(commit db441392,刻意 detection-only,守 KT-PIT-0016);#9 MCP root-pin repair 从「造好没人调」接进检查 + `--fix`,逻辑移进 shared 打通 server↔cli 边界(commit ea134c91)。doctor 检查数 51→53 | 无 | ✅ 收口 |
 | **W3 沉淀减负** | ✅ **全部完成**(2026-08-11)。**B4+T1**(`5e42db62`): ISS-001 根因不在代码而在 skill 契约 —— Step 6 规定 Phase 0 只能产出 `session_id[]` 或 `"all"`,没有 omit 选项,于是 skill 永远不省略 range,anchor cutoff 实际失效;改成三选一表(无 hint 一律 OMIT),矛盾的 Step 6 整段删除,权威契约收敛到 `archiveScanInputSchema.range` 的 describe。**review 龄触发**(`779b0138`): Stop hook 早已是 count-OR-age,缺口在 SessionStart 只看 count(注释还声称两边一致);`liveKnowledgeStats` 一直在算 `oldestPendingMtimeMs` 然后被丢掉 —— 与 #9 同族的"造好没人调"。**收口仪式**(`0b6c252a`): bootstrap 加"做完一段必须显式给归档判断,'无'是合法结论"。**T4 + 快速通道**(`68c60cf7`): ref 21→11(source-* 6 合 1 / phase-3-* 4 合 1 / 删 rc-history / dry-run 折进 SKILL.md),加单跳快速通道 | 无 | ✅ 收口 |
 | **W4 瘦身(代码+文档)** | ~~B9~~ ✅、~~B8~~ ✅、~~B5~~ ✅(403 死键)、~~B6~~ ✅(34 符号普查)、~~B7~~ ✅(删包 3651 行);~~I2~~ ✅(删专用分发通道);~~B3 尾巴~~ ✅ + ~~T4~~ ✅(`946ccb04`);~~T2~~ ✅(删 88 份 / 14,616 行)、~~T3~~ ✅、~~T5~~ ✅(新增 dangling-refs 硬闸) | KT-DEC-0016 的 supersede decision 已 propose 进 pending 待审;I3 已裁决不做 / I4 已完成 | ✅ 收口(2026-08-11) |
-| **W5 结构化** | steal P2 三条 ✅ 全完成: ~~#18*~~(`19b18fec`)、~~B15~~(`c2e97ab0`)、~~#10~~(`92ff70fa`)、~~#6~~(`0e3bcc30`)。~~B11~~ ✅ 全完成(`de2634bf`: doctor.ts 2014→1701 + 孤儿注释;`89441661`: runDoctorCiteCoverage 960→335)。**剩: B10/B12/B14 —— 三条价值都存疑,见各自条目** | 无 | 进行中 |
+| **W5 结构化** | ✅ **收口**(2026-08-12)。steal P2: ~~#18*~~(`19b18fec`)、~~B15~~(`c2e97ab0`)、~~#10~~(`92ff70fa`)、~~#6~~(`0e3bcc30`)。~~B11~~(`de2634bf` + `89441661`)。**轨F 功能面挑战**(§4.4): E/A″/B′/F0/F3/F4/G 全部收口,5 条初判 4 条被自己推翻。**B10/B12/B14 三条经审计判定「不做」**(理由见各自条目,不是拖延是裁决);**B13 实为已完成**(T2 顺手吃掉,本次回填) | 无 | ✅ 收口 |
 | **(条件批)** | 需重议档案 §3.1/§3.2 若开禁,各自单独立项走完整 brainstorm | 你的裁决 | — |
 
-依赖关系(**已兑现**): W1 先行 → 实际是 W0 先行解钉 W1;W2 与 W3 可并行 → W2 已单独收口;W4 里 B8/B9 排在 W2 之后 → 均已在 W2 收口后完成。**剩余顺序: W5(当前)**;W3 / W4 均已收口。
+依赖关系(**已兑现**): W1 先行 → 实际是 W0 先行解钉 W1;W2 与 W3 可并行 → W2 已单独收口;W4 里 B8/B9 排在 W2 之后 → 均已在 W2 收口后完成。**W0-W5 六个批次全部收口(2026-08-12)。**
+
+**剩余未决的只有两项,都不是执行项:**
+
+1. **§3.1 任务轴重议** —— §0 当时裁的是「暂不开禁,W3 落地并跑一段后再评」。W3 已于 2026-08-11 收口并实跑,**复评窗口到期,等用户拍板**。
+2. **归档积压** —— §0 排的是「W3 之后跑」,一直未动,计数已从 44 → 47。**已于 2026-08-12 先清了写入侧: 8 条 pending 全部 approve 入库(KT-GLD-0021/0022、KT-PIT-0076~0081),pending 归零**;跨会话补扫仍待定(增量扫描口径下只有 4 个会话在范围内,47 是「历史上有高价值改动但没归档过」的另一个口径,要吃掉它得显式 `range: "all"`,预期大比例会被语义去重 reject)。
 
 > **回填说明(2026-08-11)**: 本节此前长期停留在 08-10 的时点状态(W1 标"受阻"、W0 标"待评审"、W4 列 B8 未做),与磁盘实况不符。本次按 `packages/` 实际内容与 git log 逐条核实后回填。**教训: 批次表是给下一个会话读的唯一状态源,不回填等于给自己埋假信号。**
 
