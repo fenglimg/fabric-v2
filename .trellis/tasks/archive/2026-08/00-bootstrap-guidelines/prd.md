@@ -21,11 +21,26 @@ the rest conversationally.
 
 ## Status (update the checkboxes as you complete each item)
 
-- [ ] Fill guidelines for @fenglimg/fabric-cli
-- [ ] Fill guidelines for @fenglimg/fabric-server
-- [ ] Fill guidelines for @fenglimg/fabric-shared
-- [ ] Fill guidelines for @fenglimg/fabric-server-http-experimental
-- [ ] Add code examples
+- [x] Fill guidelines for @fenglimg/fabric-cli — `.trellis/spec/fabric-cli/` 13 份
+- [x] Fill guidelines for @fenglimg/fabric-server — `.trellis/spec/fabric-server/` 13 份
+- [x] Fill guidelines for @fenglimg/fabric-shared — `.trellis/spec/fabric-shared/` 13 份
+- [~] ~~Fill guidelines for @fenglimg/fabric-server-http-experimental~~ —
+      **该包已不存在**(现存三个包:cli / server / shared)。这一行是
+      `trellis init` 当时的包清单快照,包删掉后没人回来改这份 PRD。
+- [~] Add code examples — 42 份 spec 里 **9 份含代码块**。部分完成,未逐份补齐。
+
+---
+
+## 关闭说明(2026-08-12)
+
+本任务从未被"执行"过 —— 但它的产出**已经通过 `trellis-spec-bootstrap` 以另一条
+路径完成**:`.trellis/spec/` 现有 42 份文档,三个现存包各 13 份 + guides 3 份,
+`get_context.py` 正在消费它们。清单一直挂着未勾选,是因为**做事的路径和记账的
+路径不是同一条** —— 这本身就是一条要记的账:一个长期 `in_progress` 的任务,
+它的状态可能不是"没做",而是"做了但没人回来划勾"。
+
+按实际状态勾选后归档。剩余的 "code examples" 缺口(33/42 份无代码块)不作为
+阻塞项 —— 需要时按包单开任务补,而不是让这个 bootstrap 任务无限期挂着。
 
 ---
 
