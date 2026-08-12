@@ -217,6 +217,69 @@ function truncateLongStrings(value: unknown): unknown {
   return value;
 }
 
+// F01 (review fix): the per-STRING cap above cannot hold the line invariant it
+// was written for. `truncateLongStrings` maps arrays element-wise, so an array
+// of N short ids is never capped no matter how large N grows — a 116-element id
+// array sails through at 2.5KB, and three such fields put the row past PIPE_BUF
+// while every individual string is well under the cap. This guard closes that
+// hole structurally: it measures the WHOLE serialized row and, while it is over
+// budget, halves the largest array/record field until it fits.
+//
+// Truncation is bounded AND transparent (KT-DEC-0028 / KT-DEC-0051: a silent
+// top-N cut hides entries): every field it touches is recorded in
+// `truncated_fields` as `field → element count BEFORE truncation`, so a reader
+// can always tell a complete set from a sample. Emitters that already sample on
+// purpose pre-populate that map; their entry wins (`??=`) because it carries the
+// true original count.
+const EVENT_LINE_MAX_BYTES = 4 * 1024;
+
+function elementCount(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (value !== null && typeof value === "object") return Object.keys(value).length;
+  return 0;
+}
+
+/** Keep the first `keep` elements of an array, or the first `keep` keys of a record. */
+function headOf(value: unknown, keep: number): unknown {
+  if (Array.isArray(value)) return value.slice(0, keep);
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).slice(0, keep));
+}
+
+function enforceLineBudget(event: Record<string, unknown>): Record<string, unknown> {
+  if (Buffer.byteLength(JSON.stringify(event), "utf8") <= EVENT_LINE_MAX_BYTES) return event;
+
+  const out = { ...event };
+  const truncatedFields: Record<string, number> = {
+    ...((out.truncated_fields as Record<string, number> | undefined) ?? {}),
+  };
+
+  while (Buffer.byteLength(JSON.stringify(out), "utf8") > EVENT_LINE_MAX_BYTES) {
+    // Largest trimmable field first, so the row converges evenly instead of
+    // emptying whichever field happens to be enumerated first.
+    let widest: string | undefined;
+    let widestBytes = 0;
+    for (const [key, value] of Object.entries(out)) {
+      if (key === "truncated_fields") continue;
+      if (elementCount(value) === 0) continue;
+      const bytes = Buffer.byteLength(JSON.stringify(value), "utf8");
+      if (bytes > widestBytes) {
+        widest = key;
+        widestBytes = bytes;
+      }
+    }
+    // Nothing collection-shaped left to shrink — the remaining scalars are
+    // already string-capped above. Write the row as-is rather than loop forever.
+    if (widest === undefined) break;
+
+    const original = elementCount(out[widest]);
+    truncatedFields[widest] ??= original;
+    out[widest] = headOf(out[widest], Math.floor(original / 2));
+  }
+
+  out.truncated_fields = truncatedFields;
+  return out;
+}
+
 // ISS-043: free-text event fields that may carry caller-pasted secrets (an
 // edit intent, a review reason, a per-selection rationale). These are redacted
 // before the row is appended, mirroring the knowledge write path's secret
@@ -280,13 +343,17 @@ export async function appendEventLedgerEvent(
   // on parse; running post-parse would skip any optional fields that
   // happened to also be too long.
   const truncated = truncateLongStrings(redacted) as EventLedgerEventInput;
-  const nextEvent = eventLedgerEventSchema.parse({
-    ...truncated,
+  // F01: enforce the whole-line PIPE_BUF budget on the COMPLETE row (envelope
+  // included) — the per-field string cap above cannot see an array of N short
+  // ids. Runs before validation so the reduced row is what Zod checks.
+  const bounded = enforceLineBudget({
+    ...(truncated as Record<string, unknown>),
     kind: "fabric-event",
     id: event.id ?? `event:${randomUUID()}`,
     ts: event.ts ?? Date.now(),
     schema_version: 1,
   });
+  const nextEvent = eventLedgerEventSchema.parse(bounded);
 
   await ensureParentDirectory(eventPath);
   // Cross-process + in-process serialized append. Lock is released here, BEFORE

@@ -34,6 +34,7 @@
 | `pnpm test:store-only-e2e` | 装/绑/写/审/召回黑盒（需先 build） |
 | `pnpm test:upgrade-e2e` | install 升级刷新 stale hook/skill（需先 build） |
 | `pnpm test:dangling-refs` | 散文/注释引用的仓内路径是否还存在 |
+| `pnpm test:doc-drift` | README 版本/命令/事件名可 resolve（先跑 gate 自检） |
 
 包级脚本见各 `package.json`。
 
@@ -53,7 +54,8 @@
 7. `pnpm test:upgrade-e2e`
 8. `node --experimental-strip-types scripts/lint-protected-tokens.ts`
 9. `pnpm test:dangling-refs`
-10. `node scripts/perf-benchmark.mjs`
+10. `pnpm test:doc-drift`
+11. `node scripts/perf-benchmark.mjs`
 
 > **T-4:曾经的第 9 步「`NO_COLOR=1` + scoped reskin/i18n 快照」已删。** 那 4 个快照文件
 > 自身就 stub 了 `NO_COLOR`(`vi.stubEnv` / 直接赋值),实测在 `NO_COLOR` 未设与

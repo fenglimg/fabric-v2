@@ -71,6 +71,11 @@ jobs:
       - name: Lint dangling path references
         run: pnpm test:dangling-refs
 
+      # Runs the gate's own self-test first, so a checker that can no longer
+      # detect drift fails here rather than passing as a healthy repo.
+      - name: Doc drift gate
+        run: pnpm test:doc-drift
+
       - name: Perf benchmark (CLI + hook cold start p95 gate)
         run: node scripts/perf-benchmark.mjs > perf-report.json
 

@@ -1,11 +1,28 @@
 #!/usr/bin/env node
+/**
+ * Apply one version to every place this repo DECLARES its version.
+ *
+ * This is the single write entry for a version bump — both the rc release flow
+ * (.claude/skills/release-rc/SKILL.md Phase 2) and the publish job
+ * (.github/workflows/release.yml) go through it. Anything that states the
+ * version and can go stale belongs here, not in a caller's ad-hoc loop.
+ *
+ * README.md is here because it was NOT: the rc.4 bump moved every manifest and
+ * left README declaring rc.3, which scripts/doc-drift-gate.mjs then failed in
+ * CI. The gate detects that drift; this script is why it should not happen.
+ */
 
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { rewriteVersionClaims } from "./lib/version-claim.mjs";
+
 const ROOT = process.cwd();
 const ROOT_PACKAGE_PATH = path.join(ROOT, "package.json");
 const PACKAGES_DIR = path.join(ROOT, "packages");
+
+/** Docs whose line-leading `**vX.Y.Z**` claim states the active release line. */
+const VERSION_DECLARING_DOCS = ["README.md"];
 
 function parseTagArg() {
   const fromCli = process.argv[2];
@@ -45,6 +62,20 @@ async function collectWorkspacePackagePaths() {
     .sort();
 }
 
+async function rewriteDocVersion(filePath, version) {
+  const source = await readFile(filePath, "utf8");
+  const relPath = path.relative(ROOT, filePath);
+  // Throws when the doc states no version at all — a silent no-op here is what
+  // let README drift in the first place.
+  const { content, claims } = rewriteVersionClaims(source, version, relPath);
+
+  if (content !== source) {
+    await writeFile(filePath, content);
+  }
+
+  return { relPath, claims };
+}
+
 async function main() {
   const version = parseTagArg();
   const targets = [ROOT_PACKAGE_PATH, ...(await collectWorkspacePackagePaths())];
@@ -54,7 +85,20 @@ async function main() {
     process.stdout.write(`${result.name}: ${result.previous} -> ${result.next}\n`);
   }
 
-  process.stdout.write(`Applied version ${version} to ${targets.length} package manifest(s).\n`);
+  for (const relPath of VERSION_DECLARING_DOCS) {
+    const { claims } = await rewriteDocVersion(path.join(ROOT, relPath), version);
+    for (const claim of claims) {
+      process.stdout.write(
+        `${relPath}:${claim.line}: ${claim.previous} -> ${claim.next}` +
+          (claim.changed ? "\n" : " (already current)\n"),
+      );
+    }
+  }
+
+  process.stdout.write(
+    `Applied version ${version} to ${targets.length} package manifest(s) and ` +
+      `${VERSION_DECLARING_DOCS.length} version-declaring doc(s).\n`,
+  );
 }
 
 await main();

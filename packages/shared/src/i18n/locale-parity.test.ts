@@ -73,8 +73,17 @@ describe("i18n locale parity census", () => {
   // substitute `${...}` and you get `\[A-Za-z0-9_.-]+` — an escaped literal
   // bracket matching nothing — which reported 100+ live keys as dead. Split on
   // `${...}` first, escape each literal segment, then join with the wildcard.
+  // 2026-08-12(合并 feat/sync-readme-version): 865 → 867。净 +2 = `cli.audit
+  // .why.maturity-draft` 与其 `.hint`,G3「draft 的 guideline/model 不进
+  // SessionStart 常驻层」给 `fabric audit why-not-surfaced` 补的那条归因分支;
+  // 两个 key 的消费者都是 packages/cli/src/commands/audit.ts。
+  // 按上面的规矩重跑了 census:1901 文件、175 个 template pattern、0 provably dead。
+  //
+  // ⚠️ 文件数比上一轮的 10,011 少了八千,不是漏扫 —— 差额是 W5 删掉的 `tmp/`
+  // 下那 10 个 vendor 克隆(对照阅读用的别家仓库)。拿别的项目的源码给我们的
+  // key 判「活」本来就是假阳性,少扫它们让判据更严而不是更松。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(865);
+    expect(enKeys.length).toBe(867);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

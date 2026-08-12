@@ -542,11 +542,18 @@ export function assessFirstHitSync(
   };
 }
 
+// F11 (review fix): `verified`, NOT `draft`. This entry is shipped BY the product
+// (it is not a user proposal awaiting adjudication), and its whole job is to prove
+// the resident tier works — its own summary promises "SessionStart should list
+// this guideline". Seeded as draft it was excluded from the always-active tier by
+// the maturity axis, so a brand-new install rendered a header counting it as
+// resident directly above an empty ALWAYS-ACTIVE section: the onboarding artifact
+// contradicting itself on first touch.
 const STARTER_GUIDELINE_BODY = `---
 id: {{id}}
 type: guidelines
 layer: {{layer}}
-maturity: draft
+maturity: verified
 relevance_scope: broad
 summary: Fabric first-hit starter — open a new AI session after install; SessionStart should list this guideline.
 tags:
@@ -569,7 +576,7 @@ This entry is a **seed** so an empty store is never a silent happy path.
 1. Open a new Claude Code / Codex session in this project
 2. Confirm SessionStart shows Fabric knowledge lines
 3. Run \`fabric first-hit\` anytime to re-prove readiness
-4. Review / promote this draft via \`/fabric-review\` when ready
+4. Retire it via \`/fabric-review\` once your own knowledge has replaced it
 `;
 
 const STARTER_PITFALL_BODY = `---

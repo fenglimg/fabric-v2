@@ -1,6 +1,6 @@
 ---
 name: release-rc
-description: Use this skill to cut a new Fabric v2 release candidate (v2.x.0-rc.N — the minor is derived from the latest tag, never pinned to 2.0.0). Drives the full sequence — version bump across root + workspaces, version-sync verification, `fab -v` check, typecheck/lint/test gates, commit, tag, push, and CI watch — to prevent the fix-forward cascades (rc.7, rc.12→rc.13) and version-desync bug (root rc.18 vs packages rc.19) that have happened before. Invoke only when the user explicitly asks to release / cut / tag / publish a new rc.
+description: Use this skill to cut a new Fabric v2 release candidate (v2.x.0-rc.N — the minor is derived from the latest tag, never pinned to 2.0.0). Drives the full sequence — version bump across root + workspaces + README's active-line claim, version-sync and doc-drift verification, `fab -v` check, typecheck/lint/test gates, commit, tag, push, and CI watch — to prevent the fix-forward cascades (rc.7, rc.12→rc.13) and version-desync bug (root rc.18 vs packages rc.19) that have happened before. Invoke only when the user explicitly asks to release / cut / tag / publish a new rc.
 allowed-tools: Read, Glob, Grep, Bash, Edit
 ---
 
@@ -51,31 +51,32 @@ Do NOT proceed until the user confirms both.
 
 ## Phase 2 — Version bump (atomic)
 
-Bump root + every workspace package to the same version in one batch.
+Bump every place the repo declares its version — root + workspace manifests **and**
+README.md's active-line claim — in one batch, via the single write entry.
 
 ```bash
 # Use the version the user just confirmed in Phase 1 (the next tag minus its leading `v`).
 # Derive it — NEVER hardcode 2.0.0. e.g. next tag v2.3.0-rc.5  ->  NEW_VERSION="2.3.0-rc.5"
 NEW_VERSION="${NEXT_TAG#v}"   # reuses $NEXT_TAG from Phase 1; or set the confirmed value explicitly
-# Root
-npm pkg set version="$NEW_VERSION"
-# Workspaces
-for f in packages/*/package.json; do (cd $(dirname $f) && npm pkg set version="$NEW_VERSION"); done
+node scripts/apply-tag-version.mjs "$NEW_VERSION"
 ```
 
-Then **verify sync** (this is the guardrail for the historical desync bug):
+Do NOT hand-roll `npm pkg set` loops here. That is what this skill used to do, and it
+is why README.md kept drifting: the loop touched manifests only, so README went on
+advertising the previous rc until CI's doc-drift gate caught it. `apply-tag-version.mjs`
+is the same script the publish job runs, so both paths write the same set of files.
+
+Then **verify sync** with the same two checkers CI runs — the manifest guardrail for
+the historical desync bug, and the doc gate for the README claim:
 
 ```bash
-node -e "
-const root = require('./package.json').version;
-const pkgs = require('fs').readdirSync('packages').map(d => ({d, v: require('./packages/'+d+'/package.json').version}));
-const mismatch = pkgs.filter(p => p.v !== root);
-if (mismatch.length) { console.error('VERSION DESYNC:', root, 'vs', mismatch); process.exit(1); }
-console.log('All versions synced at', root);
-"
+node scripts/sync-versions.mjs --tag "$NEXT_TAG"   # root == every workspace == the tag
+pnpm test:doc-drift                                # README's **vX.Y.Z** == package.json
 ```
 
-If the verifier exits non-zero, abort — do not commit.
+If either exits non-zero, abort — do not commit. A `version_drift` violation means the
+bump did not reach README; a `no_version_claim` violation means someone reworded the
+line the gate checks.
 
 ## Phase 3 — Gates (run, do not skip)
 
@@ -107,7 +108,7 @@ Only after every gate above is green:
 ```bash
 # $NEW_VERSION / $NEXT_TAG carry over from Phase 1–2 (e.g. 2.3.0-rc.5 / v2.3.0-rc.5). Never hardcode 2.0.0.
 RC_N="${NEW_VERSION##*-rc.}"      # the rc number, e.g. 5
-git add package.json packages/*/package.json pnpm-lock.yaml
+git add package.json packages/*/package.json pnpm-lock.yaml README.md
 git commit -m "chore(rc${RC_N}): bump to ${NEXT_TAG} — <theme>"
 git tag "${NEXT_TAG}"
 git push origin <branch>

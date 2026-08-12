@@ -944,6 +944,19 @@ function deriveCensusFromEntries(entries) {
   return census;
 }
 
+// G2/F05: the empty-KB predicate, named once. renderHumanCensus swaps in the
+// first-run guidance for exactly this shape, and main() has to recognise the SAME
+// shape to keep that guidance out of the emit-side bookkeeping (cooldown stamp +
+// injection telemetry) — a second hand-written copy of the condition is how those
+// two would drift apart.
+// (dropped_other_project > 0 keeps falling through to the normal HUD: that path
+// already renders "0 entries" plus the cross-project drop note.)
+function isEmptyKbCensus(census) {
+  const c = census || {};
+  const total = typeof c.total === "number" ? c.total : 0;
+  return total === 0 && (c.dropped_other_project || 0) === 0;
+}
+
 // Render the human-facing scope-primary status HUD (Goal H2). `lang` is
 // "zh-CN" | other (en). Returns an array of lines (empty when census is empty).
 //
@@ -959,8 +972,23 @@ function renderHumanCensus(census, opts) {
   const { lang } = opts || {};
   const c = census || {};
   const total = typeof c.total === "number" ? c.total : 0;
-  if (total === 0 && (c.dropped_other_project || 0) === 0) return [];
   const zh = lang === "zh-CN";
+  // G2: an EMPTY knowledge base is exactly when a new user needs to hear
+  // something. This used to `return []`, and because every downstream human
+  // sink segment in buildSessionStartSinks — plus the final emit gate — keys
+  // off `humanLines.length > 0`, SessionStart went completely silent: no count,
+  // no next step, no way to tell "empty KB" from "hook broken". Returning two
+  // lines here re-opens all of those gates without touching any of them.
+  // (dropped_other_project > 0 keeps falling through to the normal HUD below —
+  // that path already renders "0 entries" plus the cross-project drop note.)
+  if (isEmptyKbCensus(census)) {
+    return [
+      zh ? "▸ [fabric] 共 0 条 —— 知识库为空" : "▸ [fabric] 0 entries — knowledge base is empty",
+      zh
+        ? "  下一步: /fabric-archive source 从 git/docs 回灌 · fabric store bind <alias> 绑定已有库"
+        : "  Next: /fabric-archive source to backfill from git/docs · fabric store bind <alias> to bind an existing store",
+    ];
+  }
 
   const broadByType = c.broad_by_type || {};
   const narrowTotal = typeof c.narrow_total === "number" ? c.narrow_total : 0;
@@ -1215,6 +1243,8 @@ function renderAiSink(opts) {
 //   ai                  — gated final AI text (null when reminder-to-context off / empty)
 //   resolvedPayload     — the plan-context payload, passed through unchanged (for telemetry / --explain)
 //   hasRenderedContent  — true when ANY sink rendered content (main's silent-exit gate)
+//   emptyKbGuidance     — true when the render was the empty-KB guidance, i.e. NOTHING
+//                         was surfaced (main skips emit-side bookkeeping then)
 //   reminderToContext   — readReminderToContext(cwd) (telemetry target-channel)
 function buildSessionStartSinks(cwd, payload, env) {
   // KT-GLD-0006: the rc.35 opaque-summary runtime substitution
@@ -1398,7 +1428,16 @@ function buildSessionStartSinks(cwd, payload, env) {
   const reminderToContext = readReminderToContext(cwd);
   const ai = reminderToContext && aiText && aiText.length > 0 ? aiText : null;
 
-  return { human, ai, resolvedPayload, hasRenderedContent, reminderToContext };
+  return {
+    human,
+    ai,
+    resolvedPayload,
+    hasRenderedContent,
+    reminderToContext,
+    // F05: true when the ONLY thing rendered was the empty-KB first-run guidance
+    // (no knowledge was surfaced, because there is none).
+    emptyKbGuidance: isEmptyKbCensus(census),
+  };
 }
 
 function main(env, stdio) {
@@ -1445,7 +1484,7 @@ function main(env, stdio) {
     // Block 5 (Option X): build both sinks via the shared renderer (same code
     // `fabric inspect` uses → byte-identical injection). Side-effect-free; the
     // emit + telemetry below stay in main().
-    const { human, ai, resolvedPayload, hasRenderedContent, reminderToContext } =
+    const { human, ai, resolvedPayload, hasRenderedContent, reminderToContext, emptyKbGuidance } =
       buildSessionStartSinks(cwd, payload, env);
 
     // Nothing to say at all → silent exit (preserves the empty-payload contract).
@@ -1469,7 +1508,7 @@ function main(env, stdio) {
     // agent `resolvedPayload.entries` (the top_k-sliced broad menu); log their
     // ids so the true hit rate (consumed ÷ injected) is computable against the
     // consumption-side metrics.jsonl. Best-effort — never affects the emit.
-    if (injectionLog !== null) {
+    if (injectionLog !== null && !emptyKbGuidance) {
       const injectedEntries = Array.isArray(resolvedPayload && resolvedPayload.entries)
         ? resolvedPayload.entries
         : [];
@@ -1501,7 +1540,7 @@ function main(env, stdio) {
     try {
       const surfaceClient = detectClient();
       const fabricDir = join(cwd, FABRIC_DIR_REL);
-      if (surfaceClient !== undefined && existsSync(fabricDir)) {
+      if (surfaceClient !== undefined && !emptyKbGuidance && existsSync(fabricDir)) {
         const renderedIds =
           resolvedPayload && Array.isArray(resolvedPayload.entries)
             ? resolvedPayload.entries
@@ -1536,7 +1575,17 @@ function main(env, stdio) {
     // cooldown gate's next-invocation check. Skip when cooldown is disabled
     // (cooldownHours === 0) to avoid polluting the FS with a never-read
     // sidecar on rc.32-style "no cooldown" workspaces.
-    if (cooldownHours > 0 && !(env && env.skipCooldownWrite === true)) {
+    //
+    // F05: also skip for the empty-KB guidance. Before G2 that render short-
+    // circuited above (humanLines was empty), so this tail never ran for an empty
+    // KB; making the guidance render revived it and let the guidance BURN the 24h
+    // cooldown. The exact sequence that breaks: session 1 on an empty KB shows
+    // "bind a store", stamps the sidecar → the user binds one → session 2 minutes
+    // later is silent for a full day, hiding the first REAL knowledge HUD, which
+    // is precisely the first-touch path G2 set out to fix. The cooldown exists to
+    // stop the KB banner repeating; the guidance is not that banner, and it is
+    // self-limiting — it stops the moment the KB stops being empty.
+    if (cooldownHours > 0 && !emptyKbGuidance && !(env && env.skipCooldownWrite === true)) {
       writeBroadLastEmit(cwd, nowMs);
     }
 

@@ -20,6 +20,7 @@ import {
   type PreflightDiagnostic,
 } from "./plan-context.js";
 import { relatedLookupKeys } from "./plan-context-ids.js";
+import { isAlwaysActive as isAlwaysActiveShared } from "./always-active.js";
 import { buildCrossStoreBodyIndex } from "./cross-store-recall.js";
 import { loadIdRedirectMap, resolveRedirectedId } from "./id-redirect.js";
 
@@ -291,15 +292,16 @@ export async function recall(projectRoot: string, input: RecallInput): Promise<R
   };
 }
 
-// Mirrors the SessionStart hook's ALWAYS_TYPES (knowledge-hint-broad.cjs):
-// broad ∧ knowledge_type ∈ {models, guidelines} → full BODY injected at session
-// start. decision/pitfall/process are REFERENCE (id+hook only) and narrow stays
-// silent, so neither is always-active.
-const ALWAYS_ACTIVE_TYPES = new Set(["models", "guidelines"]);
-
-function isAlwaysActive(candidate: { description: { relevance_scope?: string; knowledge_type?: string } }): boolean {
-  const { relevance_scope, knowledge_type } = candidate.description;
-  return (relevance_scope ?? "broad") !== "narrow" && ALWAYS_ACTIVE_TYPES.has(knowledge_type ?? "");
+// F03 (review fix): `body_in_context: true` is a promise to the agent — "the
+// body is already in context from SessionStart, skip the Read". It must
+// therefore be decided by the SAME predicate that decides what SessionStart
+// actually injects, or the flag becomes a lie that costs the agent the entry
+// twice over (never injected, and told not to read it). This file used to keep
+// its own copy of the rule; it now calls the shared one.
+function isAlwaysActive(candidate: {
+  description: { relevance_scope?: string; knowledge_type?: string; maturity?: string };
+}): boolean {
+  return isAlwaysActiveShared(candidate.description);
 }
 
 // wire-slim projection (payload): keep ONLY the selection-signal fields, leaving

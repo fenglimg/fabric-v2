@@ -95,6 +95,10 @@ export const zhCNMessages: Messages = {
     "'{id}' 是 relevance_scope=narrow —— 仅在你编辑匹配文件时由 PreToolUse 提示浮现,不在 SessionStart。",
   "cli.audit.why.narrow-timing.hint":
     "broad 条目是常驻脊柱;narrow 仅在编辑时浮现(timing 轴)。",
+  "cli.audit.why.maturity-draft":
+    "'{id}' 的 maturity={maturity} —— draft 的 guideline/model 属提案而非定论,不进 SessionStart 常驻规则层。",
+  "cli.audit.why.maturity-draft.hint":
+    "它仍可经 fab_recall 与编辑时提示取到;晋升(fab_review modify maturity: verified)后才进常驻层。",
   "cli.audit.why.should-surface":
     "'{id}' 应当正在浮现 —— store '{store}' 已绑定、scope 匹配、relevance_scope=broad。",
   "cli.audit.why.should-surface.hint":

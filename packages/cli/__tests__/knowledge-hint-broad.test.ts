@@ -53,10 +53,43 @@ type Payload = {
 };
 
 type HookModule = {
+  // The env argument is the hook's TEST SEAM, not just {cwd, payload}: main
+  // reads census / now / alwaysBodies / the skip* switches off it too. Keeping
+  // this shape honest matters — an under-declared seam does not fail loudly,
+  // it just makes every real field look like a typo at the call site.
   main: (
-    env: { cwd?: string; payload?: Payload | null },
-    stdio: { stderr: { write: (chunk: string) => void } },
+    env: {
+      cwd?: string;
+      payload?: Payload | null;
+      /** Injected clock (ms since epoch) — drives the 24h cooldown window. */
+      now?: number;
+      /** Live knowledge census; the import gate counts off this, not the snapshot. */
+      census?: unknown;
+      alwaysBodies?: unknown[];
+      session_id?: string;
+      skipStdout?: boolean;
+      skipCooldown?: boolean;
+      skipCooldownWrite?: boolean;
+      skipActiveSessionWrite?: boolean;
+    },
+    stdio: {
+      stderr: { write: (chunk: string) => void };
+      stdout?: { write: (chunk: string) => void };
+    },
   ) => void;
+  // G2: the real SessionStart output assembly point — the human sink the user
+  // actually sees, gated by nudge policy. Asserted directly so empty-KB
+  // guidance is verified end-to-end rather than at the renderer.
+  buildSessionStartSinks: (
+    cwd: string,
+    payload: Payload | null,
+    env?: { census?: unknown; alwaysBodies?: unknown[]; now?: number },
+  ) => {
+    human: string | null;
+    ai: string | null;
+    hasRenderedContent: boolean;
+    reminderToContext: boolean;
+  };
   renderSummary: (payload: Payload) => string[];
   renderFull: (narrow: NarrowEntry[]) => string[];
   renderTruncated: (narrow: NarrowEntry[]) => string[];
@@ -72,6 +105,9 @@ type HookModule = {
     projectRoot: string,
   ) => "absent" | "in_progress" | "complete" | "error";
   shouldRecommendImport: (projectRoot: string) => boolean;
+  /** 24h-cooldown sidecar. null = never emitted; otherwise ms since epoch. */
+  readBroadLastEmit: (projectRoot: string) => number | null;
+  writeBroadLastEmit: (projectRoot: string, nowMs: number) => void;
   CONSTANTS: {
     TRUNCATION_THRESHOLD: number;
     SUMMARY_MAX_LEN: number;
@@ -725,8 +761,16 @@ describe("knowledge-hint-broad.cjs — main", () => {
     expect(captureStderr({ payload: null })).toEqual([]);
   });
 
-  it("writes nothing when narrow is empty", () => {
-    expect(captureStderr({ payload: makePayload([]) })).toEqual([]);
+  // G2 supersedes the old expectation here. This used to assert `[]` — which is
+  // exactly the bug G2 fixed: an empty census made renderHumanCensus return
+  // early and a brand-new user got a completely silent SessionStart. An empty
+  // payload is an empty KB, so the first-run guidance is now the correct output.
+  // The `payload: null` case above stays silent: that is CLI-unavailable, not an
+  // empty KB, and we have nothing truthful to say about the KB then.
+  it("renders the empty-KB first-run guidance when the census is empty", () => {
+    const stderr = captureStderr({ payload: makePayload([]) }).join("");
+    expect(stderr).toMatch(/▸ \[fabric\]/);
+    expect(stderr).toMatch(/fabric store bind/);
   });
 
   it("writes the SessionStart census to stderr when entries exist (unknown client → stderr fallback)", () => {
@@ -833,8 +877,8 @@ describe("knowledge-hint-broad.cjs — main", () => {
     const writes: string[] = [];
     const stderr = { write: (chunk: string) => writes.push(chunk) };
     expect(() =>
-      // @ts-expect-error — feeding garbage to exercise defensive path
       hook.main(
+        // @ts-expect-error — feeding garbage to exercise defensive path
         { cwd: tempRoot, payload: { narrow: "not-an-array" } },
         { stderr },
       ),
@@ -2108,5 +2152,173 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + backlog summary (H2/H
     const ai = JSON.parse(out[0]).hookSpecificOutput.additionalContext as string;
     expect(ai).toMatch(/Scope: broad only/);
     expect(ai).toMatch(/narrow .*surfaces via the PreToolUse hint/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// G2 — empty knowledge base must still speak on SessionStart.
+//
+// renderHumanCensus used to `return []` for an empty census, and EVERY human
+// sink segment downstream (store label / backlog / inspect pointer) plus the
+// final `humanLines.length > 0` gate keys off that array — so a brand-new user
+// with an empty KB got a completely silent SessionStart and no next step.
+// Assertions go through buildSessionStartSinks (the real assembly point the
+// user sees), not renderHumanCensus, and pin that the human gate is actually
+// open for the call so a `quiet` policy can never fake a pass or a fail.
+// ---------------------------------------------------------------------------
+describe("knowledge-hint-broad.cjs — empty knowledge base first-run guidance (G2)", () => {
+  let tempRoot: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "broad-empty-kb-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  function plantConfig(extra: Record<string, unknown> = {}): void {
+    mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, ".fabric", "fabric-config.json"),
+      JSON.stringify({ fabric_language: "en", ...extra }),
+      "utf8",
+    );
+  }
+
+  const emptyCensus = {
+    by_type: {},
+    by_layer: { team: 0, personal: 0, project: 0 },
+    broad_by_type: {},
+    narrow_total: 0,
+    dropped_other_project: 0,
+    total: 0,
+  };
+
+  function sinks(census: unknown) {
+    return hook.buildSessionStartSinks(
+      tempRoot,
+      { version: 2, revision_hash: "rev-empty", target_paths: ["**"], entries: [], broad_count: 0 } as unknown as Payload,
+      { census, alwaysBodies: [] },
+    );
+  }
+
+  it("emits an actionable human line when the knowledge base is empty", () => {
+    withIsolatedFabricHome(() => {
+      plantConfig();
+      // D3: the human gate must be OPEN for this call, otherwise a `silent`
+      // nudge_mode would swallow `human` and the assertion below would report a
+      // regression that isn't one (or pass a fix that isn't one).
+      const policy = require(
+        fileURLToPath(new URL("../templates/hooks/lib/nudge-policy.cjs", import.meta.url)),
+      ) as { resolveHumanSink: (root: string, event: string, gate: object) => { emitHuman: boolean } };
+      expect(policy.resolveHumanSink(tempRoot, "session_start", {}).emitHuman).toBe(true);
+
+      const { human, hasRenderedContent } = sinks(emptyCensus);
+
+      expect(human).not.toBeNull();
+      expect(String(human).length).toBeGreaterThan(0);
+      expect(hasRenderedContent).toBe(true);
+      // The count must be stated (0 entries), not implied by silence …
+      expect(String(human)).toContain("0");
+      // … and at least one runnable next step must be offered.
+      expect(String(human)).toContain("fabric store bind");
+      expect(String(human)).toContain("/fabric-archive source");
+    });
+  });
+
+  it("leaves the empty + dropped_other_project path on the existing render branch", () => {
+    withIsolatedFabricHome(() => {
+      plantConfig();
+      const { human } = sinks({ ...emptyCensus, dropped_other_project: 3 });
+
+      // D4: total 0 with cross-project drops already rendered the normal HUD
+      // header; the new branch must not swallow it.
+      expect(String(human)).toMatch(/▸ \[fabric\] 0 entries · team 0 · personal 0/);
+      expect(String(human)).not.toContain("knowledge base is empty");
+    });
+  });
+
+  // F05 (review fix): the three assertions above all go through
+  // buildSessionStartSinks, which is side-effect-free BY DESIGN — the cooldown
+  // sidecar, the injection log and the surface-emitted ledger row all live in
+  // main(). So they could not see that making the empty-KB branch render revived
+  // main()'s tail for a path where it had always short-circuited, and let the
+  // guidance stamp the 24h cooldown. These drive main() itself.
+  describe("main() side effects on the empty-KB path", () => {
+    const seededCensus = {
+      by_type: { decisions: 3 },
+      by_layer: { team: 3, personal: 0, project: 0 },
+      broad_by_type: { decisions: 3 },
+      narrow_total: 0,
+      dropped_other_project: 0,
+      total: 3,
+    };
+    const T0 = 1_800_000_000_000;
+    const FIVE_MINUTES = 5 * 60 * 1000;
+
+    function runMain(census: unknown, nowMs: number): string {
+      const writes: string[] = [];
+      hook.main(
+        {
+          cwd: tempRoot,
+          now: nowMs,
+          skipStdout: true,
+          // Typed helper, not a cast: an empty broad payload is exactly what the
+          // hint CLI returns for these two cases; the census seam drives the rest.
+          payload: makePayload([]),
+          census,
+          alwaysBodies: [],
+        },
+        { stderr: { write: (chunk: string) => writes.push(chunk) } },
+      );
+      return writes.join("");
+    }
+
+    it("empty-KB guidance renders but does NOT stamp the cooldown, so the first real HUD is not silenced", () => {
+      withIsolatedFabricHome(() => {
+        plantConfig();
+
+        // Session 1: empty KB → guidance shown, sidecar untouched.
+        expect(runMain(emptyCensus, T0)).toContain("knowledge base is empty");
+        expect(hook.readBroadLastEmit(tempRoot)).toBeNull();
+
+        // Session 2, five minutes later: the user followed the guidance and bound
+        // a store. The first REAL knowledge HUD must appear — pre-fix this was
+        // silent for 24 hours.
+        const second = runMain(seededCensus, T0 + FIVE_MINUTES);
+        expect(second).toContain("▸ [fabric] 3 entries");
+        // …and THAT emit is what arms the cooldown.
+        expect(hook.readBroadLastEmit(tempRoot)).toBe(T0 + FIVE_MINUTES);
+      });
+    });
+
+    it("a real emit still arms the 24h cooldown (the gate is intact, not disabled)", () => {
+      withIsolatedFabricHome(() => {
+        plantConfig();
+
+        expect(runMain(seededCensus, T0)).toContain("▸ [fabric] 3 entries");
+        expect(hook.readBroadLastEmit(tempRoot)).toBe(T0);
+        // Same KB five minutes later → still cooling, fully silent.
+        expect(runMain(seededCensus, T0 + FIVE_MINUTES)).toBe("");
+      });
+    });
+  });
+
+  it("leaves the non-empty census header byte-identical", () => {
+    withIsolatedFabricHome(() => {
+      plantConfig();
+      const { human } = sinks({
+        by_type: { decisions: 2 },
+        by_layer: { team: 2, personal: 0, project: 0 },
+        broad_by_type: { decisions: 2 },
+        narrow_total: 1,
+        dropped_other_project: 0,
+        total: 3,
+      });
+
+      expect(String(human).split("\n")[0]).toBe("▸ [fabric] 3 entries · team 2 · personal 0");
+      expect(String(human)).not.toContain("knowledge base is empty");
+    });
   });
 });

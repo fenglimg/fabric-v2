@@ -14,8 +14,10 @@ import {
 import {
   __readSetWalkCacheStatsForTests,
   __resetReadSetWalkCacheForTests,
+  buildAlwaysActiveBodies,
   buildCrossStoreBodyIndex,
   buildCrossStoreRawItems,
+  buildKnowledgeCensus,
   computeReadSetRevision,
 } from "./cross-store-recall.js";
 import { planContext } from "./plan-context.js";
@@ -151,5 +153,91 @@ describe("cross-store recall (W1-T1)", () => {
     expect(rawItems.map((item) => item.stable_id)).toContain("team:KT-DEC-9001");
     expect(bodyIndex.has("team:KT-DEC-9001")).toBe(true);
     expect(__readSetWalkCacheStatsForTests().walks).toBe(1);
+  });
+});
+
+// G3 — always-active is the UNCONDITIONAL rule tier (KT-DEC-0027: guideline /
+// model bodies are the SessionStart spine). It filtered deprecated, other-project
+// and narrow entries but never maturity, so a `draft` guideline — an unadjudicated
+// proposal — was injected as a standing rule. Draft entries stay fully reachable
+// via the PreToolUse narrow hint and fab_recall; this only removes them from the
+// tier that presents knowledge as settled. Note this is NOT the "exclude retired
+// entries from recall" idea KT-DEC-0055 deferred: recall is untouched.
+describe("buildAlwaysActiveBodies maturity gate (G3)", () => {
+  async function seedGuideline(id: string, maturity: string | null): Promise<void> {
+    const storeDir = join(
+      resolveGlobalRoot(),
+      storeRelativePathForMount({ store_uuid: TEAM_STORE_UUID }),
+    );
+    const dir = join(storeDir, STORE_LAYOUT.knowledgeDir, "guidelines");
+    await mkdir(dir, { recursive: true });
+    const lines = ["---", `id: ${id}`, "type: guideline", "layer: team"];
+    if (maturity !== null) lines.push(`maturity: ${maturity}`);
+    lines.push(
+      "created_at: 2026-06-02T00:00:00.000Z",
+      "relevance_scope: broad",
+      `summary: Guideline ${id} with a real summary`,
+      "---",
+      "",
+      `# ${id}`,
+      "",
+      "Body text.",
+      "",
+    );
+    await writeFile(join(dir, `${id}.md`), lines.join("\n"));
+  }
+
+  async function seedMaturityMix(): Promise<string> {
+    const projectRoot = await createProjectWithEmptyMeta();
+    await seedGuideline("KT-GLD-9001", "draft");
+    await seedGuideline("KT-GLD-9002", "verified");
+    await seedGuideline("KT-GLD-9003", null); // maturity absent entirely
+    saveGlobalConfig({
+      uid: "test-uid",
+      stores: [
+        { store_uuid: TEAM_STORE_UUID, alias: "team", remote: "git@example.com:team-store.git" },
+      ],
+    });
+    await writeFile(
+      join(projectRoot, ".fabric", "fabric-config.json"),
+      `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
+    );
+    return projectRoot;
+  }
+
+  it("keeps settled maturities and excludes draft, absent, and unparseable ones", async () => {
+    const projectRoot = await seedMaturityMix();
+
+    const ids = (await buildAlwaysActiveBodies(projectRoot)).map((b) => b.stable_id);
+
+    expect(ids).not.toContain("team:KT-GLD-9001");
+    expect(ids).toContain("team:KT-GLD-9002");
+    // F10 (review fix): an ABSENT maturity is `draft`, matching every other
+    // reader in the repo (doctor-knowledge-hygiene.ts:40, review-shared.ts:416,
+    // review-search.ts:216/280 all read `(maturity ?? "draft")`). The previous
+    // `=== "draft"` exclusion read absence as "settled" — the same field carrying
+    // opposite meanings in the hygiene lint and the resident tier.
+    expect(ids).not.toContain("team:KT-GLD-9003");
+    // An INVALID value is draft too: knowledge-meta-builder safeParses the
+    // frontmatter and downgrades `Draft` / junk to undefined, so an exclusion
+    // test would have let it ride the resident tier as if adjudicated.
+    await seedGuideline("KT-GLD-9004", "Draft");
+    await seedGuideline("KT-GLD-9005", "not-a-maturity");
+    const afterJunk = (await buildAlwaysActiveBodies(projectRoot)).map((b) => b.stable_id);
+    expect(afterJunk).not.toContain("team:KT-GLD-9004");
+    expect(afterJunk).not.toContain("team:KT-GLD-9005");
+    expect(afterJunk).toContain("team:KT-GLD-9002");
+  });
+
+  it("leaves the census counts untouched (D2: broad_by_type stays the display axis)", async () => {
+    const projectRoot = await seedMaturityMix();
+
+    const census = await buildKnowledgeCensus(projectRoot);
+
+    // Deliberate, documented asymmetry: the HUD still counts the draft guideline
+    // as broad, so broad_by_type.guidelines exceeds the injected body count by
+    // the number of draft entries.
+    expect(census.broad_by_type.guidelines).toBe(3);
+    expect(census.total).toBe(3);
   });
 });

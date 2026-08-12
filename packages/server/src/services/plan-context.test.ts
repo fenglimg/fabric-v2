@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -1596,5 +1596,244 @@ describe("planContext include_related graph二阶召回 (W3-T2)", () => {
 
     expect(result.candidates.map((c) => c.stable_id)).toEqual(["team:KT-DEC-9201"]);
     expect(result).not.toHaveProperty("related_appended");
+  });
+});
+
+// G1 delivery observability: the ledger used to carry ONLY preflight diagnostics
+// (missing_description / empty_shell_suppressed), so a call whose candidate pool
+// was non-empty but whose delivered set was cut to (near) nothing wrote an EMPTY
+// `diagnostics` array — the drop was invisible to every downstream auditor.
+// `dropped[]` already carried the truth on the wire; these tests pin that the
+// SAME truth reaches the event ledger, and that `knowledge_selection` (declared
+// in the shared schema union but never emitted by any production call site)
+// now has exactly one real emitter.
+describe("planContext delivery observability (G1)", () => {
+  /** 4 long-summary entries — enough bytes that a tight budget forces a trim. */
+  async function seedTrimmableProject(): Promise<string> {
+    const projectRoot = await createTeamProject();
+    const longSummary = "Delivery observability corpus entry ".repeat(50);
+    for (let i = 0; i < 4; i += 1) {
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id: `KT-DEC-6${String(i).padStart(3, "0")}`,
+        summary: `${longSummary}${i}`,
+        maturity: "proven",
+      });
+    }
+    mountStores();
+    return projectRoot;
+  }
+
+  async function readPlannedDiagnostics(projectRoot: string): Promise<Array<Record<string, unknown>>> {
+    const planned = await readEventLedger(projectRoot, {
+      event_type: "knowledge_context_planned",
+    });
+    expect(planned.events).toHaveLength(1);
+    const diagnostics = (planned.events[0] as { diagnostics?: unknown }).diagnostics;
+    expect(Array.isArray(diagnostics)).toBe(true);
+    return diagnostics as Array<Record<string, unknown>>;
+  }
+
+  it("records payload_budget_dropped in the ledger diagnostics when the trim fires", async () => {
+    const projectRoot = await seedTrimmableProject();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      payload_budget: {
+        limits: { warnBytes: 1200, hardBytes: 2600 },
+        warnings: [],
+        trim_warning: { code: "mcp_payload_trimmed", file: "<response>", action_hint: "trimmed for test" },
+      },
+    });
+
+    const payloadDroppedIds = (result.dropped ?? [])
+      .filter((d) => d.reason === "payload_budget")
+      .map((d) => d.id);
+    expect(payloadDroppedIds.length).toBeGreaterThan(0);
+
+    const diagnostics = await readPlannedDiagnostics(projectRoot);
+    const drop = diagnostics.find((d) => d.code === "payload_budget_dropped");
+    expect(drop).toBeDefined();
+    expect(drop?.severity).toBe("warn");
+    expect(drop?.stable_ids).toEqual([...payloadDroppedIds].sort());
+    expect(String(drop?.message)).toContain("payload_budget");
+  });
+
+  it("records retrieval_budget_dropped in the ledger diagnostics when top_k cuts the corpus", async () => {
+    // config-single-home W2: `plan_context_top_k` is a PREFERENCE knob, so it
+    // only bites from the global policy layer — written into the repo config it
+    // is inert and the cap silently never fires. createTeamProject routes it.
+    const projectRoot = await createTeamProject({ plan_context_top_k: 1 });
+    for (const [id, summary] of [
+      ["KT-DEC-6201", "Vector embedding semantic retrieval over the knowledge base"],
+      ["KT-DEC-6202", "Git lifecycle archive cadence deprecation nudge"],
+    ] as Array<[string, string]>) {
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id,
+        summary,
+        maturity: "verified",
+        relevance_scope: "broad",
+        relevance_paths: [],
+      });
+    }
+    mountStores();
+
+    const result = await planContext(projectRoot, { paths: ["src/retrieval.ts"] });
+
+    const retrievalDroppedIds = (result.dropped ?? [])
+      .filter((d) => d.reason === "retrieval_budget")
+      .map((d) => d.id);
+    expect(retrievalDroppedIds.length).toBeGreaterThan(0);
+
+    const diagnostics = await readPlannedDiagnostics(projectRoot);
+    const drop = diagnostics.find((d) => d.code === "retrieval_budget_dropped");
+    expect(drop).toBeDefined();
+    expect(drop?.stable_ids).toEqual([...retrievalDroppedIds].sort());
+  });
+
+  // The case G1 exists for: a NON-EMPTY candidate pool delivered as an EMPTY set.
+  //
+  // F02 (review fix): this used to be driven through `payload_budget.limits`
+  // carrying `minKeep: 0` — a knob of trimToPayloadBudget that is NOT reachable
+  // through the typed plan-context input (PayloadGuardOptions declares only
+  // warnBytes/hardBytes; the literal was bound to a variable first to slip past
+  // the excess-property check). It certified a state production cannot produce,
+  // while the real production path stayed unobserved. Driven now through the
+  // layer filter: a corpus of team (KT-*) entries requested with
+  // layer_filter "personal" empties delivery WITHOUT dropping anything through
+  // the retrieval or payload budgets — the exact shape the old predicate
+  // (`totalDropped > 0`) could not see.
+  it("records delivery_empty when the layer filter empties a non-empty corpus", async () => {
+    const projectRoot = await seedTrimmableProject();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      layer_filter: "personal",
+    });
+
+    expect(result.candidates).toEqual([]);
+    // No budget fired — this is precisely why the old predicate stayed silent.
+    expect(result).not.toHaveProperty("dropped");
+
+    const diagnostics = await readPlannedDiagnostics(projectRoot);
+    const empty = diagnostics.find((d) => d.code === "delivery_empty");
+    expect(empty).toBeDefined();
+    expect(String(empty?.message)).toContain("delivered 0 of 4 corpus candidate(s)");
+    expect(String(empty?.message)).toContain("layer_filter=personal kept 0");
+  });
+
+  // The second real path to an empty delivery — the store read itself FAILED and
+  // degraded the corpus to empty — is covered in plan-context-corpus-failure.test.ts
+  // (it needs a module-level mock of the store walk, which must not leak into the
+  // rest of this file's fixtures).
+
+  // F01: the row that broke the 4KB PIPE_BUF line budget. Both rows this call
+  // writes must stay inside it no matter how large the corpus grows, or a
+  // concurrent unlocked appender (the fabric skills' `echo >>`) can interleave
+  // bytes into a half-written event and corrupt the ledger.
+  it("keeps every emitted ledger line under the 4KB PIPE_BUF budget on a large corpus", async () => {
+    const projectRoot = await createTeamProject({ plan_context_top_k: 12 });
+    for (let i = 0; i < 140; i += 1) {
+      await writeStoreEntry(TEAM_STORE, "decisions", {
+        id: `KT-DEC-7${String(i).padStart(3, "0")}`,
+        summary: `Ledger budget corpus entry ${i} about retrieval scoring and delivery`,
+        maturity: "verified",
+      });
+    }
+    mountStores();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/retrieval.ts"],
+      intent: "retrieval scoring delivery budget",
+      session_id: "session-ledger-budget",
+    });
+    const droppedCount = 140 - result.candidates.length;
+    expect(droppedCount).toBeGreaterThan(100);
+
+    const raw = await readFile(join(projectRoot, ".fabric", "events.jsonl"), "utf8");
+    const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    for (const line of lines) {
+      expect(Buffer.byteLength(line, "utf8")).toBeLessThan(4096);
+    }
+
+    // The cap is a SAMPLE, not a silent cut: the true pre-truncation count rides
+    // along so a reader can never mistake the sample for the whole set.
+    const selection = await readEventLedger(projectRoot, { event_type: "knowledge_selection" });
+    const row = selection.events[0] as {
+      rejected_stable_ids: string[];
+      ai_selection_reasons: Record<string, string>;
+      truncated_fields?: Record<string, number>;
+    };
+    expect(row.rejected_stable_ids.length).toBeLessThan(droppedCount);
+    expect(row.truncated_fields?.rejected_stable_ids).toBe(droppedCount);
+    expect(row.ai_selection_reasons).toEqual({});
+  });
+
+  it("emits one knowledge_selection event joined to the planned event by selection_token", async () => {
+    const projectRoot = await seedTrimmableProject();
+
+    const result = await planContext(projectRoot, {
+      paths: ["src/index.ts"],
+      correlation_id: "corr-selection",
+      session_id: "session-selection",
+      payload_budget: {
+        limits: { warnBytes: 1200, hardBytes: 2600 },
+        warnings: [],
+        trim_warning: { code: "mcp_payload_trimmed", file: "<response>", action_hint: "trimmed for test" },
+      },
+    });
+
+    const ignored = (result.dropped ?? [])
+      .filter((d) => d.reason === "payload_budget")
+      .map((d) => d.id);
+    expect(ignored.length).toBeGreaterThan(0);
+
+    const selection = await readEventLedger(projectRoot, { event_type: "knowledge_selection" });
+    expect(selection.events).toHaveLength(1);
+    expect(selection.events[0]).toEqual(
+      expect.objectContaining({
+        event_type: "knowledge_selection",
+        selection_token: result.selection_token,
+        target_paths: ["src/index.ts"],
+        required_stable_ids: [],
+        ai_selectable_stable_ids: result.candidates.map((item) => item.stable_id),
+        ai_selected_stable_ids: result.candidates.map((item) => item.stable_id),
+        final_stable_ids: result.candidates.map((item) => item.stable_id),
+        rejected_stable_ids: [],
+        ignored_stable_ids: ignored,
+        correlation_id: "corr-selection",
+        session_id: "session-selection",
+      }),
+    );
+    // F01: the per-id reason map is emitted EMPTY on purpose — `ignored_stable_ids`
+    // membership already means payload_budget and `rejected_stable_ids` membership
+    // already means retrieval_budget, so the map only re-encoded what the arrays
+    // state, at ~5.8KB against a 4KB line budget. The reason channel is the array
+    // an id sits in; that is what this asserts.
+    const reasons = (selection.events[0] as { ai_selection_reasons: Record<string, string> })
+      .ai_selection_reasons;
+    expect(reasons).toEqual({});
+    expect(
+      (selection.events[0] as { ignored_stable_ids: string[] }).ignored_stable_ids,
+    ).toEqual(ignored);
+  });
+
+  // Baseline: with nothing dropped the ledger diagnostics must stay byte-identical
+  // to preflight_diagnostics — the new codes never pollute the steady-state path.
+  it("leaves diagnostics equal to preflight_diagnostics when nothing is dropped", async () => {
+    const projectRoot = await createTeamProject();
+    await writeStoreEntry(TEAM_STORE, "decisions", {
+      id: "KT-DEC-6301",
+      summary: "Steady state entry with no truncation",
+      maturity: "proven",
+    });
+    mountStores();
+
+    // No intent (no relevance floor), corpus below top_k, no payload_budget.
+    const result = await planContext(projectRoot, { paths: ["src/index.ts"] });
+
+    expect(result).not.toHaveProperty("dropped");
+    const diagnostics = await readPlannedDiagnostics(projectRoot);
+    expect(diagnostics).toEqual(result.preflight_diagnostics);
   });
 });
