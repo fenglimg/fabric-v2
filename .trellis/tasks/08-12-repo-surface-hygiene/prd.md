@@ -45,7 +45,7 @@ W0-W5 六个批次已经把 `packages/` 内部清得很干净(死代码归零、
 | A1 | `packages/cli/C:` 不再存在 | `test ! -e 'packages/cli/C:'` |
 | A2 | 同类嵌套 `tmp/` 垃圾以后**看得见** | 造一个 `packages/cli/x/tmp/junk`,`git status` 必须报它;根目录 `tmp/` 仍被忽略 |
 | A3 | 顶层格位收敛 | 新克隆根目录跟踪条目数 < 25(当前基线 25) |
-| A4 | `services/` 一眼可见结构 | `ls packages/server/src/services` 顶层条目 < 40(当前 179) |
+| A4 | `services/` 一眼可见结构 | `ls packages/server/src/services` 顶层条目 **≤ 90**(当前 179) |
 | A5 | **行为等价** | `tsc --noEmit` 退出 0;三包测试全绿且**用例数与改动前逐包相等**;`knip` 无新增未用项 |
 | A6 | 门禁不倒退 | `scripts/lint-dangling-refs.mjs` PASS;`pnpm lint` 无新增告警 |
 | A7 | 删除项全部经过 rescue 检查 | 每个被删文件在收口记录里给出「查过哪些消费者面」的证据 |
@@ -60,6 +60,17 @@ W0-W5 六个批次已经把 `packages/` 内部清得很干净(死代码归零、
 | **测试用例数漂移** | 纯移动若误删/误改测试,总数会变而套件仍绿 | A5 把「用例数逐包相等」写成硬判据,不只看绿 |
 | **本地 tsc 与 CI 有已知差异** | 已复发三次 | 收口前必须本地 `pnpm -r exec tsc --noEmit`,不能只靠 build |
 | **改路径撞 scripts/CI 硬编码** | KT 记录过:改命令名/路径漏迁 scripts/ 与 workflows/ → 本地绿 CI 红 | R4 迁移前把 `scripts/` `.github/workflows/` `package.json` npm scripts 一并纳入引用普查 |
+
+### 3.1 A4 阈值修订(2026-08-12,用户裁决)
+
+A4 原写「顶层条目 < 40」。**该阈值是在做 import 图分析之前拍的,数据出来后证明它与
+design.md「不硬凑目录」的原则不相容**:内聚比检验显示只有 `doctor/`(2.00) 与
+`review/`(1.18) 成立,而 `plan-context/`(0.71)、`retrieval/`(0.03)、`ledger/`(0.13)、
+`knowledge/`(**0.00**)、`store/`(0.08) 全部不成立。达到 <40 必须建 4 个内聚比近零的假目录 ——
+`knowledge/` 那七个文件彼此零引用,这样一个目录名会误导每一个后来的读者。
+
+**裁决: A4 改为 ≤90,只建两个图确认的真组。** 详见 `research/services-clusters.md`。
+记录这次修订的原因,是为了让后来者知道 88 这个数字不是妥协出来的,是数据顶出来的上限。
 
 ## 5. 非目标 / 明确不追求的
 

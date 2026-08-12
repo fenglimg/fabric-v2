@@ -98,11 +98,41 @@ Windows smoke（`ci.yml`）：shared 合同面 + 已构建 CLI `--help` / `--ver
 
 ## Package Boundaries
 
-| 包 | 测试位置 | coverage 线（约） |
+| 包 | 测试位置（实测文件数） | coverage 线（约） |
 | --- | --- | --- |
-| `@fenglimg/fabric-cli` | `packages/cli/__tests__/` | 70% |
-| `@fenglimg/fabric-server` | `src/**/*.test.ts`、`__tests__/` | 75% |
-| `@fenglimg/fabric-shared` | `test/`、`src/**/*.test.ts` | 85% |
+| `@fenglimg/fabric-cli` | `__tests__/` 144，`src/` 内 0 | 70% |
+| `@fenglimg/fabric-server` | `src/**/*.test.ts` 94、`__tests__/` 8 | 75% |
+| `@fenglimg/fabric-shared` | `test/` 45、`src/**/*.test.ts` 9 | 85% |
+
+### 三包布局为什么不统一（刻意保留的差异）
+
+三包用**同一份** tsconfig 形状（`rootDir: ./src` + `include: ["src/**/*.ts"]`，无任何测试专用
+tsconfig，vitest 也没开 `typecheck`）。由此有一条**从未被写下来的后果**：
+
+> **只有共址在 `src/` 里的测试进 `tsc --noEmit`。`src/` 外的 197 个测试文件
+> （cli 144 + shared 45 + server 8）不被任何 tsconfig 类型检查。**
+
+这不是推断,是构造式探针测出来的:同一行 `const x: number = "…"` 放进
+`packages/cli/__tests__/` → `tsc` 退出 0（漏掉）;放进 `packages/server/src/services/` →
+`tsc` 退出 1 报 TS2322（抓到）。两条断言都成立才算数。
+
+所以「共址 vs 独立目录」不是排版口味,是**这批测试有没有类型覆盖**的选择:
+
+- **server 共址(94/102)** —— 服务层测试大量断言包内私有符号,共址后既能直接相对
+  import,又整体落进 `tsc` 的检查面。KT-PIT-0080 论证过这是 `rootDir` 约束下的正确
+  选择,不是待修的漂移。
+- **cli 全外置(144/144)** —— cli 测的是命令行为与安装产物,断言面是 stdout / 文件树 /
+  快照,不需要包内私有符号;换来的是 `__tests__/` 与 fixture 树放在一起。代价是这
+  144 个文件的类型错误只能等 vitest 运行时炸,不会在 `tsc` 阶段拦下。
+- **shared 混合(9 共址 / 45 外置)** —— 那 9 个共址的全部是**契约/普查型**测试
+  (`event-ledger.test.ts`、`store-contracts.test.ts`、`knowledge-enum-census.test.ts`、
+  `locale-parity.test.ts` 等),它们直接对着 zod schema 与 i18n 表断言,类型层被检查
+  的价值最高。这 9 个是有理由的例外,不是遗留。
+
+**结论:不统一。** 统一的收益是观感,代价是要么把 144 个 cli 测试搬进 `src/`(污染
+发布面 + 撑大 `rootDir`),要么把 94 个 server 测试搬出去(丢掉类型覆盖)。两条都比
+现状差。**要动的话,该动的是给测试加一份 tsconfig 把那 197 个文件纳入检查,
+而不是搬目录** —— 那是独立的一件事,不是布局问题。
 
 ## Do not
 
