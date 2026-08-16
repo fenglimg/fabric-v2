@@ -7,3 +7,12 @@ injections.jsonl
 .cache/
 *.lock
 *.corrupted.*
+
+# Install-local snapshots — `fabric install` always-rewrites these, and their
+# contents are about THIS machine (absolute target path, scan timestamp, the
+# digests of the copies this install wrote). Tracking them means every install
+# dirties the tree, and a teammate's `install_copy_drift` baseline would be
+# whoever committed last rather than their own install. Absent on a fresh
+# clone is the correct state — doctor says "run `fabric install`" and does.
+forensic.json
+install-manifest.json
