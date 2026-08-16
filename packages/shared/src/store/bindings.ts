@@ -80,13 +80,11 @@ export function resolveWorkspaceBindingId(config: {
  * its own binding declares it in its own config, which makes it the identity root
  * by rule ①.
  *
- * `workspaceRoot` is retained so callers keep documenting which checkout the key
- * is being resolved for.
+ * The `workspaceRoot` parameter is gone rather than kept-and-ignored: a second
+ * argument that cannot affect the result is an invitation for the next reader to
+ * re-derive the branch this doc comment just explained away.
  */
-export function resolveBindingIdForRoots(
-  identityRoot: string,
-  _workspaceRoot: string = identityRoot,
-): string | undefined {
+export function resolveBindingIdForRoots(identityRoot: string): string | undefined {
   const identityConfig = loadProjectConfig(identityRoot);
   if (identityConfig === null) return undefined;
   return resolveWorkspaceBindingId(identityConfig);

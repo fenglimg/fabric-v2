@@ -23,6 +23,22 @@
 > 结论是解析改 local-first(本地 config 优先,主项目继承降为冷路径 fallback),而非在现有 main-first 判据上打补丁 ——
 > 因为 `fabric-config.json` 是 tracked 的,git 本身已在向每个 worktree 分发身份。下表的错误行在 local-first 下不再可达。
 
+### 处置(2026-08-17 已实施并合入)
+
+| 条目 | 处置 | 备注 |
+| --- | --- | --- |
+| B-11 | **已修 + 严重度下调** | 见下方更正。碎片化的实际触发面比原文小得多 |
+| B-12 | 已修 | `resolveMainWorktree` 改问 `git worktree list --porcelain`,bare 记录直接返回 null,不再有"指向非 checkout 容器"这条路径 |
+| B-13 | 已修 | `ProjectContext` 新增 `identitySource: "local" \| "inherited"`;无从继承时抛带下一步命令的 `ProjectContextUnresolvedError`,不再静默钉死 |
+| B-14 | 已修 | 新增 4 种 git 布局的 fixture(normal-linked / bare-named / bare-dotbare / bare-as-dotgit)+ 14 条用例,并做了变异测试确认断言真能杀 bug |
+
+> **更正:B-11 的严重度我报重了。** 原文写"同一仓库的每个 worktree 各自成为独立 Fabric 项目(各自 `project_id` UUID)"。
+> 实测(在旧实现下跑新用例)10 条里只红了 3 条:`bare-named` 与 `bare-dotbare` 是**恰好通过**的 ——
+> 因为 `fabric-config.json` 是 tracked 的,每个 worktree 都带着同一个 `project_id`,
+> 于是"退化成 workspaceRoot"这个错误答案与正确答案**取值恰好重合**。
+> 真正会出错的是 B-12 那条(identityRoot 指向容器目录)以及本地无 config 的冷路径。
+> 这条更正本身就是原审计的教训:**推断出的失效路径要跑一遍再定级**。
+
 ## B-11 / B-12 复现(已实跑,证据)
 
 ```bash

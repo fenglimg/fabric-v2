@@ -1,3 +1,6 @@
+import { realpathSync } from "node:fs";
+import { join } from "node:path";
+
 import { afterAll, describe, expect, it } from "vitest";
 
 import { ProjectContextUnresolvedError } from "../../src/resolver/contracts.js";
@@ -5,6 +8,7 @@ import { resolveMainWorktree } from "../../src/resolver/git-worktree-identity.js
 import { createProjectContextResolver } from "../../src/resolver/project-context-resolver.js";
 import {
   createGitLayoutFixture,
+  GIT_LAYOUT_KINDS,
   LAYOUT_PROJECT_ID,
   type GitLayoutKind,
 } from "../helpers/git-layout-fixture.js";
@@ -28,7 +32,9 @@ afterAll(() => fixture.cleanup());
 const BARE_HOSTED: readonly GitLayoutKind[] = ["bare-named", "bare-dotbare", "bare-as-dotgit"];
 
 describe("identity resolution across git layouts — committed config (the normal case)", () => {
-  it.each(["normal-linked", ...BARE_HOSTED] as const)(
+  // Driven off GIT_LAYOUT_KINDS, not a hand-listed subset: adding a layout to
+  // the fixture must add coverage here, or the census silently stops being one.
+  it.each(GIT_LAYOUT_KINDS)(
     "%s: each checkout is its own identity root",
     (kind) => {
       const layout = fixture.layout(kind);
@@ -56,6 +62,18 @@ describe("identity resolution across git layouts — committed config (the norma
     }
   });
 
+  it("submodule: identity root is the submodule, never the superproject", () => {
+    const layout = fixture.layout("submodule");
+    const sub = layout.worktrees[0]!;
+    const context = createProjectContextResolver({ roots: [sub] });
+    // A submodule's git dir is `<super>/.git/modules/sub`, so the old
+    // `basename(commonDir) === ".git"` test was false and identity fell through
+    // to workspaceRoot by accident. Here it is the answer by rule, not by luck.
+    expect(context.identityRoot).toBe(sub);
+    expect(context.identitySource).toBe("local");
+    expect(context.identityRoot).not.toBe(realpathSync(join(layout.container, "super")));
+  });
+
   it("bare-as-dotgit: identity root is never the non-checkout container", () => {
     const layout = fixture.layout("bare-as-dotgit");
     const worktree = layout.worktrees[0]!;
@@ -76,6 +94,19 @@ describe("resolveMainWorktree reports Git's own answer", () => {
     expect(resolveMainWorktree(layout.worktrees[0]!)).toBe(layout.mainCheckout);
   });
 
+  // Regression guard: inside a submodule, `git worktree list --porcelain` names
+  // the submodule's GIT DIR (`<super>/.git/modules/sub`) rather than its working
+  // tree. That path exists, so an unvalidated answer would be a non-checkout
+  // directory presented as the main worktree — the same failure shape as the
+  // deleted `basename(commonDir)` heuristic, just sourced from Git.
+  it("submodule: returns null rather than Git's git-dir answer", () => {
+    const layout = fixture.layout("submodule");
+    const sub = layout.worktrees[0]!;
+    const main = resolveMainWorktree(sub);
+    expect(main).toBeNull();
+    expect(main).not.toBe(join(realpathSync(join(layout.container, "super")), ".git", "modules", "sub"));
+  });
+
   it.each(BARE_HOSTED)("%s: returns null — a bare repository has no checkout", (kind) => {
     const layout = fixture.layout(kind);
     expect(resolveMainWorktree(layout.worktrees[0]!)).toBeNull();
@@ -92,6 +123,15 @@ describe("identity resolution across git layouts — cold path (no local config)
     expect(context.workspaceRoot).toBe(worktree);
     expect(context.identityRoot).toBe(layout.mainCheckout);
     expect(context.projectId).toBe(LAYOUT_PROJECT_ID);
+  });
+
+  it("submodule: fails loudly — a submodule never inherits from its superproject", () => {
+    const layout = fixture.layout("submodule");
+    const sub = layout.worktrees[0]!;
+    layout.dropLocalConfig(sub);
+    expect(() => createProjectContextResolver({ roots: [sub] })).toThrow(
+      ProjectContextUnresolvedError,
+    );
   });
 
   it.each(BARE_HOSTED)("%s: fails loudly — there is no main checkout to inherit from", (kind) => {

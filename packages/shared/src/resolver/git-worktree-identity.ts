@@ -50,6 +50,13 @@ export function resolveGitWorktreeIdentity(start: string): Readonly<GitWorktreeI
  * silently produced a wrong answer for bare-hosted worktree layouts (a bare repo
  * at `<container>/.git` made `<container>` — not a checkout at all — look like
  * the main repository) and could never fail, only mislead.
+ *
+ * Asking Git is necessary but not sufficient: inside a SUBMODULE, Git names the
+ * first record after the submodule's git dir (`<super>/.git/modules/<name>`),
+ * not after its working tree. That path exists, so an unchecked answer would
+ * hand back a directory that is not a checkout — the exact failure class this
+ * function was written to remove. Every candidate is therefore confirmed to be a
+ * working tree that is its own top level before it is returned.
  */
 export function resolveMainWorktree(start: string): string | null {
   const absolute = resolve(start);
@@ -67,8 +74,15 @@ export function resolveMainWorktree(start: string): string | null {
     if (declared === undefined) {
       return null;
     }
-    const path = declared.slice("worktree ".length).trim();
-    return path.length > 0 && existsSync(path) ? canonical(path) : null;
+    const declaredPath = declared.slice("worktree ".length).trim();
+    if (declaredPath.length === 0 || !existsSync(declaredPath)) {
+      return null;
+    }
+    const candidate = canonical(declaredPath);
+    // Confirm it really is a checkout: `--show-toplevel` from inside a git dir
+    // fails outright, and any path whose top level is something else was never
+    // the main worktree to begin with.
+    return resolveGitWorktreeIdentity(candidate)?.workspaceRoot === candidate ? candidate : null;
   } catch {
     return null;
   }

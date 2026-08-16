@@ -177,11 +177,16 @@ SHA-256 后才原子写回。写入失败会恢复原文并再次验证；重复
 `fabric doctor --fix` 尚未连接这项 repair primitive，因此普通 doctor 结果不能替代
 provenance 判定；升级工具接入前应保留配置备份并人工确认来源。
 
-linked worktree 的 `workspaceRoot` 是当前工作树，但 `identityRoot` 指向 Git common
-identity 对应的主工作树，因此默认共享 `project_id` 和 store routes。只有在 linked
-worktree 自己的 `.fabric/fabric-config.json` 显式配置 `workspace_binding_id`，才隔离
-该 worktree 的 binding/hook state。零 root 或多 root 歧义不应猜测最近项目；请让
-client 提供单一 workspace root，或使用显式 pinned 模式。
+linked worktree 与主工作树共享同一个 `project_id`：`.fabric/fabric-config.json` 是
+tracked 的，`git worktree add` 会把它带进新 checkout，所以身份解析是 **local-first**
+—— checkout 自带 config 就是它自己的 `identityRoot`（`identitySource: "local"`），
+不去猜哪个目录是主仓库。只有早于 `fabric install` 的 checkout 才走继承冷路径
+（`identitySource: "inherited"`，继承源取 `git worktree list --porcelain` 首条记录）；
+bare 仓托管的 worktree 没有主 checkout 可继承，此时明确报错并提示在本 checkout 跑
+`fabric install`，而不是静默退回一个看起来合理的根。想隔离 binding/hook state 就在该
+checkout 自己的 `.fabric/fabric-config.json` 里声明 `workspace_binding_id`。零 root 或
+多 root 歧义不应猜测最近项目；请让 client 提供单一 workspace root，或使用显式 pinned
+模式。
 
 开发 generated hook runtime 时运行
 `pnpm --filter @fenglimg/fabric-cli build:hook-project-context`，并让 byte-parity test

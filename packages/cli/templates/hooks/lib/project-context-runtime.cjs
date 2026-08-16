@@ -4876,7 +4876,7 @@ external_exports.object({
 function resolveWorkspaceBindingId(config) {
   return config.workspace_binding_id ?? config.project_id;
 }
-function resolveBindingIdForRoots(identityRoot, _workspaceRoot = identityRoot) {
+function resolveBindingIdForRoots(identityRoot) {
   const identityConfig = loadProjectConfig(identityRoot);
   if (identityConfig === null) return void 0;
   return resolveWorkspaceBindingId(identityConfig);
@@ -4920,8 +4920,12 @@ function resolveMainWorktree(start) {
     if (declared === void 0) {
       return null;
     }
-    const path = declared.slice("worktree ".length).trim();
-    return path.length > 0 && fs.existsSync(path) ? canonical(path) : null;
+    const declaredPath = declared.slice("worktree ".length).trim();
+    if (declaredPath.length === 0 || !fs.existsSync(declaredPath)) {
+      return null;
+    }
+    const candidate = canonical(declaredPath);
+    return resolveGitWorktreeIdentity(candidate)?.workspaceRoot === candidate ? candidate : null;
   } catch {
     return null;
   }
@@ -5018,7 +5022,7 @@ function createProjectContextResolver(input = {}) {
   const { workspaceRoot, identityRoot, identitySource } = roots[0];
   const identityConfig = loadProjectConfig(identityRoot);
   const projectId = identityConfig?.project_id;
-  const bindingId = resolveBindingIdForRoots(identityRoot, workspaceRoot);
+  const bindingId = resolveBindingIdForRoots(identityRoot);
   if (projectId === void 0 || bindingId === void 0) {
     throw new ProjectContextUnresolvedError([workspaceRoot]);
   }

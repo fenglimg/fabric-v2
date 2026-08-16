@@ -28,13 +28,18 @@ export type GitLayoutKind =
   /** The `.bare` convention: `<dir>/.bare` plus a `<dir>/.git` file. */
   | "bare-dotbare"
   /** Bare repository placed at `<container>/.git` — container is not a checkout. */
-  | "bare-as-dotgit";
+  | "bare-as-dotgit"
+  /** Superproject with the seed mounted as a submodule at `<container>/sub`.
+   *  Its git dir lives at `<super>/.git/modules/sub`, so `basename(commonDir)`
+   *  is the submodule NAME — the old heuristic's other silent branch. */
+  | "submodule";
 
 export const GIT_LAYOUT_KINDS: readonly GitLayoutKind[] = [
   "normal-linked",
   "bare-named",
   "bare-dotbare",
   "bare-as-dotgit",
+  "submodule",
 ] as const;
 
 export interface GitLayout {
@@ -104,6 +109,35 @@ function buildLayout(base: string, seed: string, kind: GitLayoutKind): GitLayout
     const linked = join(container, "linked");
     git(main, ["worktree", "add", "-b", "layout-linked", linked]);
     return { ...common, mainCheckout: realpathSync(main), worktrees: [realpathSync(linked)] };
+  }
+
+  if (kind === "submodule") {
+    const superproject = join(container, "super");
+    mkdirSync(superproject, { recursive: true });
+    git(superproject, ["init", "-b", "main"]);
+    configureCommitter(superproject);
+    writeFileSync(join(superproject, "README.md"), "superproject\n", "utf8");
+    git(superproject, ["add", "."]);
+    git(superproject, ["commit", "-m", "superproject root"]);
+    // Cloning a submodule over the `file://` transport is refused by default
+    // since the CVE-2022-39253 fix; tests build from a local seed on purpose.
+    git(superproject, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "--quiet",
+      "add",
+      seed,
+      "sub",
+    ]);
+    git(superproject, ["commit", "-m", "mount seed as submodule"]);
+    // The submodule IS the main worktree of its own repository — the superproject
+    // is a different repository and must never become its identity root.
+    return {
+      ...common,
+      mainCheckout: realpathSync(join(superproject, "sub")),
+      worktrees: [realpathSync(join(superproject, "sub"))],
+    };
   }
 
   // Every remaining layout is bare-hosted: there is no main checkout at all.

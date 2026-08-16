@@ -141,7 +141,7 @@ export function createProjectContextResolver(
   const { workspaceRoot, identityRoot, identitySource } = roots[0]!;
   const identityConfig = loadProjectConfig(identityRoot);
   const projectId = identityConfig?.project_id;
-  const bindingId = resolveBindingIdForRoots(identityRoot, workspaceRoot);
+  const bindingId = resolveBindingIdForRoots(identityRoot);
   if (projectId === undefined || bindingId === undefined) {
     throw new ProjectContextUnresolvedError([workspaceRoot]);
   }

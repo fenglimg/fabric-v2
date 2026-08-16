@@ -38,7 +38,6 @@ const SKIP_SOURCE = [
   ".workflow/state.json",
   ".workflow/worktree-scope.json",
   ".workflow/worktrees.json",
-  ".fabric/forensic.json",
   // This file: its ALLOWLIST is by definition a list of paths that do not
   // resolve, so scanning itself is guaranteed self-contradiction. (Caught only
   // after `git add` — while untracked it was invisible to `git ls-files`, so
