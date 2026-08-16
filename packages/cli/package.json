@@ -24,6 +24,9 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "cocosTool": {
+    "installer": "npm-global"
+  },
   "type": "module",
   "bin": {
     "fabric": "dist/index.js"
