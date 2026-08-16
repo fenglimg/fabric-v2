@@ -1,0 +1,90 @@
+import { afterAll, describe, expect, it } from "vitest";
+
+import { ProjectContextUnresolvedError } from "../../src/resolver/contracts.js";
+import { createProjectContextResolver } from "../../src/resolver/project-context-resolver.js";
+import {
+  createGitLayoutFixture,
+  LAYOUT_PROJECT_ID,
+  type GitLayoutKind,
+} from "../helpers/git-layout-fixture.js";
+
+/**
+ * Identity resolution must hold across every Git layout, not just the one the
+ * original fixture happened to build.
+ *
+ * Contract under test (local-first):
+ *   1. a checkout that carries its own `.fabric/fabric-config.json` IS its own
+ *      identity root — no main-repository lookup happens at all;
+ *   2. only a checkout WITHOUT that file inherits, and only from a real main
+ *      checkout;
+ *   3. when there is nothing to inherit from, resolution fails loudly instead of
+ *      inventing an identity root.
+ */
+
+const fixture = createGitLayoutFixture();
+afterAll(() => fixture.cleanup());
+
+const BARE_HOSTED: readonly GitLayoutKind[] = ["bare-named", "bare-dotbare", "bare-as-dotgit"];
+
+describe("identity resolution across git layouts — committed config (the normal case)", () => {
+  it.each(["normal-linked", ...BARE_HOSTED] as const)(
+    "%s: each checkout is its own identity root",
+    (kind) => {
+      const layout = fixture.layout(kind);
+      for (const worktree of layout.worktrees) {
+        const context = createProjectContextResolver({ roots: [worktree] });
+        expect(context.workspaceRoot).toBe(worktree);
+        expect(context.identityRoot).toBe(worktree);
+        expect(context.projectId).toBe(LAYOUT_PROJECT_ID);
+      }
+    },
+  );
+
+  it("bare-named: sibling worktrees share one project identity", () => {
+    const layout = fixture.layout("bare-named");
+    expect(layout.worktrees.length).toBeGreaterThan(1);
+    const contexts = layout.worktrees.map((worktree) =>
+      createProjectContextResolver({ roots: [worktree] }),
+    );
+    const [first, ...rest] = contexts;
+    for (const context of rest) {
+      expect(context.projectId).toBe(first!.projectId);
+      expect(context.bindingId).toBe(first!.bindingId);
+      // Distinct checkouts, one shared identity — the whole point.
+      expect(context.workspaceRoot).not.toBe(first!.workspaceRoot);
+    }
+  });
+
+  it("bare-as-dotgit: identity root is never the non-checkout container", () => {
+    const layout = fixture.layout("bare-as-dotgit");
+    const worktree = layout.worktrees[0]!;
+    const context = createProjectContextResolver({ roots: [worktree] });
+    expect(context.identityRoot).not.toBe(layout.container);
+    expect(context.identityRoot).toBe(worktree);
+  });
+});
+
+describe("identity resolution across git layouts — cold path (no local config)", () => {
+  it("normal-linked: inherits from the real main checkout", () => {
+    const layout = fixture.layout("normal-linked");
+    const worktree = layout.worktrees[0]!;
+    layout.dropLocalConfig(worktree);
+
+    const context = createProjectContextResolver({ roots: [worktree] });
+    expect(context.workspaceRoot).toBe(worktree);
+    expect(context.identityRoot).toBe(layout.mainCheckout);
+    expect(context.projectId).toBe(LAYOUT_PROJECT_ID);
+  });
+
+  it.each(BARE_HOSTED)("%s: fails loudly — there is no main checkout to inherit from", (kind) => {
+    const layout = fixture.layout(kind);
+    // Bare-hosted layouts have no main checkout by construction.
+    expect(layout.mainCheckout).toBeNull();
+    const worktree = layout.worktrees[0]!;
+    layout.dropLocalConfig(worktree);
+
+    expect(() => createProjectContextResolver({ roots: [worktree] })).toThrow(
+      ProjectContextUnresolvedError,
+    );
+  });
+});
