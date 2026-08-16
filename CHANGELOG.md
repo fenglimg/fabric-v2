@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [2.5.0] - 2026-08-17
+
+2.5.0 线转正：合入 rc.1–rc.4 的配置层收口，外加下面两项。
+
+### Added
+
+- **`cocosTool` 声明**（`packages/cli/package.json`，`installer: "npm-global"`）：让 `ccpm install @fenglimg/fabric-cli -g` 可直接装 Fabric CLI。ccpm 的 dispatcher 只对声明了该段的包放行 `-g`，缺失会报 `移除 -g`。同时已把本包登记进 ccpm-index catalog。
 - feat(config): nudge_mode 新装默认 silent (AI-only channel)；老用户零迁移；恢复可见 3 路径（project / global / env FABRIC_NUDGE_MODE）+ `fabric doctor` backlog 行 + `.fabric/metrics.jsonl` 4 周 baseline。详见 `docs/RELEASE-NOTES.md`（GRL-STOPHOOK-AIONLY-20260709）。
+
+### Fixed
+
+- types: 清空 `typecheck:tests` 的 117 条基线债（117 → 0）。
 
 ## [2.5.0-rc.4] - 2026-07-28
 
