@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 
 import { ProjectContextUnresolvedError } from "../../src/resolver/contracts.js";
+import { resolveMainWorktree } from "../../src/resolver/git-worktree-identity.js";
 import { createProjectContextResolver } from "../../src/resolver/project-context-resolver.js";
 import {
   createGitLayoutFixture,
@@ -61,6 +62,23 @@ describe("identity resolution across git layouts — committed config (the norma
     const context = createProjectContextResolver({ roots: [worktree] });
     expect(context.identityRoot).not.toBe(layout.container);
     expect(context.identityRoot).toBe(worktree);
+  });
+});
+
+describe("resolveMainWorktree reports Git's own answer", () => {
+  // Asserted directly rather than only through the resolver: on the integration
+  // path `hasProjectConfig` happens to reject a bare repository too, so deleting
+  // the `bare` guard leaves every end-to-end case green. This function's stated
+  // contract — "a bare repository has no checkout to inherit from" — needs its
+  // own assertion, or the guard is unprotected.
+  it("normal-linked: names the main checkout, seen from the linked worktree", () => {
+    const layout = fixture.layout("normal-linked");
+    expect(resolveMainWorktree(layout.worktrees[0]!)).toBe(layout.mainCheckout);
+  });
+
+  it.each(BARE_HOSTED)("%s: returns null — a bare repository has no checkout", (kind) => {
+    const layout = fixture.layout(kind);
+    expect(resolveMainWorktree(layout.worktrees[0]!)).toBeNull();
   });
 });
 

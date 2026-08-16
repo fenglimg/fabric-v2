@@ -65,6 +65,7 @@ describe("project context cross-client/worktree matrix", () => {
       expect(context).toEqual({
         workspaceRoot: realpathSync(fixtureRoot(fixture, testCase.expected!.workspaceRoot)),
         identityRoot: realpathSync(fixtureRoot(fixture, testCase.expected!.identityRoot)),
+        identitySource: testCase.expected!.identitySource,
         projectId: testCase.expected!.projectId,
         bindingId: testCase.expected!.bindingId,
         source: testCase.expected!.source,

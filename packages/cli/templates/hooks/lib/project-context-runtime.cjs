@@ -4669,14 +4669,19 @@ function loadProjectConfig(projectRoot) {
 
 // ../shared/src/resolver/contracts.ts
 var ProjectContextUnresolvedError = class extends Error {
-  constructor(candidates) {
+  // Degradation must be loud and actionable, never silent (KT-DEC-0075). The
+  // resolver refuses to invent an identity root, so the error carries the next
+  // step instead of leaving the caller with a plausible-looking wrong answer.
+  constructor(candidates, hint = "run `fabric install` in this checkout to give it a project identity") {
     super(
-      candidates.length === 0 ? "Fabric project context is unresolved: no workspace root was provided" : `Fabric project context is unresolved for: ${candidates.join(", ")}`
+      (candidates.length === 0 ? "Fabric project context is unresolved: no workspace root was provided" : `Fabric project context is unresolved for: ${candidates.join(", ")}`) + (hint.length > 0 ? ` \u2014 ${hint}` : "")
     );
     this.candidates = candidates;
+    this.hint = hint;
     this.name = "ProjectContextUnresolvedError";
   }
   candidates;
+  hint;
   code = "FABRIC_PROJECT_CONTEXT_UNRESOLVED";
 };
 var ProjectContextAmbiguousError = class extends Error {
@@ -4871,12 +4876,10 @@ external_exports.object({
 function resolveWorkspaceBindingId(config) {
   return config.workspace_binding_id ?? config.project_id;
 }
-function resolveBindingIdForRoots(identityRoot, workspaceRoot = identityRoot) {
+function resolveBindingIdForRoots(identityRoot, _workspaceRoot = identityRoot) {
   const identityConfig = loadProjectConfig(identityRoot);
   if (identityConfig === null) return void 0;
-  if (workspaceRoot === identityRoot) return resolveWorkspaceBindingId(identityConfig);
-  const workspaceConfig = loadProjectConfig(workspaceRoot);
-  return workspaceConfig?.workspace_binding_id ?? identityConfig.workspace_binding_id ?? identityConfig.project_id;
+  return resolveWorkspaceBindingId(identityConfig);
 }
 function git(start, args) {
   return child_process.execFileSync("git", ["-C", start, ...args], {
@@ -4897,8 +4900,28 @@ function resolveGitWorktreeIdentity(start) {
     const gitDir = canonical(git(absolute, ["rev-parse", "--absolute-git-dir"]));
     const commonRaw = git(absolute, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
     const commonDir = canonical(path.isAbsolute(commonRaw) ? commonRaw : path.resolve(workspaceRoot, commonRaw));
-    const identityRoot = path.basename(commonDir) === ".git" ? canonical(path.dirname(commonDir)) : workspaceRoot;
-    return Object.freeze({ workspaceRoot, identityRoot, gitDir, commonDir });
+    return Object.freeze({ workspaceRoot, gitDir, commonDir });
+  } catch {
+    return null;
+  }
+}
+function resolveMainWorktree(start) {
+  const absolute = path.resolve(start);
+  if (!fs.existsSync(absolute)) {
+    return null;
+  }
+  try {
+    const [firstRecord = ""] = git(absolute, ["worktree", "list", "--porcelain"]).split(/\r?\n\r?\n/);
+    const lines = firstRecord.split(/\r?\n/);
+    if (lines.some((line) => line.trim() === "bare")) {
+      return null;
+    }
+    const declared = lines.find((line) => line.startsWith("worktree "));
+    if (declared === void 0) {
+      return null;
+    }
+    const path = declared.slice("worktree ".length).trim();
+    return path.length > 0 && fs.existsSync(path) ? canonical(path) : null;
   } catch {
     return null;
   }
@@ -4943,16 +4966,23 @@ function resolveProjectRoot(startCwd) {
   }
   return firstFabric ?? start;
 }
+function hasProjectConfig(root) {
+  return loadProjectConfig(root) !== null;
+}
 function resolveRoots(candidate) {
   const gitIdentity = resolveGitWorktreeIdentity(candidate);
-  if (gitIdentity !== null) {
-    return {
-      workspaceRoot: gitIdentity.workspaceRoot,
-      identityRoot: gitIdentity.identityRoot
-    };
+  const workspaceRoot = gitIdentity?.workspaceRoot ?? findProjectMarker(candidate);
+  if (workspaceRoot === null) return null;
+  if (hasProjectConfig(workspaceRoot)) {
+    return { workspaceRoot, identityRoot: workspaceRoot, identitySource: "local" };
   }
-  const marker = findProjectMarker(candidate);
-  return marker === null ? null : { workspaceRoot: marker, identityRoot: marker };
+  if (gitIdentity !== null) {
+    const mainWorktree = resolveMainWorktree(candidate);
+    if (mainWorktree !== null && mainWorktree !== workspaceRoot && hasProjectConfig(mainWorktree)) {
+      return { workspaceRoot, identityRoot: mainWorktree, identitySource: "inherited" };
+    }
+  }
+  return null;
 }
 function uniqueRoots(candidates, cwd) {
   const roots = /* @__PURE__ */ new Map();
@@ -4985,14 +5015,21 @@ function createProjectContextResolver(input = {}) {
   if (roots.length > 1) {
     throw new ProjectContextAmbiguousError(roots.map((root) => root.workspaceRoot));
   }
-  const { workspaceRoot, identityRoot } = roots[0];
+  const { workspaceRoot, identityRoot, identitySource } = roots[0];
   const identityConfig = loadProjectConfig(identityRoot);
   const projectId = identityConfig?.project_id;
   const bindingId = resolveBindingIdForRoots(identityRoot, workspaceRoot);
   if (projectId === void 0 || bindingId === void 0) {
     throw new ProjectContextUnresolvedError([workspaceRoot]);
   }
-  return Object.freeze({ workspaceRoot, identityRoot, projectId, bindingId, source });
+  return Object.freeze({
+    workspaceRoot,
+    identityRoot,
+    identitySource,
+    projectId,
+    bindingId,
+    source
+  });
 }
 
 exports.ProjectContextAmbiguousError = ProjectContextAmbiguousError;

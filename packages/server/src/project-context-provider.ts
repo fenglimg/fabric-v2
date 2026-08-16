@@ -49,12 +49,23 @@ function resolveLegacyRoot(roots: readonly string[], startCwd = process.cwd()): 
   return anchored ?? roots[0] ?? startCwd;
 }
 
+/**
+ * Last-resort context when the strict resolver refuses to name an identity root.
+ *
+ * `identitySource` is always `"local"` here: this path never inherits, it only
+ * reports the workspace as its own (possibly unconfigured) identity. That is not
+ * a silent degradation — the same condition that lands us here (no
+ * `.fabric/fabric-config.json` at the root) is what `projectRootWarning` keys
+ * off, so the outage is announced on all three surfaces per KT-DEC-0075 rather
+ * than being papered over with a plausible-looking root.
+ */
 function fallbackContext(workspaceRoot: string): Readonly<ProjectContext> {
   const config = loadProjectConfig(workspaceRoot);
   const projectId = config?.project_id ?? `unresolved:${workspaceRoot}`;
   return Object.freeze({
     workspaceRoot,
     identityRoot: workspaceRoot,
+    identitySource: "local",
     projectId,
     bindingId: resolveBindingIdForRoots(workspaceRoot) ?? projectId,
     source:

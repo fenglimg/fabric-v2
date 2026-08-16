@@ -69,20 +69,27 @@ export function resolveWorkspaceBindingId(config: {
   return config.workspace_binding_id ?? config.project_id;
 }
 
-/** Resolve repo identity from identityRoot and an optional per-worktree binding override. */
+/**
+ * Resolve the runtime state key from the identity root's config.
+ *
+ * There is no per-workspace override arm: under local-first resolution a checkout
+ * that carries its own config IS the identity root, so `workspaceRoot` can only
+ * differ from `identityRoot` on the inherited path — and inheriting requires the
+ * workspace to have no config at all. Reading a workspace-local
+ * `workspace_binding_id` there was therefore unreachable. A checkout that wants
+ * its own binding declares it in its own config, which makes it the identity root
+ * by rule ①.
+ *
+ * `workspaceRoot` is retained so callers keep documenting which checkout the key
+ * is being resolved for.
+ */
 export function resolveBindingIdForRoots(
   identityRoot: string,
-  workspaceRoot: string = identityRoot,
+  _workspaceRoot: string = identityRoot,
 ): string | undefined {
   const identityConfig = loadProjectConfig(identityRoot);
   if (identityConfig === null) return undefined;
-  if (workspaceRoot === identityRoot) return resolveWorkspaceBindingId(identityConfig);
-  const workspaceConfig = loadProjectConfig(workspaceRoot);
-  return (
-    workspaceConfig?.workspace_binding_id ??
-    identityConfig.workspace_binding_id ??
-    identityConfig.project_id
-  );
+  return resolveWorkspaceBindingId(identityConfig);
 }
 
 export interface WriteBindingsSnapshotOptions {

@@ -62,6 +62,7 @@ describe("projectRootWarning (KT-PIT-0046 fail-loud)", () => {
     const warning = projectRootWarning(Object.freeze({
       workspaceRoot: root,
       identityRoot: root,
+      identitySource: "local" as const,
       projectId: `unresolved:${root}`,
       bindingId: `unresolved:${root}`,
       source: "cwd" as const,

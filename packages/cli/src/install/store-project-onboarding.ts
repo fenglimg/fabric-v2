@@ -2,10 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 
-import {
-  createProjectContextResolver,
-  resolveGitWorktreeIdentity,
-} from "@fenglimg/fabric-shared";
+import { createProjectContextResolver } from "@fenglimg/fabric-shared";
 
 import { loadProjectConfig, saveProjectConfig } from "../store/project-config-io.js";
 import {
@@ -61,8 +58,12 @@ export async function ensureStoreProjectBinding(
   options: EnsureStoreProjectBindingOptions,
 ): Promise<StoreProjectBindingResult> {
   const now = options.now ?? new Date().toISOString();
-  const identityRoot = resolveGitWorktreeIdentity(projectRoot)?.identityRoot ?? projectRoot;
-  ensureProjectId(identityRoot, options.uuid);
+  // Install into THIS checkout. Previously the project_id was minted into the
+  // repository's main worktree, so running `fabric install` from a linked
+  // worktree wrote `.fabric/` into a checkout the user was not working in. Under
+  // local-first resolution the config belongs where it is installed, and Git
+  // distributes it to sibling worktrees because the file is committed.
+  ensureProjectId(projectRoot, options.uuid);
   const context = createProjectContextResolver({ roots: [projectRoot] });
   const project_id = context.projectId;
   const currentConfig = loadProjectConfig(context.identityRoot);

@@ -7,20 +7,17 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { ProjectContextResolverInput } from "@fenglimg/fabric-shared";
+import type { ProjectContext, ProjectContextResolverInput } from "@fenglimg/fabric-shared";
 import { createProjectContextResolver as createEsmContext } from "@fenglimg/fabric-shared";
 
 const require = createRequire(import.meta.url);
+// Typed with the shared `ProjectContext` rather than a hand-copied shape: this
+// suite exists to prove the generated CJS bundle matches the ESM contract, and a
+// duplicated structural type would just drift away from it on the next field.
 const runtime = require(
   fileURLToPath(new URL("../templates/hooks/lib/project-context-runtime.cjs", import.meta.url)),
 ) as {
-  createProjectContextResolver: (input?: ProjectContextResolverInput) => Readonly<{
-    workspaceRoot: string;
-    identityRoot: string;
-    projectId: string;
-    bindingId: string;
-    source: string;
-  }>;
+  createProjectContextResolver: (input?: ProjectContextResolverInput) => Readonly<ProjectContext>;
 };
 
 const PROJECT_ID = "11111111-1111-4111-8111-111111111111";
@@ -83,7 +80,7 @@ describe("shared ESM and generated hook CJS ProjectContext parity", () => {
     expectContextParity({ roots: [repo] });
   });
 
-  it("matches identity inheritance in a real linked worktree", () => {
+  it("matches local identity in a real linked worktree", () => {
     const repo = createRepo("hook-runtime-main-");
     const linkedParent = makeTemp("hook-runtime-linked-");
     const linked = join(linkedParent, "work");
@@ -91,10 +88,28 @@ describe("shared ESM and generated hook CJS ProjectContext parity", () => {
 
     expectContextParity({ roots: [linked] });
     const context = runtime.createProjectContextResolver({ roots: [linked] });
-    expect(context.workspaceRoot).not.toBe(context.identityRoot);
+    // The committed config rides along with `git worktree add`, so the checkout
+    // owns its identity — one repository still means one project_id.
+    expect(context.workspaceRoot).toBe(context.identityRoot);
+    expect(context.identitySource).toBe("local");
     expect(context.projectId).toBe(PROJECT_ID);
     expect(context.bindingId).toBe(PROJECT_ID);
     expect(context.source).toBe("client-root");
+  });
+
+  it("matches identity inheritance when the worktree carries no config", () => {
+    const repo = createRepo("hook-runtime-coldmain-");
+    const linkedParent = makeTemp("hook-runtime-coldlinked-");
+    const linked = join(linkedParent, "work");
+    git(repo, ["worktree", "add", "-b", "cold", linked]);
+    // A checkout that predates `fabric install` — the only inheriting path left.
+    rmSync(join(linked, ".fabric"), { recursive: true, force: true });
+
+    expectContextParity({ roots: [linked] });
+    const context = runtime.createProjectContextResolver({ roots: [linked] });
+    expect(context.workspaceRoot).not.toBe(context.identityRoot);
+    expect(context.identitySource).toBe("inherited");
+    expect(context.projectId).toBe(PROJECT_ID);
   });
 
   it("matches an explicit worktree binding override", () => {
