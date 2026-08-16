@@ -13,16 +13,16 @@
 // self-limiting at one file; one file per session grows without bound.
 
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
 import { ACTIVE_SESSION_FILE_PREFIX, ACTIVE_SESSION_FILE_SUFFIX } from "./active-session.js";
 import {
+  matchStaleSweepFamily,
   SESSION_HINTS_FILE_PREFIX,
   SESSION_HINTS_FILE_SUFFIX,
-  STALE_SWEEP_PREFIXES,
 } from "./doctor/doctor-session-hints-stale.js";
 
 const require_ = createRequire(import.meta.url);
@@ -53,6 +53,42 @@ const narrowHook = require_(join(HOOK_LIB, "knowledge-hint-narrow.cjs")) as {
   };
 };
 
+const signalState = require_(join(HOOK_LIB, "session-signal-state.cjs")) as {
+  sessionScopedCacheFile: (baseRelPath: string, sessionId: string) => string;
+  sessionDismissFileName: (sessionId: string) => string;
+};
+
+const hintConfig = require_(join(HOOK_LIB, "hint-config.cjs")) as {
+  SHOWN_CACHE_FILE: string;
+  MAINTENANCE_HINT_LAST_EMIT_FILE: string;
+};
+
+const ROUND_TRIP_SESSION = "sess-round-trip";
+
+/**
+ * Every per-session filename the hooks can write, produced by calling the REAL
+ * writer helper — not by re-spelling its prefix here.
+ *
+ * The previous version of this gate listed three prefixes by hand and asserted
+ * those three were swept. It was green while three OTHER per-session families
+ * (`archive-hint-shown-*`, `hint-dismiss-*`, `maintenance-hint-last-emit-*`)
+ * accumulated unswept, because a hand-written list verifies its own contents,
+ * not the world. Adding a helper call here is the only maintenance step left.
+ */
+const WRITTEN_SIDECAR_NAMES: readonly string[] = [
+  stateStore.activeSessionFileName(ROUND_TRIP_SESSION),
+  basename(narrowHook.narrowDedupWindowPath("/tmp/parity", ROUND_TRIP_SESSION)),
+  `${narrowHook.CONSTANTS.SESSION_HINTS_FILE_PREFIX}${ROUND_TRIP_SESSION}${narrowHook.CONSTANTS.SESSION_HINTS_FILE_SUFFIX}`,
+  basename(signalState.sessionScopedCacheFile(hintConfig.SHOWN_CACHE_FILE, ROUND_TRIP_SESSION)),
+  basename(
+    signalState.sessionScopedCacheFile(
+      hintConfig.MAINTENANCE_HINT_LAST_EMIT_FILE,
+      ROUND_TRIP_SESSION,
+    ),
+  ),
+  signalState.sessionDismissFileName(ROUND_TRIP_SESSION),
+];
+
 describe("per-session cache filename parity (writer hooks ↔ reader server)", () => {
   it("active-session: the name the hook writes is the name the server looks for", () => {
     expect(stateStore.ACTIVE_SESSION_FILE_PREFIX).toBe(ACTIVE_SESSION_FILE_PREFIX);
@@ -68,22 +104,21 @@ describe("per-session cache filename parity (writer hooks ↔ reader server)", (
     expect(narrowHook.CONSTANTS.SESSION_HINTS_FILE_SUFFIX).toBe(SESSION_HINTS_FILE_SUFFIX);
   });
 
-  it("every per-session sidecar the hooks write is swept by lint #27", () => {
-    const written = [
-      stateStore.ACTIVE_SESSION_FILE_PREFIX,
-      narrowHook.CONSTANTS.SESSION_HINTS_FILE_PREFIX,
-      narrowHook.CONSTANTS.NARROW_DEDUP_WINDOW_FILE_PREFIX,
-    ];
-    for (const prefix of written) {
-      expect(STALE_SWEEP_PREFIXES).toContain(prefix);
-    }
+  it.each(WRITTEN_SIDECAR_NAMES)("lint #27 sweeps %s", (name) => {
+    // Round-trip: the writer produced this exact name, so the reader must claim
+    // it. Prefix AND suffix are checked together — `maintenance-hint-last-emit-*`
+    // has no extension, and a shared `.json` gate silently skipped it.
+    expect(matchStaleSweepFamily(name)).not.toBeNull();
   });
 
-  it("sweep only matches names the sweep's suffix check can see", () => {
-    // The sweep filters on one shared `.json` suffix; a sidecar written with a
-    // different extension would be listed as a prefix match and then silently
-    // skipped, i.e. never cleaned up.
-    expect(narrowHook.CONSTANTS.NARROW_DEDUP_WINDOW_FILE_SUFFIX).toBe(SESSION_HINTS_FILE_SUFFIX);
-    expect(stateStore.ACTIVE_SESSION_FILE_SUFFIX).toBe(SESSION_HINTS_FILE_SUFFIX);
+  it("the sweep does not claim the legacy shared slots those families grew out of", () => {
+    // Each per-session family replaced a single shared file. Those pre-split
+    // names still exist in the wild and are self-limiting at one file; the DELETE
+    // arm must not widen onto them (KT-PIT-0051).
+    for (const legacy of ["archive-hint-shown.json", "narrow-dedup-window.json", "active-session.json"]) {
+      expect(matchStaleSweepFamily(legacy)).toBeNull();
+    }
+    // A prefix hit with an empty session token is not a session file either.
+    expect(matchStaleSweepFamily(`${SESSION_HINTS_FILE_PREFIX}${SESSION_HINTS_FILE_SUFFIX}`)).toBeNull();
   });
 });

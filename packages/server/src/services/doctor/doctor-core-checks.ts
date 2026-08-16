@@ -7,6 +7,8 @@ import type { AgentsMeta, ForensicReport, OnboardSlot, Translator } from "@fengl
 import { ONBOARD_SLOT_NAMES, ONBOARD_SLOT_TOTAL } from "@fenglimg/fabric-shared";
 import type { DoctorCheck, MetaInspection } from "../doctor-types.js";
 import { issueCheck, okCheck } from "./doctor-check-helpers.js";
+// Single home for the threshold — this module used to re-declare its own `7`.
+import { SESSION_HINTS_STALE_DAYS } from "./doctor-session-hints-stale.js";
 import type { EventsJsonlGatesReport } from "../events-jsonl-gates.js";
 
 /** Result shape of inspectForensic (kept local to avoid coupling to doctor.ts). */
@@ -104,9 +106,6 @@ export function emptyDraftBacklogInspection(): DraftBacklogInspection {
 }
 
 export const DEFAULT_UNDERSEED_NODE_THRESHOLD = 10;
-export const SESSION_HINTS_STALE_DAYS = 7;
-export const SESSION_HINTS_FILE_PREFIX = "session-hints-";
-export const SESSION_HINTS_FILE_SUFFIX = ".json";
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export const EMPTY_META_INSPECTION: MetaInspection = {

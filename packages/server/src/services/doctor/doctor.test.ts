@@ -1020,6 +1020,17 @@ describe("runDoctorReport", () => {
     const NOW_SECONDS = Math.floor(Date.now() / 1000);
     const DAY_SECONDS = 24 * 60 * 60;
 
+    function seedCacheFile(target: string, name: string, mtimeAgeDays: number): string {
+      const cacheDir = join(target, ".fabric", ".cache");
+      mkdirSync(cacheDir, { recursive: true });
+      const file = join(cacheDir, name);
+      writeFileSync(file, "seed\n", "utf8");
+      // Reach back in time to age the mtime. utimesSync takes seconds.
+      const targetSeconds = NOW_SECONDS - mtimeAgeDays * DAY_SECONDS;
+      utimesSync(file, targetSeconds, targetSeconds);
+      return file;
+    }
+
     function seedSessionHintsFile(
       target: string,
       sessionId: string,
@@ -1159,6 +1170,70 @@ describe("runDoctorReport", () => {
       // Fresh file preserved, stale file deleted.
       expect(existsSync(freshFile)).toBe(true);
       expect(existsSync(staleFile)).toBe(false);
+    });
+
+    // The sweep is a DELETE arm driven by a name pattern. KT-PIT-0051 records
+    // `fabric doctor --fix` eating test fixtures twice, so the widening below is
+    // fenced by this assertion first: everything the pattern does NOT claim must
+    // survive, no matter how old it is.
+    it("apply-lint never deletes cache entries outside the per-session families", async () => {
+      const target = createInitializedProject("doctor-sessionhints-preserve-others");
+      writeFile(".fabric/events.jsonl", "", target);
+      const survivors = [
+        // Shared single-slot sidecars — self-limiting, not per-session.
+        seedCacheFile(target, "edit-counter", 400),
+        seedCacheFile(target, "hint-silence-counter", 400),
+        seedCacheFile(target, "graph-edge-requested", 400),
+        seedCacheFile(target, "knowledge-hint-broad-last-emit", 400),
+        seedCacheFile(target, "summary-fallback.json", 400),
+        // Legacy pre-split slots: same stem, but no `-<session_id>` segment.
+        seedCacheFile(target, "archive-hint-shown.json", 400),
+        seedCacheFile(target, "narrow-dedup-window.json", 400),
+        seedCacheFile(target, "active-session.json", 400),
+        // A prefix match with an EMPTY session token is not a session file.
+        seedCacheFile(target, "session-hints-.json", 400),
+        // Anything a human or a fixture put here on purpose.
+        seedCacheFile(target, "fixture-do-not-delete.json", 400),
+      ];
+      // Directories are never sweep candidates either.
+      const digests = join(target, ".fabric", ".cache", "session-digests");
+      mkdirSync(digests, { recursive: true });
+
+      const result = await runApplyLint(target);
+      expect(result.aborted).toBe(false);
+      expect(
+        result.mutations.filter((m) => m.kind === "knowledge_session_hints_stale_cleanup"),
+      ).toHaveLength(0);
+      for (const file of survivors) {
+        expect(existsSync(file), `${file} must survive apply-lint`).toBe(true);
+      }
+      expect(existsSync(digests)).toBe(true);
+    });
+
+    // Census of every per-session sidecar the hooks actually write (measured
+    // against a real `.fabric/.cache/`), not just the ones the sweep already
+    // knew about. `maintenance-hint-last-emit-*` carries NO extension, so a
+    // single shared `.json` suffix gate silently skipped it even where the
+    // prefix matched.
+    it.each([
+      ["session-hints-sess-a.json"],
+      ["narrow-dedup-window-sess-a.json"],
+      ["active-session-sess-a.json"],
+      ["archive-hint-shown-sess-a.json"],
+      ["hint-dismiss-sess-a.json"],
+      ["maintenance-hint-last-emit-sess-a"],
+    ])("apply-lint sweeps stale %s", async (name) => {
+      const target = createInitializedProject(`doctor-sessionhints-sweep-${name}`);
+      writeFile(".fabric/events.jsonl", "", target);
+      const stale = seedCacheFile(target, name, 30);
+      const fresh = seedCacheFile(target, name.replace("sess-a", "sess-b"), 1);
+
+      const result = await runApplyLint(target);
+      expect(
+        result.mutations.filter((m) => m.kind === "knowledge_session_hints_stale_cleanup"),
+      ).toHaveLength(1);
+      expect(existsSync(stale)).toBe(false);
+      expect(existsSync(fresh)).toBe(true);
     });
 
     it("apply-lint cleanup is idempotent (second run produces zero mutations)", async () => {
