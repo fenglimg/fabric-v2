@@ -14,11 +14,12 @@ import {
   ProjectContextAmbiguousError,
   ProjectContextUnresolvedError,
 } from "./contracts.js";
-import { resolveGitWorktreeIdentity } from "./git-worktree-identity.js";
+import { resolveGitWorktreeIdentity, resolveMainWorktree } from "./git-worktree-identity.js";
 
 interface ResolvedRoots {
   workspaceRoot: string;
   identityRoot: string;
+  identitySource: ProjectContext["identitySource"];
 }
 
 function canonicalCandidate(raw: string, cwd: string): string | null {
@@ -65,16 +66,39 @@ export function resolveProjectRoot(startCwd?: string): string {
   return firstFabric ?? start;
 }
 
+function hasProjectConfig(root: string): boolean {
+  return loadProjectConfig(root) !== null;
+}
+
+/**
+ * Local-first identity resolution.
+ *
+ *   ① the checkout carries its own config  → it IS the identity root
+ *   ② otherwise inherit from Git's own main worktree, if that checkout is installed
+ *   ③ otherwise return null — callers fail loudly instead of inventing a root
+ *
+ * Because `.fabric/fabric-config.json` is committed, `git worktree add` gives
+ * every checkout the same project_id, so ① covers all normal layouts (including
+ * bare-hosted ones) without consulting the repository topology at all. ② is the
+ * cold path for a checkout that predates `fabric install`.
+ */
 function resolveRoots(candidate: string): ResolvedRoots | null {
   const gitIdentity = resolveGitWorktreeIdentity(candidate);
-  if (gitIdentity !== null) {
-    return {
-      workspaceRoot: gitIdentity.workspaceRoot,
-      identityRoot: gitIdentity.identityRoot,
-    };
+  const workspaceRoot = gitIdentity?.workspaceRoot ?? findProjectMarker(candidate);
+  if (workspaceRoot === null) return null;
+
+  if (hasProjectConfig(workspaceRoot)) {
+    return { workspaceRoot, identityRoot: workspaceRoot, identitySource: "local" };
   }
-  const marker = findProjectMarker(candidate);
-  return marker === null ? null : { workspaceRoot: marker, identityRoot: marker };
+
+  if (gitIdentity !== null) {
+    const mainWorktree = resolveMainWorktree(candidate);
+    if (mainWorktree !== null && mainWorktree !== workspaceRoot && hasProjectConfig(mainWorktree)) {
+      return { workspaceRoot, identityRoot: mainWorktree, identitySource: "inherited" };
+    }
+  }
+
+  return null;
 }
 
 function uniqueRoots(candidates: readonly string[], cwd: string): ResolvedRoots[] {
@@ -114,15 +138,22 @@ export function createProjectContextResolver(
     throw new ProjectContextAmbiguousError(roots.map((root) => root.workspaceRoot));
   }
 
-  const { workspaceRoot, identityRoot } = roots[0]!;
+  const { workspaceRoot, identityRoot, identitySource } = roots[0]!;
   const identityConfig = loadProjectConfig(identityRoot);
   const projectId = identityConfig?.project_id;
-  const bindingId = resolveBindingIdForRoots(identityRoot, workspaceRoot);
+  const bindingId = resolveBindingIdForRoots(identityRoot);
   if (projectId === undefined || bindingId === undefined) {
     throw new ProjectContextUnresolvedError([workspaceRoot]);
   }
 
-  return Object.freeze({ workspaceRoot, identityRoot, projectId, bindingId, source });
+  return Object.freeze({
+    workspaceRoot,
+    identityRoot,
+    identitySource,
+    projectId,
+    bindingId,
+    source,
+  });
 }
 
 /** Legacy pure adapter retained for callers that still collect root signals. */

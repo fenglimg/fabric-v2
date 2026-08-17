@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "审计 cli/server/shared 跨包数据流与分层边界时的思考清单(W3.5)"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "审计重复实现/未接线能力(W3.4)时判断是否属重复建设"}
+{"file": ".trellis/tasks/08-13-fabric-domain-and-engineering-audit/design.md", "reason": "审计方法论与既往 KB 线索表,决定每条结论需要什么证据"}

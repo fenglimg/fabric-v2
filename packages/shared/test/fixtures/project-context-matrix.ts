@@ -25,6 +25,8 @@ export interface ProjectContextMatrixCase {
   expected?: {
     workspaceRoot: GitFixtureRoot;
     identityRoot: GitFixtureRoot;
+    /** local = the checkout carries its own config; inherited = came from the main worktree. */
+    identitySource: "local" | "inherited";
     projectId: string;
     bindingId: string;
     source: "client-root" | "explicit-pin";
@@ -42,6 +44,7 @@ export const PROJECT_CONTEXT_MATRIX: readonly ProjectContextMatrixCase[] = [
     expected: {
       workspaceRoot: "linked",
       identityRoot: "main",
+      identitySource: "inherited",
       projectId: MAIN_PROJECT_ID,
       bindingId: MAIN_PROJECT_ID,
       source: "client-root",
@@ -57,6 +60,7 @@ export const PROJECT_CONTEXT_MATRIX: readonly ProjectContextMatrixCase[] = [
     expected: {
       workspaceRoot: "linked",
       identityRoot: "main",
+      identitySource: "inherited",
       projectId: MAIN_PROJECT_ID,
       bindingId: MAIN_PROJECT_ID,
       source: "explicit-pin",
@@ -70,7 +74,8 @@ export const PROJECT_CONTEXT_MATRIX: readonly ProjectContextMatrixCase[] = [
     workspaceBinding: "isolated",
     expected: {
       workspaceRoot: "linked",
-      identityRoot: "main",
+      identityRoot: "linked",
+      identitySource: "local",
       projectId: MAIN_PROJECT_ID,
       bindingId: ISOLATED_WORKSPACE_BINDING_ID,
       source: "client-root",
@@ -86,6 +91,7 @@ export const PROJECT_CONTEXT_MATRIX: readonly ProjectContextMatrixCase[] = [
     expected: {
       workspaceRoot: "main",
       identityRoot: "main",
+      identitySource: "local",
       projectId: MAIN_PROJECT_ID,
       bindingId: MAIN_PROJECT_ID,
       source: "explicit-pin",
@@ -100,6 +106,7 @@ export const PROJECT_CONTEXT_MATRIX: readonly ProjectContextMatrixCase[] = [
     expected: {
       workspaceRoot: "main",
       identityRoot: "main",
+      identitySource: "local",
       projectId: MAIN_PROJECT_ID,
       bindingId: MAIN_PROJECT_ID,
       source: "client-root",
@@ -114,7 +121,8 @@ export const PROJECT_CONTEXT_MATRIX: readonly ProjectContextMatrixCase[] = [
     workspaceBinding: "isolated",
     expected: {
       workspaceRoot: "linked",
-      identityRoot: "main",
+      identityRoot: "linked",
+      identitySource: "local",
       projectId: MAIN_PROJECT_ID,
       bindingId: ISOLATED_WORKSPACE_BINDING_ID,
       source: "explicit-pin",
@@ -146,6 +154,7 @@ export const PROJECT_CONTEXT_MATRIX: readonly ProjectContextMatrixCase[] = [
     expected: {
       workspaceRoot: "unrelated",
       identityRoot: "unrelated",
+      identitySource: "local",
       projectId: UNRELATED_PROJECT_ID,
       bindingId: UNRELATED_PROJECT_ID,
       source: "explicit-pin",

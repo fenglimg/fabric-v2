@@ -73,11 +73,20 @@ canonical store entries，并以 `alias:id` 加 structured provenance 表达引�
 server、CLI 与 generated hook runtime 只消费同一个 `ProjectContext` contract：
 
 - `workspaceRoot` 是当前实际工作树；项目相对的读取、写入与提示路径以它为基准。
-- `identityRoot` 是 Git common identity 对应的主工作树。linked worktree 默认从这里
-  继承 `project_id` 和 store routes。
+- `identityRoot` 是拥有 `project_id` / store routes 的根。解析是 **local-first**：
+  checkout 自带 `.fabric/fabric-config.json` 时它就是自己的 `identityRoot`
+  （`identitySource: "local"`），不查仓库拓扑；该文件是 tracked 的，所以
+  `git worktree add` 天然把同一个 `project_id` 带进每个工作树。
+- `identitySource` 记录身份来源：`local`（本 checkout 自带 config）或 `inherited`
+  （本 checkout 早于 `fabric install`，从 git 报告的主工作树继承）。继承源问
+  `git worktree list --porcelain` 首条记录要，bare 仓没有主 checkout 时不继承；
+  拿不到可继承身份就抛 `FABRIC_PROJECT_CONTEXT_UNRESOLVED`（带「在本 checkout 跑
+  `fabric install`」的下一步），绝不编造 `identityRoot`。
 - `projectId` 来自 `identityRoot/.fabric/fabric-config.json`。
-- `bindingId` 默认继承 `projectId`；只有当前 `workspaceRoot` 显式声明
-  `workspace_binding_id` 时，才为该 worktree 隔离 resolved binding 和 hook state。
+- `bindingId` 默认继承 `projectId`；只有 `identityRoot` 的 config 显式声明
+  `workspace_binding_id` 时才隔离 resolved binding 和 hook state。local-first 下
+  「workspace 本地覆盖 identity 的 binding」不可达（本地有 config ⇒ 它就是
+  identityRoot），该分支已删除。
 - `source` 记录本次解析来自 `explicit-pin`、`client-root` 或兼容 `cwd` 信号。
 
 解析优先级是 explicit pin > MCP client roots > cwd adapter。shared resolver 对零个

@@ -48,20 +48,51 @@ const PROJECT_ROOT_ACTION_HINT =
   "or use an MCP client that exposes workspace roots (adopted automatically after initialize). " +
   "Run `fabric doctor` in the project to verify.";
 
+export const PROJECT_IDENTITY_INHERITED_CODE = "project_identity_inherited";
+
+const PROJECT_IDENTITY_INHERITED_ACTION_HINT =
+  "Run `fabric install` in this checkout to give it its own identity, and commit " +
+  "`.fabric/fabric-config.json` so every worktree of this repository carries it.";
+
 /**
- * Returns the fail-loud warning when `projectRoot` carries no
+ * Returns the fail-loud warning when the resolved identity root carries no
  * `.fabric/fabric-config.json`, else null. Tool handlers append the non-null
  * result to their response `warnings[]`.
+ *
+ * The check is keyed on `identityRoot`, not `workspaceRoot`: under local-first
+ * resolution those differ exactly on the inherited cold path, where the checkout
+ * has no config of its own but a real identity (and therefore a real read-set)
+ * was inherited from the main worktree. Keying on `workspaceRoot` there claimed
+ * "team stores are NOT loaded" while they were loaded — a warning that fires when
+ * nothing is wrong is how a fail-loud signal gets trained away (KT-DEC-0075).
+ *
+ * That case still gets a signal, just an accurate and milder one.
+ *
+ * A bare projectRoot string keeps the old behaviour — the rootless MCP spawn this
+ * module was written for (`fallbackContext`, cwd=/) pins identityRoot to
+ * workspaceRoot, so it still trips the unresolved arm.
  */
 export function projectRootWarning(
   input: string | Readonly<ProjectContext>,
 ): ProjectRootWarning | null {
-  const projectRoot = workspaceRoot(input);
-  if (isProjectRootConfigured(projectRoot)) return null;
-  return {
-    code: PROJECT_ROOT_UNRESOLVED_CODE,
-    file: "<server>",
-    message: projectRootUnresolvedMessage(projectRoot),
-    action_hint: PROJECT_ROOT_ACTION_HINT,
-  };
+  const identityRoot = typeof input === "string" ? input : input.identityRoot;
+  if (!isProjectRootConfigured(identityRoot)) {
+    return {
+      code: PROJECT_ROOT_UNRESOLVED_CODE,
+      file: "<server>",
+      message: projectRootUnresolvedMessage(workspaceRoot(input)),
+      action_hint: PROJECT_ROOT_ACTION_HINT,
+    };
+  }
+  if (typeof input !== "string" && input.identitySource === "inherited") {
+    return {
+      code: PROJECT_IDENTITY_INHERITED_CODE,
+      file: "<server>",
+      message:
+        `this checkout has no .fabric/fabric-config.json — project identity inherited ` +
+        `from the main worktree "${input.identityRoot}" (stores ARE loaded)`,
+      action_hint: PROJECT_IDENTITY_INHERITED_ACTION_HINT,
+    };
+  }
+  return null;
 }

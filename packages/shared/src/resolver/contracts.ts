@@ -7,11 +7,23 @@ import { z } from "zod";
 export const PROJECT_CONTEXT_SOURCES = ["explicit-pin", "client-root", "cwd"] as const;
 export type ProjectContextSource = (typeof PROJECT_CONTEXT_SOURCES)[number];
 
+// How the identity root was obtained. Resolution is LOCAL-FIRST: a checkout that
+// carries its own `.fabric/fabric-config.json` is its own identity root, full
+// stop. Since that file is committed, `git worktree add` hands every checkout the
+// same project_id — Git is the distribution mechanism (see the S45 note below).
+// `inherited` is the cold path for a checkout that predates `fabric install`;
+// it is never a guess, only Git's own answer for the main worktree.
+export const PROJECT_IDENTITY_SOURCES = ["local", "inherited"] as const;
+export type ProjectIdentitySource = (typeof PROJECT_IDENTITY_SOURCES)[number];
+
 export interface ProjectContext {
   /** Active checkout used for workspace-local files and operation state. */
   workspaceRoot: string;
-  /** Main Git worktree (or non-Git marker root) that owns project/store identity. */
+  /** Root that owns project/store identity — the workspace itself when it carries
+   *  its own config, otherwise the main Git worktree it inherited from. */
   identityRoot: string;
+  /** Whether identity came from this checkout or was inherited from the main worktree. */
+  identitySource: ProjectIdentitySource;
   projectId: string;
   /** Runtime state key; explicitly isolated or shared with projectId by default. */
   bindingId: string;
@@ -30,11 +42,18 @@ export interface ProjectContextResolverInput {
 export class ProjectContextUnresolvedError extends Error {
   readonly code = "FABRIC_PROJECT_CONTEXT_UNRESOLVED";
 
-  constructor(readonly candidates: readonly string[]) {
+  // Degradation must be loud and actionable, never silent (KT-DEC-0075). The
+  // resolver refuses to invent an identity root, so the error carries the next
+  // step instead of leaving the caller with a plausible-looking wrong answer.
+  constructor(
+    readonly candidates: readonly string[],
+    readonly hint = "run `fabric install` in this checkout to give it a project identity",
+  ) {
     super(
-      candidates.length === 0
+      (candidates.length === 0
         ? "Fabric project context is unresolved: no workspace root was provided"
-        : `Fabric project context is unresolved for: ${candidates.join(", ")}`,
+        : `Fabric project context is unresolved for: ${candidates.join(", ")}`) +
+        (hint.length > 0 ? ` — ${hint}` : ""),
     );
     this.name = "ProjectContextUnresolvedError";
   }

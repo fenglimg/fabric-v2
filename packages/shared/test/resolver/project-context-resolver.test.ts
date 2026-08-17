@@ -52,7 +52,7 @@ afterEach(() => {
 });
 
 describe("createProjectContextResolver", () => {
-  it("inherits identity and binding across a real linked worktree", () => {
+  it("shares identity across a real linked worktree via the committed config", () => {
     const repo = createRepo("fabric-context-main-");
     const worktreeParent = tempDir("fabric-context-linked-");
     const worktree = join(worktreeParent, "work");
@@ -62,12 +62,32 @@ describe("createProjectContextResolver", () => {
     const linked = createProjectContextResolver({ roots: [worktree] });
     const gitIdentity = resolveGitWorktreeIdentity(worktree);
 
+    // `git worktree add` carries the committed config into the new checkout, so
+    // the worktree owns its identity locally — no main-repository lookup runs.
     expect(linked.workspaceRoot).not.toBe(main.workspaceRoot);
-    expect(linked.identityRoot).toBe(main.identityRoot);
+    expect(linked.identityRoot).toBe(linked.workspaceRoot);
+    expect(linked.identitySource).toBe("local");
+    // What actually has to hold: one repository, one project identity.
     expect(linked.projectId).toBe(main.projectId);
     expect(linked.bindingId).toBe(main.bindingId);
     expect(gitIdentity?.gitDir).not.toBe(gitIdentity?.commonDir);
     expect(Object.isFrozen(linked)).toBe(true);
+  });
+
+  it("inherits from the main worktree only when the checkout has no config", () => {
+    const repo = createRepo("fabric-context-coldmain-");
+    const worktreeParent = tempDir("fabric-context-coldlinked-");
+    const worktree = join(worktreeParent, "work");
+    git(repo, ["worktree", "add", "-b", "cold", worktree]);
+    // Simulates a checkout that predates `fabric install`.
+    rmSync(join(worktree, ".fabric"), { recursive: true, force: true });
+
+    const main = createProjectContextResolver({ roots: [repo] });
+    const linked = createProjectContextResolver({ roots: [worktree] });
+
+    expect(linked.identitySource).toBe("inherited");
+    expect(linked.identityRoot).toBe(main.workspaceRoot);
+    expect(linked.projectId).toBe(main.projectId);
   });
 
   it("keeps project identity while an explicit workspace_binding_id isolates state", () => {

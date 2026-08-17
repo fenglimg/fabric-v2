@@ -23,6 +23,7 @@ These guides help you **ask the right questions before coding**.
 |-------|---------|-------------|
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
+| [State Placement Thinking Guide](./state-placement-thinking-guide.md) | Decide whether a thing lives in global / project / store | Adding a config field, an installed file, or anything written to disk at runtime |
 
 ---
 
@@ -50,6 +51,16 @@ These guides help you **ask the right questions before coding**.
 - [ ] Multiple branches update the same derived state from `kind` / `action`
 
 → Read [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)
+
+### When to Think About State Placement
+
+- [ ] You're adding a config field and aren't sure if it goes in global / project / store
+- [ ] You're adding a file that `fabric install` writes into every project
+- [ ] You're writing a cache, sidecar, or counter to disk at runtime
+- [ ] The filename contains a session id (or anything else per-run)
+- [ ] **You're about to infer an identity or a location from a path string** ← Ask the underlying tool first
+
+→ Read [State Placement Thinking Guide](./state-placement-thinking-guide.md)
 
 ### When Verifying AI Cross-Review Results
 

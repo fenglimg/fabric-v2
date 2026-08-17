@@ -9,16 +9,46 @@ export const SESSION_HINTS_STALE_DAYS = 7;
 export const SESSION_HINTS_FILE_PREFIX = "session-hints-";
 export const SESSION_HINTS_FILE_SUFFIX = ".json";
 
-// Every `<name>-<session_id>.json` sidecar under .fabric/.cache/ is swept by
+/** One per-session sidecar family: `<prefix><session_id><suffix>`. */
+export type StaleSweepFamily = { prefix: string; suffix: string };
+
+// Every `<prefix><session_id><suffix>` sidecar under .fabric/.cache/ is swept by
 // this one lint. Sweeping matters more now that these are per-session: a single
 // shared slot was self-limiting at one file, whereas one file per session grows
 // without bound across weeks of windows. Adding a per-session sidecar without
-// adding its prefix here leaks files forever.
-export const STALE_SWEEP_PREFIXES = [
-  SESSION_HINTS_FILE_PREFIX,
-  "narrow-dedup-window-",
-  "active-session-",
+// adding its family here leaks files forever — `session-cache-prefix-parity`
+// round-trips the real writer helpers against this list to catch that.
+//
+// The suffix is per-family, not one shared `.json`: `maintenance-hint-last-emit-`
+// writes a bare ISO timestamp with no extension, so a single shared suffix gate
+// skipped it even once its prefix was known.
+export const STALE_SWEEP_FAMILIES: readonly StaleSweepFamily[] = [
+  { prefix: SESSION_HINTS_FILE_PREFIX, suffix: SESSION_HINTS_FILE_SUFFIX },
+  { prefix: "narrow-dedup-window-", suffix: ".json" },
+  { prefix: "active-session-", suffix: ".json" },
+  { prefix: "archive-hint-shown-", suffix: ".json" },
+  { prefix: "hint-dismiss-", suffix: ".json" },
+  { prefix: "maintenance-hint-last-emit-", suffix: "" },
 ];
+
+// Mirrors the writer's own sanitiser (`session-signal-state.cjs`
+// sessionScopedCacheFile / sessionDismissFileName): a session id is reduced to
+// this character class before it reaches a filename. Requiring a non-empty match
+// is what keeps the legacy shared slots (`archive-hint-shown.json`) and a
+// truncated `session-hints-.json` out of a DELETE arm — see KT-PIT-0051.
+const SESSION_ID_TOKEN_RE = /^[A-Za-z0-9_.-]+$/;
+
+/** The family a cache filename belongs to, or null if the sweep must not touch it. */
+export function matchStaleSweepFamily(name: string): StaleSweepFamily | null {
+  for (const family of STALE_SWEEP_FAMILIES) {
+    if (!name.startsWith(family.prefix)) continue;
+    if (family.suffix.length > 0 && !name.endsWith(family.suffix)) continue;
+    const token = name.slice(family.prefix.length, name.length - family.suffix.length);
+    if (!SESSION_ID_TOKEN_RE.test(token)) continue;
+    return family;
+  }
+  return null;
+}
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -49,8 +79,7 @@ export async function inspectSessionHintsStale(
   const candidates: SessionHintsStaleCandidate[] = [];
   for (const entry of entries) {
     if (!entry.isFile()) continue;
-    if (!STALE_SWEEP_PREFIXES.some((prefix) => entry.name.startsWith(prefix))) continue;
-    if (!entry.name.endsWith(SESSION_HINTS_FILE_SUFFIX)) continue;
+    if (matchStaleSweepFamily(entry.name) === null) continue;
     const absPath = join(cacheDir, entry.name);
     let mtimeMs = 0;
     try {
