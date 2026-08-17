@@ -9,6 +9,7 @@ import type { ClientConfigWriter, RemoveResult, ServerEntry } from "./writer.js"
 import { createServerEntry } from "./writer.js";
 import type { McpRootPolicy } from "./writer.js";
 import { inspectManagedRootPin } from "@fenglimg/fabric-shared";
+import { isCodexInstalled } from "./client-detect.js";
 
 function expandHome(filePath: string): string {
   if (filePath === "~") {
@@ -175,8 +176,12 @@ export class CodexTOMLConfigWriter implements ClientConfigWriter {
       return resolve(expandHome(explicitPath));
     }
 
-    const codexDir = join(homedir(), ".codex");
-    return existsSync(codexDir) ? resolve(join(codexDir, "config.toml")) : null;
+    // Gate on "is Codex installed", not on "has Codex been run once": the
+    // directory is created by Codex's first launch, so keying off it silently
+    // skipped MCP wiring for anyone who installed Fabric first. `write()`
+    // already mkdir -p's the parent, so returning the path is enough to create
+    // the config on a machine that has the binary but no `~/.codex` yet.
+    return isCodexInstalled() ? resolve(join(homedir(), ".codex", "config.toml")) : null;
   }
 
   async write(serverPath: string, workspaceRoot: string, overridePath?: string, mcpRootPolicy?: McpRootPolicy): Promise<void> {

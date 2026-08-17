@@ -7,6 +7,7 @@ import { ClaudeCodeDesktopWriter, getClaudeDesktopConfigPath } from "./claude-co
 import { ClaudeCodeCLIWriter } from "./json.js";
 import type { ClaudeMcpScope } from "./json.js";
 import { CodexTOMLConfigWriter } from "./toml.js";
+import { isCodexInstalled } from "./client-detect.js";
 import type { ClientConfigWriter } from "./writer.js";
 
 export type { ClientPaths, FabricConfig } from "@fenglimg/fabric-shared";
@@ -76,7 +77,7 @@ export function resolveClients(
 
   addIfDetected(
     writers,
-    existsSync(join(homedir(), ".codex")),
+    isCodexInstalled(),
     (configuredPath) => new CodexTOMLConfigWriter(configuredPath),
     hasExplicitPath(clientPaths, "codexCLI") ? clientPaths!.codexCLI : undefined,
   );
@@ -91,7 +92,7 @@ export function detectClientSupports(
   const clientPaths = fabricConfig.clientPaths;
   const claudeDetected = existsSync(join(homedir(), ".claude")) || existsSync(join(workspaceRoot, ".claude"));
   const claudeDesktopDetected = existsSync(getClaudeDesktopConfigPath());
-  const codexDetected = existsSync(join(homedir(), ".codex"));
+  const codexDetected = isCodexInstalled();
 
   return [
     {

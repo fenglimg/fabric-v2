@@ -17,6 +17,7 @@ import {
   inspectBroadIndexDrift,
 } from "./doctor-broad-index.js";
 import { runDoctorReport } from "./doctor.js";
+import { resolveWriteTargetStoreDir } from "../cross-store-write.js";
 
 // W4-2 (KT-DEC-0028) — broad-index-drift. Producer-consumer round-trip: seed N
 // broad-scope store entries + a backstop, inspect / run doctor, assert the
@@ -24,10 +25,13 @@ import { runDoctorReport } from "./doctor.js";
 
 const tempDirs: string[] = [];
 let originalFabricHome: string | undefined;
+let originalBackstopEnv: string | undefined;
 const TEAM_STORE = "44444444-4444-4444-8444-444444444444";
 
 beforeEach(() => {
   originalFabricHome = process.env.FABRIC_HOME;
+  originalBackstopEnv = process.env.FABRIC_BROAD_INDEX_BACKSTOP;
+  delete process.env.FABRIC_BROAD_INDEX_BACKSTOP;
 });
 
 afterEach(async () => {
@@ -35,6 +39,11 @@ afterEach(async () => {
     delete process.env.FABRIC_HOME;
   } else {
     process.env.FABRIC_HOME = originalFabricHome;
+  }
+  if (originalBackstopEnv === undefined) {
+    delete process.env.FABRIC_BROAD_INDEX_BACKSTOP;
+  } else {
+    process.env.FABRIC_BROAD_INDEX_BACKSTOP = originalBackstopEnv;
   }
   await Promise.all(tempDirs.splice(0).map((p) => rm(p, { recursive: true, force: true })));
 });
@@ -45,16 +54,45 @@ async function freshHome(): Promise<void> {
   process.env.FABRIC_HOME = fakeHome;
 }
 
+// `broad_index_backstop` is a CORPUS-class knob: `env > store > default`, the
+// same order `knowledge-hint-broad.cjs` implements and `store-config-cascade.test.ts`
+// pins. It describes how many broad entries a STORE holds, so the store is its
+// only home — a value left in the repo config is deliberately inert. These
+// fixtures therefore mount the store FIRST and write the backstop there; the
+// optional `projectBackstop` exists only to prove the repo layer stays inert.
+//
 // backstop is clamped to [20, 500]; 20 → threshold floor(20*0.8) = 16.
-async function createProject(backstop: number): Promise<string> {
+async function createProject(
+  backstop?: number,
+  opts: { projectBackstop?: number } = {},
+): Promise<string> {
   const projectRoot = await mkdtemp(join(tmpdir(), "fabric-broad-proj-"));
   tempDirs.push(projectRoot);
   await mkdir(join(projectRoot, ".fabric"), { recursive: true });
   await writeFile(
     join(projectRoot, ".fabric", "fabric-config.json"),
-    `${JSON.stringify({ required_stores: [{ id: "team" }], broad_index_backstop: backstop }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        project_id: "proj-44444444-4444-4444-8444-444444444444",
+        required_stores: [{ id: "team" }],
+        active_write_store: "team",
+        ...(opts.projectBackstop !== undefined
+          ? { broad_index_backstop: opts.projectBackstop }
+          : {}),
+      },
+      null,
+      2,
+    )}\n`,
   );
   await writeFile(join(projectRoot, "README.md"), "# fixture project\n");
+  if (backstop !== undefined) {
+    const storeRoot = resolveWriteTargetStoreDir("team", projectRoot);
+    await mkdir(storeRoot, { recursive: true });
+    await writeFile(
+      join(storeRoot, STORE_LAYOUT.configFile),
+      `${JSON.stringify({ broad_index_backstop: backstop }, null, 2)}\n`,
+    );
+  }
   return projectRoot;
 }
 
@@ -92,16 +130,16 @@ async function seedBroadEntries(count: number, scope: "narrow" | "broad" = "broa
 function mountTeam(): void {
   saveGlobalConfig({
     uid: "test-uid",
-    stores: [{ store_uuid: TEAM_STORE, alias: "team", remote: "git@e:t.git" }],
+    stores: [{ store_uuid: TEAM_STORE, alias: "team", remote: "git@e:t.git", writable: true }],
   });
 }
 
 describe("inspectBroadIndexDrift — W4-2 (KT-DEC-0028)", () => {
-  it("reads backstop from config and computes the 80% threshold", async () => {
+  it("reads backstop from the store config and computes the 80% threshold", async () => {
     await freshHome();
+    mountTeam();
     const projectRoot = await createProject(20);
     await seedBroadEntries(1);
-    mountTeam();
 
     const result = await inspectBroadIndexDrift(projectRoot);
     expect(result.backstop).toBe(20);
@@ -111,9 +149,9 @@ describe("inspectBroadIndexDrift — W4-2 (KT-DEC-0028)", () => {
 
   it("FIRES per-store when broad count reaches the threshold (16 of backstop 20)", async () => {
     await freshHome();
+    mountTeam();
     const projectRoot = await createProject(20);
     await seedBroadEntries(16);
-    mountTeam();
 
     const result = await inspectBroadIndexDrift(projectRoot);
     expect(result.drifted_stores).toHaveLength(1);
@@ -123,9 +161,9 @@ describe("inspectBroadIndexDrift — W4-2 (KT-DEC-0028)", () => {
 
   it("does NOT fire just below threshold (15 of backstop 20)", async () => {
     await freshHome();
+    mountTeam();
     const projectRoot = await createProject(20);
     await seedBroadEntries(15);
-    mountTeam();
 
     const result = await inspectBroadIndexDrift(projectRoot);
     expect(result.drifted_stores).toHaveLength(0);
@@ -133,25 +171,19 @@ describe("inspectBroadIndexDrift — W4-2 (KT-DEC-0028)", () => {
 
   it("counts only broad-scope entries (narrow excluded from the index)", async () => {
     await freshHome();
+    mountTeam();
     const projectRoot = await createProject(20);
     await seedBroadEntries(16, "narrow");
-    mountTeam();
 
     const result = await inspectBroadIndexDrift(projectRoot);
     expect(result.drifted_stores).toHaveLength(0);
   });
 
-  it("falls back to the default backstop 50 when config omits the key", async () => {
+  it("falls back to the default backstop 50 when no layer supplies the key", async () => {
     await freshHome();
-    const projectRoot = await mkdtemp(join(tmpdir(), "fabric-broad-noconf-"));
-    tempDirs.push(projectRoot);
-    await mkdir(join(projectRoot, ".fabric"), { recursive: true });
-    await writeFile(
-      join(projectRoot, ".fabric", "fabric-config.json"),
-      `${JSON.stringify({ required_stores: [{ id: "team" }] }, null, 2)}\n`,
-    );
-    await seedBroadEntries(1);
     mountTeam();
+    const projectRoot = await createProject();
+    await seedBroadEntries(1);
 
     const result = await inspectBroadIndexDrift(projectRoot);
     expect(result.backstop).toBe(50);
@@ -159,12 +191,62 @@ describe("inspectBroadIndexDrift — W4-2 (KT-DEC-0028)", () => {
   });
 });
 
+// 2.5.1 defect #2 — doctor read this CORPUS knob `project > store > default`,
+// the inverse of the hook's tested `env > store > default`. Because
+// `saveProjectConfig` materializes every zod `.default()` into
+// `.fabric/fabric-config.json` on first write, the project layer is never
+// absent in practice: doctor therefore always saw 50 and a team store's
+// deliberate `broad_index_backstop` could never take effect here, while the hook
+// honoured it. Two consumers, same key, opposite answers.
+describe("readBroadIndexBackstop cascade — env > store > default (KT-DEC-0028)", () => {
+  it("ignores a value left in the repo config (the project layer is inert)", async () => {
+    await freshHome();
+    mountTeam();
+    const projectRoot = await createProject(undefined, { projectBackstop: 80 });
+    await seedBroadEntries(1);
+
+    expect((await inspectBroadIndexDrift(projectRoot)).backstop).toBe(50);
+  });
+
+  it("lets the store win over a stale repo value", async () => {
+    await freshHome();
+    mountTeam();
+    const projectRoot = await createProject(40, { projectBackstop: 80 });
+    await seedBroadEntries(1);
+
+    expect((await inspectBroadIndexDrift(projectRoot)).backstop).toBe(40);
+  });
+
+  it("lets env override the store", async () => {
+    await freshHome();
+    mountTeam();
+    const projectRoot = await createProject(40);
+    await seedBroadEntries(1);
+    process.env.FABRIC_BROAD_INDEX_BACKSTOP = "120";
+
+    expect((await inspectBroadIndexDrift(projectRoot)).backstop).toBe(120);
+  });
+
+  it("falls through to the store when env is malformed or out of range", async () => {
+    await freshHome();
+    mountTeam();
+    const projectRoot = await createProject(40);
+    await seedBroadEntries(1);
+
+    process.env.FABRIC_BROAD_INDEX_BACKSTOP = "not-a-number";
+    expect((await inspectBroadIndexDrift(projectRoot)).backstop).toBe(40);
+
+    process.env.FABRIC_BROAD_INDEX_BACKSTOP = "5";
+    expect((await inspectBroadIndexDrift(projectRoot)).backstop).toBe(40);
+  });
+});
+
 describe("runDoctorReport round-trip (W4-2 consumer)", () => {
   it("surfaces knowledge_broad_index_drift as a warning", async () => {
     await freshHome();
+    mountTeam();
     const projectRoot = await createProject(20);
     await seedBroadEntries(16);
-    mountTeam();
 
     const report = await runDoctorReport(projectRoot);
     const warning = report.warnings.find((w) => w.code === "knowledge_broad_index_drift");

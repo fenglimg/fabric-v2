@@ -1028,6 +1028,8 @@ export const zhCNMessages: Messages = {
     "检测到 {framework} 项目 · {files} 文件 · {entries} 入口",
   "cli.install.scan.summary.plain": "扫描完成 · {files} 文件 · {entries} 入口",
   "cli.install.rollback.feedback": "已回滚 {count} 项改动,项目保持原状。",
+  "cli.install.rollback.feedback.none":
+    "没有登记任何可回滚动作 —— 先前阶段可能已经留下了半成品文件(比如 .fabric/)。重跑 install 前请先检查项目目录。",
   "cli.install.stages.completed": "已完成",
   "cli.install.stages.failed": "失败",
   "cli.install.pipeline.title": "Fabric 安装",

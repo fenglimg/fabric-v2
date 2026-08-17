@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
-## [2.5.0] - 2026-08-17
+## [2.5.1] - 2026-08-17
+
+三条只有在**全新机器**上才会现形的上手缺陷。都是在一次性 HOME(`ccpm install` → `fabric install --url` → `fabric first-hit`)的全流程冷跑里发现的——本机因为早已装过、跑过，全部看不见。
+
+### Fixed
+
+- **装了 Codex 但还没启动过的机器，MCP 完全没接线，且不报错。** `~/.codex` 是 Codex **首次运行**才创建的目录，此前把它当作「是否安装了 Codex」的判据。先装 Fabric、后开 Codex 的同事会拿到 hooks 和 skills，却没有任何 `[mcp_servers.fabric]`——`resolveClients` 跳过 writer，`CodexTOMLConfigWriter.detect()` 又独立返回 null 让 `write()` 空跑，两道闸门都是静默的。现在改为「PATH 上有 codex 可执行文件 **或** `~/.codex` 存在」，两者任一成立即视为已安装(`write()` 本来就会 mkdir -p 父目录)。
+- **`fabric doctor` 永远读不到团队 store 设的 `broad_index_backstop`。** 这个键属于 CORPUS 类，约定的层级是 `env > store > default`(hook 和 `store-config-cascade.test.ts` 都是这个顺序，仓库里留的值是**故意失效**的)。但 doctor 这一个消费方读的是 `project > store > default`；又因为 `saveProjectConfig` 会把 zod `.default()` 落盘，project 层实际上永不缺失——于是 doctor 永远看到 50，团队 store 特意调大的值在这里从来没生效过。同一个键、两个消费方、相反的答案。
+- **安装失败回滚时会谎报「项目未被改动」。** 回滚计数是「回滚栈知道多少」，而「未被改动」是在断言磁盘状态。store 阶段失败走到这里时回滚栈是空的，可 `.fabric/` 早被前面的阶段建好了(包括一个没有 project_id 的 `{}` fabric-config.json，比没有文件更糟)——旧文案等于把用户送去在一个被告知是干净的半成品上重跑安装。零回滚现在有独立文案，明确提示先检查项目目录。
 
 2.5.0 线转正：合入 rc.1–rc.4 的配置层收口，外加下面两项。
 

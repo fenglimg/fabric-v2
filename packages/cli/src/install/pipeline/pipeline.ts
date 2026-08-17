@@ -471,7 +471,18 @@ export class InstallPipeline {
     // grill C-19: rollback is no longer a silent swallow — tell the user what
     // happened (count of reverted changes + project left unchanged), WITHOUT
     // leaking stack traces or filesystem paths (R15).
-    const feedback = t("cli.install.rollback.feedback", { count: String(rolledBack) });
+    //
+    // `rolledBack === 0` must NOT claim "project left unchanged": the count is
+    // what the rollback stack KNOWS about, while "unchanged" asserts something
+    // about the disk. A store-stage failure reaches here with an empty stack and
+    // a `.fabric/` already scaffolded by earlier stages (including a `{}`
+    // fabric-config.json with no project_id, which resolves worse than no file
+    // at all) — so the old wording sent users to re-run install on top of a
+    // half-built state they had been told was clean.
+    const feedback =
+      rolledBack === 0
+        ? t("cli.install.rollback.feedback.none")
+        : t("cli.install.rollback.feedback", { count: String(rolledBack) });
     if (context.renderer) {
       context.renderer.renderWarning(feedback);
     } else {

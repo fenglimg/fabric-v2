@@ -82,8 +82,13 @@ describe("i18n locale parity census", () => {
   // ⚠️ 文件数比上一轮的 10,011 少了八千,不是漏扫 —— 差额是 W5 删掉的 `tmp/`
   // 下那 10 个 vendor 克隆(对照阅读用的别家仓库)。拿别的项目的源码给我们的
   // key 判「活」本来就是假阳性,少扫它们让判据更严而不是更松。
+  // 2026-08-17 (2.5.1): 867 → 868。净 +1 = `cli.install.rollback.feedback.none`,
+  // 安装回滚时「一条都没回滚」的独立文案 —— 旧文案在回滚栈为空时照样宣称项目
+  // 未被改动,而那正是 `.fabric/` 已被前面阶段建好的那种失败。消费者是
+  // packages/cli/src/install/pipeline/pipeline.ts 的 rollback()。
+  // 按上面的规矩重跑了 census:1926 文件、205 个 template pattern、0 provably dead。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(867);
+    expect(enKeys.length).toBe(868);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

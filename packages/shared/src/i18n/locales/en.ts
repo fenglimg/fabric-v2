@@ -1102,6 +1102,8 @@ export const enMessages: Messages = {
     "Scan complete · {files} files · {entries} entry points",
   "cli.install.rollback.feedback":
     "Rolled back {count} change(s); project left unchanged.",
+  "cli.install.rollback.feedback.none":
+    "No rollback actions were registered — earlier stages may have left partial files (e.g. .fabric/). Inspect the project before re-running install.",
   "cli.install.stages.completed": "completed",
   "cli.install.stages.failed": "failed",
   "cli.install.pipeline.title": "Fabric Install",
