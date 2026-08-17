@@ -39,7 +39,7 @@ const PROVENANCE = [
   /^用户提交\s*Cocos\s*组全局编码规范文档[^。]*。(?:文档覆盖[^。]*。)?\s*/u,
   /^用户请求审阅最近提交并归档可复用\s*knowledge。\s*/u,
   // 「无 live session,去看 commit」——读者手上有 commit sha 就够了
-  /\s*No live session\s*—\s*see (?:the )?(?:commit body|doc) for full context\.?/giu,
+  /\s*No live session\s*—\s*see (?:the )?(?:commit bodies|commit body|docs?) for full context\.?/giu,
   // src= 尾巴:与 frontmatter evidence_paths / Origin 行重复
   /\s*src=[^\s，。;；]+/gu,
 ];
@@ -187,8 +187,11 @@ for (const [abs, p] of parsed) {
   if (p.evBlock !== null) body = body.replace(EVIDENCE_RE, "\n");
 
   // 3) 剥出处话术(保留 commit sha / doc 路径这类绝对坐标)
+  // 段界必须是**全文**末尾,不能用 /m —— 带 `m` 时 `$` 是行尾,惰性量词会在
+  // Context 第一行就停,只剥掉首行的话术,第三行的 `No live session …` 原样留下
+  // (实测真库 8 条残留)。这是欠处理不是丢数据,但护栏只验了路径不丢,测不出来。
   const before = body;
-  body = body.replace(/^##\s+Context\s*\n([\s\S]*?)(?=\n##\s|$)/mu, (whole, inner) => {
+  body = body.replace(/##\s+Context\s*\n([\s\S]*?)(?=\n##\s|$(?![\s\S]))/u, (whole, inner) => {
     const cleaned = stripProvenance(inner);
     return `## Context\n\n${cleaned}\n`;
   });

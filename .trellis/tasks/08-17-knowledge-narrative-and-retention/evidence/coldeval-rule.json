@@ -1,0 +1,52 @@
+[
+ {
+  "id": "guidelines/KT-GLD-0012--avoid-node-access-ondestroy.md",
+  "knowledge_type": "guidelines",
+  "summary": "onDestroy 里不要访问 this.node 或其关联对象——执行到该回调时节点已进入销毁流程,取到的引用不可靠;需要清理时改挂 onDisable,或只在 onDestroy 里释放与节点无关的资源。"
+ },
+ {
+  "id": "pending/guidelines/button-disabled-opacity-bg-node.md",
+  "knowledge_type": "guidelines",
+  "summary": "按钮禁用变暗只作用于背景子节点,不作用于按钮根节点——cc.Node 的 opacity 与 color 会级联到全部子节点,改根节点会把文案 Label 一起拉暗。标准结构是 Button 留在根节点(点击热区才完整),下挂 Background 与平级的 Label,TS 侧为背景节点单独加一个 @property,禁用态透明度统一取 128。不需要为此写自定义组件:cc.Button 自带 target 字段,在编辑器 Inspector 里就能静态配置并序列化进 prefab。"
+ },
+ {
+  "id": "pending/guidelines/ccclass-required-on-property-base.md",
+  "knowledge_type": "guidelines",
+  "summary": "Cocos 组件基类只要带 @property,它自己就必须挂 @ccclass——@property 是先写进一份 property cache、等 @ccclass 触发 cc.Class 注册时才被消费的,裸 class 基类的 cache 永远无人消费,子类在编辑器属性面板上看不到那些字段,磁盘 prefab 里自然也绑不上,运行时全是 null。判据:基类有 @property 就必须 @ccclass;基类只有方法、没有 @property 的可以不挂。"
+ },
+ {
+  "id": "pending/guidelines/feature-branch-needs-payload-check.md",
+  "knowledge_type": "guidelines",
+  "summary": "端级开关只说明「这个端可能有这条玩法」,不等于「这一趟确实发了那件东西」:凡是分流会改变按钮文案或承诺某个后续动作的,判据必须是端开关与这一批数据里真有该资源两者同时成立,缺一就整条退回旧分支。做法是把「有没有」抽成一个谓词,发送函数与文案分流共用同一判据,别让两处各判各的;发送函数里的空守卫仍要留着,因为调试入口会直接调它。"
+ },
+ {
+  "id": "pending/guidelines/icon-svga-swap-disable-sprite-not-node.md",
+  "knowledge_type": "guidelines",
+  "summary": "静态图标与动图两态切换时,组件属性收 cc.Sprite 而不是 cc.Node——播动图时置 staticIcon.enabled 为 false、静态时置回 true,SVGA 单独做成该节点的子节点靠 active 开关。因为老入口的 cc.Sprite 与 cc.Button 常挂在同一个节点上,关节点会连带 Button 失活、动图期间入口点不动;节点上还常挂着 HideInReview 这类审核屏蔽组件,另起兄弟节点互斥 active 会把这些既有能力漏掉。前提是 Button 的 transition 不是 SPRITE,否则改成换图而非关组件。"
+ },
+ {
+  "id": "models/KT-MOD-0020--wespy-minigame-deploy-registry.md",
+  "knowledge_type": "models",
+  "summary": "wespy 全体小游戏的部署配置合并视图(项目名、上线平台、会玩配置中心游戏名、game_type、game_id、服务器配置名、git 地址、分支、jenkins 工程):查某款游戏该发哪条流水线、game_type/game_id 填几时看这里。单项权威源仍是会玩配置中心与各仓 CI,本表的价值只在于把它们并到一处。"
+ },
+ {
+  "id": "pending/models/cocos-button-gray-visual-paths.md",
+  "knowledge_type": "models",
+  "summary": "Cocos 2.4 按钮有五条状态视觉路径,会不会级联到 Label 取决于它改的是渲染组件私有属性还是节点属性:enableAutoGrayEffect(换材质)与 transition 为 SPRITE(换 spriteFrame)不级联,target 应指挂 Sprite 的背景节点;transition 为 COLOR 仅 alpha 级联;transition 为 SCALE 改的是节点 scale、会级联,target 必须指按钮根节点。所以「target 该指哪」不能一刀切,把 SCALE 判据塞进「带文案按钮」射程正是检查器误报的来源。"
+ },
+ {
+  "id": "pending/models/task-queue-parallel-named-queues.md",
+  "knowledge_type": "models",
+  "summary": "TaskQueue 的并发语义是队列内串行、队列间并行,由 TaskQueueManager 按 queueId 分桶——这是唯一的并发旋钮,旧 InviteModalQueue 上那个 occupiesPopQueue 开关在新架构里没有对应字段。语义映射:「不占队列」等于给这条规则单独开一个具名队列;「按代清场」等于 TaskQueue.cancelTask(taskId),TaskDedupePolicy.UpdateQueued 保证同 taskId 至多一条,所以 taskId 就是稳定的清场句柄;「展示中的不强关」用 queue.currentTaskId 做守卫;「曝光只算真正打开的那次」把副作用挂到 onShown。"
+ },
+ {
+  "id": "pending/models/vest-skin-coverage-model.md",
+  "knowledge_type": "models",
+  "summary": "换肤的覆盖模型有四个写入点,按时间序是 Main 里 skinManager.init() 装 RichText 全局钩子、UIManager 的 setBeforeOpenUIFormHandler 对整棵界面树套色、业务 onOpen 按数据赋值、onOpenUIFormSuccess 再幂等跑一遍(按 uuid 缓存原色)。关键结论是 SkinAutoApply 在 UIForm 内是冗余的——walkNode 的 includeWholeTree 在最前面就已让整棵树进入换肤射程,不必主动挂该脚本;失效面只出在这条射程之外。"
+ },
+ {
+  "id": "projects/werewolf-minigame/models/KT-MOD-0021--game-center-enter-room-data-readiness.md",
+  "knowledge_type": "models",
+  "summary": "GameCenter 进房时序契约:create/match/join 的 afterEnter 时房间数据尚未就绪(join resp 只有 rid 与 voice_type),玩家、座位、gameType 要等首个 RoomInfo push(2001),而 2001 可能先于 response 到达、由 runRoomFlow 缓存后补投。所以「进房后做一次性动作」的正确挂法是 afterEnter 置 pending 标志加首个 2001 时一次性消费。switchRoom 内部复用 runRoomFlow,进房钩子天然覆盖换房。"
+ }
+]
