@@ -16,6 +16,7 @@ import { paint, displayWidth } from "../colors.js";
 import { getProjectTranslator, t } from "../i18n.js";
 import { warnUnknownFlags } from "../lib/unknown-flags.js";
 import { whoami, projectStatus } from "../store/info-ops.js";
+import { listRegisteredProjects } from "../store/project-registry-io.js";
 import { scopeExplain } from "../store/scope-explain.js";
 import { grid, groupDot, headerRule } from "../tui/structure.js";
 
@@ -63,6 +64,32 @@ const scopeCommand = defineCommand({
   },
 });
 
+// The machine registry's read surface. Kept under `info` rather than as a new
+// top-level command: `info` is already the single "what is Fabric's state right
+// now" entry point (EPIC-010 folded whoami/status into it), and the command
+// surface is being narrowed, not widened (retired top-level names live on as
+// tombstones in lib/command-signposts.ts).
+//
+// `--json` exists because the console backend reads the same data; the human
+// view is for users who never open the console (the registry must not become
+// UI-only data).
+const projectsCommand = defineCommand({
+  meta: {
+    name: "projects",
+    description: t("cli.info.projects.description"),
+  },
+  args: {
+    json: {
+      type: "boolean",
+      description: t("cli.info.projects.args.json.description"),
+    },
+  },
+  async run({ args }: { args: { json?: boolean } }) {
+    warnUnknownFlags(["json"]);
+    await runProjectsList(args.json === true);
+  },
+});
+
 export default defineCommand({
   meta: {
     name: "info",
@@ -89,6 +116,7 @@ export default defineCommand({
   },
   subCommands: {
     scope: scopeCommand,
+    projects: projectsCommand,
   },
   async run({ args }: { args: { global?: boolean; recall?: boolean; warm?: boolean; json?: boolean; _?: string[] } }) {
     // citty 0.2.2's runCommand falls through to this parent `run` even AFTER it
@@ -120,7 +148,11 @@ export default defineCommand({
 // token lands in citty's `args._` positional rest. `scope` is the only remaining
 // subcommand (recall is now a `--recall` flag).
 function isSubCommandInvocation(positionals: string[] | undefined): boolean {
-  return (positionals ?? [])[0] === "scope";
+  // Must list EVERY subcommand: citty 0.2.2 falls through to the parent `run`
+  // after dispatching, so a name missing here makes the parent append its status
+  // output after the subcommand's — which would corrupt `--json` consumers.
+  const SUBCOMMANDS = new Set(["scope", "projects"]);
+  return SUBCOMMANDS.has((positionals ?? [])[0] ?? "");
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +503,59 @@ async function runRecallWarm(json?: boolean) {
   } else {
     console.log(`${paint.error("✗")} ${t("cli.info.recall.warm.fail")}`);
     process.exitCode = 1;
+  }
+}
+
+/**
+ * `fabric info projects` — the machine registry's read surface.
+ *
+ * The empty case prints an explanation plus the action that fixes it, never a
+ * bare blank list: the registry only fills as projects are (re)installed, so an
+ * incomplete list is the expected early state and must not read as "you only
+ * have these projects".
+ */
+async function runProjectsList(json: boolean): Promise<void> {
+  const projects = (await listRegisteredProjects()).sort((a, b) => a.path.localeCompare(b.path));
+
+  if (json) {
+    // Machine contract: stable English keys, snake_case on the wire, and the
+    // derived `stale` included so consumers never re-implement the disk check.
+    console.log(
+      JSON.stringify(
+        {
+          projects: projects.map((p) => ({
+            project_id: p.projectId,
+            path: p.path,
+            fabric_version: p.fabricVersion,
+            registered_at: p.registeredAt,
+            stale: p.stale,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  console.log(headerRule(t("cli.info.projects.title")));
+  if (projects.length === 0) {
+    console.log(`  ${paint.muted(t("cli.info.projects.empty"))}`);
+    return;
+  }
+
+  kvGrid(
+    projects.map((p) => [
+      p.path,
+      p.stale
+        ? // Soft amber ○, not red ✗: a moved directory is "not ready", not an
+          // error the user did wrong (colour convention documented at §0.4).
+          `${paint.muted(p.fabricVersion)}  ${softGlyph()} ${paint.muted(t("cli.info.projects.stale"))}`
+        : p.fabricVersion,
+    ]),
+  );
+  if (projects.some((p) => p.stale)) {
+    console.log(`  ${paint.muted(t("cli.info.projects.stale-note"))}`);
   }
 }
 

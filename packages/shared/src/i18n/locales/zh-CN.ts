@@ -123,6 +123,15 @@ export const zhCNMessages: Messages = {
     "Scope 坐标(如 team、project:x、personal)",
   "cli.info.scope.args.json.description":
     "输出机器可读的 JSON(scope 始终输出 JSON)",
+  "cli.info.projects.description":
+    "列出本机所有装过 Fabric 的项目及其版本",
+  "cli.info.projects.args.json.description": "输出机器可读的 JSON 而非文本",
+  "cli.info.projects.empty":
+    "还没有已登记的项目。在某个项目里跑一次 `fabric install` 即可登记。",
+  "cli.info.projects.title": "已登记的项目",
+  "cli.info.projects.stale": "路径已失效",
+  "cli.info.projects.stale-note":
+    "标记为「路径已失效」的项目,其目录已被移动或删除;在新位置重跑 `fabric install` 可更新登记。",
 
   "cli.config.description":
     "打开 Fabric 交互式配置面板（语言、知识层、审计模式、MCP 客户端配置等）",

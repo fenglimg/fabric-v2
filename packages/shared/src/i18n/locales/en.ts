@@ -142,6 +142,16 @@ export const enMessages: Messages = {
     "Scope coordinate (e.g. team, project:x, personal)",
   "cli.info.scope.args.json.description":
     "Emit machine-readable JSON (scope always emits JSON)",
+  "cli.info.projects.description":
+    "List every project on this machine that has Fabric installed, with its version",
+  "cli.info.projects.args.json.description":
+    "Emit machine-readable JSON instead of text",
+  "cli.info.projects.empty":
+    "No projects registered yet. Run `fabric install` inside a project to register it.",
+  "cli.info.projects.title": "Registered projects",
+  "cli.info.projects.stale": "path missing",
+  "cli.info.projects.stale-note":
+    "Projects marked as having a missing path were moved or deleted; re-run `fabric install` at the new location to update the entry.",
 
   // v2.1 hidden-command i18n keys cleanup: approve/bootstrap/hooks/human-lint/
   // ledger-append/pre-commit/scan/sync-meta/update commands removed from CLI

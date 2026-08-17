@@ -117,8 +117,22 @@ describe("i18n locale parity census", () => {
   // ⚠️ 这轮给 census 补了**对照组**:注入 3 个绝无引用的假 key,断言它们全被判死。
   // 「0 dead」单独看是无法证伪的 —— 一个恒判活的扫描器给出的也是 0 dead(上一轮
   // 的 worktree 假阴性正是这个形状)。canary 判死 3/3 才说明这次扫描有鉴别力。
+  // 2026-08-17 (console 项目注册表): 877 → 883。净 +6 = `cli.info.projects{
+  // .description,.args.json.description,.empty,.title,.stale,.stale-note}`,
+  // 给新增的 `fabric info projects` 子命令(机器级项目注册表的读出口)配的文案。
+  // 消费者是 packages/cli/src/commands/info.ts 的 projectsCommand /
+  // runProjectsList。`.empty` 与 `.stale-note` 是产品化要求的产物:空列表与失效
+  // 条目都必须讲清原因和下一步,不能只给一片空白。
+  // 按上面的规矩重跑了 census:1724 文件、44 个 template pattern、0 provably dead,
+  // canary 3/3 判死。
+  //
+  // ⚠️ 这轮 canary 又抓到一个自捕获假阴性:一次性 census 脚本把 canary key 写在
+  // 自己文件里,而脚本自身也在扫描范围内 → 每个 canary 都「找到了自己」,首跑
+  // 0/3 判死。形状与上一轮的 worktree 假阴性完全相同(扫描器把自己的副本当作
+  // 引用)。修法是把脚本自身排除出 sources。**任何把 canary 字面量写进被扫描
+  // 目录的做法都会复发这个坑。**
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(877);
+    expect(enKeys.length).toBe(883);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

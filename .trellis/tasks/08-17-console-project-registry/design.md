@@ -31,7 +31,23 @@
 }
 ```
 
-**为什么用 project_id 作键而不是路径**：项目搬家后 project_id 不变，按 id 归并能自动更新路径而不是留下两条重复条目。路径作键则每次移动都产生幽灵条目。
+### 2.1 主键：安装路径（实现期更正，第三次前提推翻）
+
+原设计用 `project_id` 作键，理由是「项目搬家后 id 不变，按 id 归并可自动更新路径」。**实现时被实证推翻。**
+
+证据：在测试夹具里跑完整 install 后，`.fabric/fabric-config.json` 的内容是 `{}` —— **没有 project_id**。project_id 是绑定 store 时才写入的，一个不绑 store 的 `fabric install` 根本不产生它。
+
+按 id 作键的后果不是「少一个字段」，而是**这类项目永远不会出现在控制台里**——正是这个注册表要消灭的「装了但看不见」状态。而且它会静默发生：install 成功、无任何警告、列表里就是没有。
+
+改为**安装路径作键**：
+- 路径永远存在，且正是控制台真正需要的东西（要升级一个项目，你必须知道去哪儿跑 `fabric install`）；
+- `project_id` 降级为可选字段，保留用于与 store binding 关联。
+
+搬家场景分两种处理，各自诚实：
+- **有 id**：注册时清掉「同 id、异路径」的旧条目——那确实是同一项目的旧位置；
+- **无 id**：无从判断两个路径是同一项目，旧条目保留并显示为 `stale`，附「在新位置重跑 install」的提示。不猜。
+
+> 这是本任务第三次「先量前提再动手」拦下的设计错误（前两次见 §3.1、§4）。三次都是同一个形状：**基于对代码的合理推测做设计，而代码的实际行为不同**。
 
 **为什么不复用 `bindings/<project_id>_resolved.json`**：那些文件是 store 解析结果的派生快照，语义是「这个项目读哪些库」。往里塞路径会让一个文件承担两种职责，且它由绑定流程重写、生命周期不同。新开一个文件各管各的。
 
@@ -59,23 +75,39 @@ export async function listRegisteredProjects(): Promise<
 ```
 
 依赖既有能力，不自造轮子：
-- 写盘用 `atomicWriteJson`（`@fenglimg/fabric-shared/node/atomic-write`），满足 C7 的原子性；
+- 写盘用 `atomicWriteJson` + `withFileLock`（均在 `@fenglimg/fabric-shared/node/atomic-write`），见 §4；
 - 全局根用 `resolveGlobalRoot()`（`store/global-config-io.ts`），自动尊重 `FABRIC_HOME`；
-- 项目根用 shared 的 `resolveProjectRoot()`（`packages/shared/src/resolver/project-context-resolver.ts`），满足 C4 的 `.git` 锚点，且与 hook 侧同源；
+- **项目路径直接用 `InstallContext.target`**，不做任何路径解析，见 §3.1；
 - 版本号用 `__CLI_VERSION__` 构建期常量（`write-install-manifest.ts` 已是此法）。
 
-## 4. 并发：选原子覆盖，不加文件锁
+### 3.1 路径来源：用 `context.target`，不用 `resolveProjectRoot`（S1 核实后更正）
 
-C7 要求多窗口并发安全。两条路：
+原设计写「用 shared 的 `resolveProjectRoot()` 取 `.git` 锚点」。**S1 核实后否决**，两个理由：
 
-| 方案 | 代价 |
-| --- | --- |
-| **原子 read-modify-write**（选用） | 两个 install 同时收尾时，后写的可能覆盖掉前者刚加的条目 → 丢一条登记 |
-| `open(path,'wx')` 文件锁 | 跨平台语义不一致：POSIX 用 `EEXIST` 表示锁被占，Windows 在文件仍被其它句柄打开时 unlink 会抛 `EPERM`，表现为偶发 flake（KT-PIT-0085） |
+1. **它会取到错误的仓库。** `resolveProjectRoot` 的第一行是无条件返回 `process.env.CLAUDE_PROJECT_DIR`（`project-context-resolver.ts:54`），而该变量在 Claude Code 会话中是被设置的。在会话根为 A 仓的情况下去 B 仓跑 `fabric install`，注册表会把 A 的路径记成 B 的安装位置。静默错误，且症状与原因隔得极远。
+2. **它是遗留适配器。** 源码注释：「Legacy hook adapter retained while callers migrate to ProjectContext」。新代码不该新增它的调用点。
 
-**选原子覆盖**。理由是失败代价不对称：丢一条登记的后果是「某项目暂时没出现在列表里，下次 install 自动恢复」——自愈的、无声无害；而引入锁的后果是 Windows 上的偶发生产故障，且这类 flake 极易被当成环境噪声重跑掉。
+**替代方案更简单也更正确**：`InstallContext.target` 就是这次 install 的写入根，由 `resolveDevMode(args.target, process.cwd())` 得出（`--target` > `EXTERNAL_FIXTURE_PATH` > `cwd`）。install 已经算好了，注册表直接用即可——**零解析，且自动尊重 `--target`**。
 
-同一台机器上两个 `fabric install` 恰好在同一毫秒收尾本就罕见，不值得为它背一个跨平台锁的长期税。
+**由此推翻原 AC5**：`context.target` 不回溯 git root，所以从子目录跑 install 会装在子目录。注册表的职责是**如实记录 Fabric 装在哪了**，不是记录「理想上应该装在哪」。要求它回溯到仓库根，反而会让注册表与磁盘现实分叉。新 AC5 断言的是**二者一致**。
+
+> 顺带发现（本任务范围外）：从子目录跑 `fabric install` 会在子目录静默创建 `.fabric/`。KT-DEC-0085 记录过 hook 侧的同类问题（`process.cwd()` 未回溯 git root，rc.4 已修），install 侧似乎仍是 cwd 语义。属产品化易用性问题，另开任务评估。
+
+## 4. 并发：`withFileLock` 包住 read-modify-write（S1 核实后更正）
+
+原设计选「原子覆盖、不加锁，接受偶发丢一条登记」，理由是跨平台文件锁有 Windows `EPERM` 坑（KT-PIT-0085）。
+
+**该理由建立在错误前提上，已否决。** 仓库里**已经有** `withFileLock`，就在 `atomicWriteJson` 的同一个文件（`shared/src/node/atomic-write.ts:90`），而且它**恰恰是针对 KT-PIT-0085 那条陷阱加固过的**——源码里明确按 `process.platform === "win32"` 把 `EPERM`/`EBUSY` 与 POSIX 的 `EEXIST` 同等视为「锁被占，继续等」，并且只在非 win32 上让 `EPERM` 直接冒泡（那里它才真是权限问题）。
+
+它还额外解决了两个我原本不会考虑到的问题：
+- **所有权 token**：只删 token 未变的锁文件，防止超时被回收的旧持有者误删新持有者的锁；
+- **超时兜底**：`maxWaitMs` 保证不会无限等；注释里记录了曾经有两条 `continue` 绕过 deadline 检查导致热自旋 hang 的历史。
+
+所以加锁的成本是**一次调用**，不是「自己造一个跨平台锁」。原取舍里「加锁 = 背 Windows 偶发故障的长期税」不成立——那笔税已经有人交过并沉淀成代码了。
+
+**结论**：`withFileLock(lockPath, () => 读取 → 合并 → atomicWriteJson())`。不丢数据，成本可忽略。
+
+C6（never-throw）与锁的关系：锁超时会抛，必须被本模块的 try/catch 吞掉并返回 `false`，不得让一次记账失败中断 `fabric install`。
 
 ## 5. CLI 出口（R5）
 
