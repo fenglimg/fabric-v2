@@ -117,9 +117,12 @@ export { reviewKnowledge, reviewPending } from "./services/review/review.js";
 export {
   buildColdEvalBatch,
   COLD_EVAL_RUBRIC,
+  COLD_EVAL_RUBRIC_REFERENCE,
+  rubricFamilyFor,
   type ColdEvalCandidate,
   type ColdEvalVerdict,
   type ColdEvalBatch,
+  type ColdEvalRubricFamily,
 } from "./services/summary-cold-eval.js";
 // v2.2 dual-sink (Goal A / D9): always-active body collector consumed by the
 // `fabric plan-context-hint` CLI adapter to populate the SessionStart AI sink.
