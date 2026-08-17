@@ -587,6 +587,14 @@ function renderWhyNotSurfaced(r: WhyNotSurfacedResult, dt: AuditTranslator): voi
     case "not_found":
       writeStdout(`${paint.error("✗")} ${dt("cli.audit.why.not-found", { id })}`);
       return;
+    case "deprecated": {
+      // `superseded_by` is optional on retire, so the message has two shapes
+      // rather than rendering a dangling ", superseded_by: " with nothing after it.
+      const key = r.supersededBy === null ? "cli.audit.why.deprecated" : "cli.audit.why.deprecated.superseded";
+      writeStdout(`${paint.error("✗")} ${dt(key, { id, superseded: r.supersededBy ?? "" })}`);
+      writeStdout(hint(dt("cli.audit.why.deprecated.hint")));
+      return;
+    }
     case "store_unbound":
       writeStdout(`${paint.error("✗")} ${dt("cli.audit.why.store-unbound", { id, store })}`);
       writeStdout(hint(dt("cli.audit.why.store-unbound.hint", { store })));

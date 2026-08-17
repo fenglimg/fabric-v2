@@ -15,6 +15,7 @@ import {
 
 import { deriveRuleIdentity, extractRuleDescription } from "./knowledge-meta-builder.js";
 import { alwaysActiveExclusion } from "./always-active.js";
+import { DEPRECATED_LINE } from "./cross-store-recall.js";
 
 // ---------------------------------------------------------------------------
 // W3-H (proposals/05-strategy S6): `fabric audit why-not-surfaced <id>` — a
@@ -39,6 +40,13 @@ import { alwaysActiveExclusion } from "./always-active.js";
 
 export type SurfaceVerdict =
   | "not_found"
+  // retire: the entry carries `deprecated: true`. cross-store-recall drops these
+  // from EVERY surfacing builder, so no amount of binding/scope fixing brings it
+  // back — which is why this is reported BEFORE the three scope axes rather than
+  // in pipeline order. Without this branch the command answered `should_surface`
+  // for every retired entry (22 of them on the wespy store alone), i.e. the one
+  // command whose whole job is "why isn't this showing" confidently said it was.
+  | "deprecated"
   | "store_unbound"
   | "project_mismatch"
   | "narrow_timing"
@@ -69,6 +77,10 @@ export interface WhyNotSurfacedResult {
   relevanceScope: "broad" | "narrow" | null;
   /** Entry's maturity (adjudication axis); "draft" when absent or unparseable. */
   maturity: string | null;
+  /** Retire axis: `deprecated: true` in frontmatter. null when not found. */
+  deprecated: boolean | null;
+  /** The `superseded_by` id retire optionally records, or null. */
+  supersededBy: string | null;
 }
 
 // Line-regex frontmatter reads (not full YAML) — matches the write-side emit
@@ -76,6 +88,10 @@ export interface WhyNotSurfacedResult {
 // readSemanticScope). Keeps the diagnostic's parse identical to the recall path.
 const SEMANTIC_SCOPE_LINE = /^semantic_scope:\s*"?([^"\n]+?)"?\s*$/mu;
 const RELEVANCE_SCOPE_LINE = /^relevance_scope:\s*"?(broad|narrow)"?\s*$/mu;
+// `superseded_by` is diagnostic-only (it never gates surfacing), so it is read
+// here; the `deprecated: true` predicate itself is IMPORTED from the recall path
+// rather than restated — a second copy is what let this command drift.
+const SUPERSEDED_BY_LINE = /^superseded_by:\s*"?([^"\n]+?)"?\s*$/mu;
 
 // `alias:KT-DEC-0001` → `KT-DEC-0001`; bare `KT-DEC-0001` → itself. The alias
 // and the local stable id never contain a colon, so the first colon splits them.
@@ -105,6 +121,8 @@ export async function explainWhyNotSurfaced(
     activeProject: null,
     relevanceScope: null,
     maturity: null,
+    deprecated: null,
+    supersededBy: null,
   };
 
   const input = buildStoreResolveInput(projectRoot);
@@ -146,6 +164,8 @@ export async function explainWhyNotSurfaced(
   const description = extractRuleDescription(source);
   const maturity = description?.maturity ?? "draft";
   const activeProject = loadProjectConfig(projectRoot)?.active_project ?? null;
+  const deprecated = DEPRECATED_LINE.test(source);
+  const supersededBy = deprecated ? (SUPERSEDED_BY_LINE.exec(source)?.[1] ?? null) : null;
 
   const boundUuids = new Set(
     createStoreResolver().resolveReadSet(input).stores.map((s) => s.store_uuid),
@@ -160,8 +180,18 @@ export async function explainWhyNotSurfaced(
     activeProject,
     relevanceScope,
     maturity,
+    deprecated,
+    supersededBy,
   };
 
+  // Retirement is reported FIRST — out of pipeline order, deliberately. The
+  // three scope axes are all "fix the binding / the scope / the timing and it
+  // comes back"; `deprecated: true` is not. Answering `store_unbound` for a
+  // retired entry would send the reader off to bind a store that changes
+  // nothing.
+  if (deprecated) {
+    return { ...found, verdict: "deprecated" };
+  }
   // Report the FIRST blocking cause, in surfacing-pipeline order.
   if (!storeBound) {
     return { ...found, verdict: "store_unbound" };

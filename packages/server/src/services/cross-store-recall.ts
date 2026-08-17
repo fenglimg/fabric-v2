@@ -166,7 +166,10 @@ const SEMANTIC_SCOPE_LINE = /^semantic_scope:\s*"?([^"\n]+?)"?\s*$/mu;
 // write path emits (rewriteFrontmatterMerge → `deprecated: ${boolean}`). Mirrors
 // the SEMANTIC_SCOPE_LINE line-regex convention (whole-line anchor keeps a stray
 // body line from false-matching). `deprecated: false` / absent → not deprecated.
-const DEPRECATED_LINE = /^deprecated:\s*true\s*$/mu;
+// Exported so `why-not-surfaced` diagnoses retirement with the SAME predicate
+// the surfacing path filters on — a second copy of this regex is exactly the
+// drift that made that command report `should_surface` for retired entries.
+export const DEPRECATED_LINE = /^deprecated:\s*true\s*$/mu;
 
 // Derive an entry's scope coordinate from STRUCTURAL facts (path project + store
 // layer) as the PRIMARY source (C-104 single point), with the authored

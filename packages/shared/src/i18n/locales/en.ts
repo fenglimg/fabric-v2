@@ -101,6 +101,12 @@ export const enMessages: Messages = {
   // `fabric audit why-not-surfaced <id>` — three-axis diagnosis (store / scope / timing).
   "cli.audit.why.not-found":
     "'{id}' not found in any mounted store. Check the id (try `fabric store list`).",
+  "cli.audit.why.deprecated":
+    "'{id}' is retired (deprecated: true), so it no longer surfaces — recall filters it out of every surfacing channel.",
+  "cli.audit.why.deprecated.superseded":
+    "'{id}' is retired (deprecated: true, superseded_by: {superseded}), so it no longer surfaces — recall filters it out of every surfacing channel.",
+  "cli.audit.why.deprecated.hint":
+    "retirement is a soft delete: the entry stays on disk and audit tooling still sees it. To restore it, remove the deprecated key from frontmatter.",
   "cli.audit.why.store-unbound":
     "'{id}' lives in store '{store}', which is NOT bound to this project.",
   "cli.audit.why.store-unbound.hint": "bind it: fabric store bind {store}",

@@ -105,8 +105,20 @@ describe("i18n locale parity census", () => {
   //    「点分路径 + `${...}`」这个形状,不依赖定界符配对。
   // template pattern 计数从 205 掉到 59 是这次换匹配口径的结果(去重口径变了),
   // 不是模板变少;判据看的是 0 dead,该数字只用于说明扫描口径。
+  // 2026-08-17 (why-not-surfaced retire 分支): 874 → 877。净 +3 = `cli.audit
+  // .why.deprecated{,.superseded,.hint}`,给 `fabric audit why-not-surfaced`
+  // 补的第四条归因分支。此前该命令对已 retire(`deprecated: true`)的条目一律
+  // 回答「应当正在浮现」—— 召回侧 cross-store-recall 明明把它们全过滤掉了,
+  // 而 why-not-surfaced.ts 全文 0 处引用 deprecated。两条消息(带/不带
+  // superseded_by)而不是拼串,是为了避免渲染出悬空的 ", superseded_by: "。
+  // 消费者是 packages/cli/src/commands/audit.ts。
+  // 按上面的规矩重跑了 census:3027 文件、141 个 template pattern、0 provably dead。
+  //
+  // ⚠️ 这轮给 census 补了**对照组**:注入 3 个绝无引用的假 key,断言它们全被判死。
+  // 「0 dead」单独看是无法证伪的 —— 一个恒判活的扫描器给出的也是 0 dead(上一轮
+  // 的 worktree 假阴性正是这个形状)。canary 判死 3/3 才说明这次扫描有鉴别力。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(874);
+    expect(enKeys.length).toBe(877);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {
