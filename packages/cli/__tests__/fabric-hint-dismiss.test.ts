@@ -79,10 +79,18 @@ describe("fabric-hint dismiss helpers (rc.37 NEW-16)", () => {
     expect([...hook.readDismissedSignals(cwd, "s")].sort()).toEqual(["maintenance", "review"]);
   });
 
-  it("renderDismissOption is bilingual + names the signal", () => {
+  it("renderDismissOption is bilingual + names the signal AND the file readers consult", () => {
     expect(hook.renderDismissOption("archive", "zh-CN")).toContain("hint_dismiss_signals");
     expect(hook.renderDismissOption("archive", "zh-CN")).toContain("archive");
     expect(hook.renderDismissOption("review", "en")).toMatch(/Silence this nudge/);
+    // The affordance must name the GLOBAL policy file — readDismissedSignals
+    // resolves this key through readPolicy() and never opens the repo config, so
+    // naming `fabric-config.json` made the instruction a silent no-op.
+    // dismiss-signal-parity.test.ts is the executable round-trip for this.
+    for (const variant of ["zh-CN", "en"]) {
+      expect(hook.renderDismissOption("archive", variant)).toContain("fabric-global.json");
+      expect(hook.renderDismissOption("archive", variant)).not.toContain("fabric-config.json");
+    }
   });
 
   it("sanitises unsafe session ids into the sidecar filename", () => {

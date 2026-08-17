@@ -4468,7 +4468,8 @@ var fabricConfigSchema = external_exports.object({
   //
   // TASK-005 (grill G5 / C-004 "全 nudge MUST 可 dismiss"): the enum now spans
   // ALL nudge surfaces, not just the fabric-hint Stop signals:
-  //   - Stop (fabric-hint):        archive / review / import / maintenance
+  //   - Stop (fabric-hint):        archive / archive_backlog / review / import /
+  //                                maintenance
   //   - SessionStart (broad):      review / import / maintenance now surface as
   //                                the SessionStart summary line (see
   //                                buildSessionStartSinks H4 ladder) — the same
@@ -4480,9 +4481,24 @@ var fabricConfigSchema = external_exports.object({
   // either key here is the durable opt-out. Adding enum values is backward
   // compatible — legacy configs that omit the new keys parse unchanged, and
   // unknown on-disk values are dropped by the lenient root parser.
+  //
+  // HOME (config-single-home W3): this is a PREFERENCE knob, so the only layer
+  // its readers consult is the global policy segment —
+  // `~/.fabric/fabric-global.json` → `projects[<project_id>]` ?? `defaults`.
+  // A copy left in a repo `.fabric/fabric-config.json` is inert. The user-facing
+  // dismiss affordance (session-signal-state.cjs#renderDismissOption) must name
+  // that file, and hooks must resolve it via config-cache.cjs#readPolicy —
+  // `dismiss-signal-parity.test.ts` is the round-trip oracle for both.
+  //
+  // `archive_backlog` was added to DISMISSABLE_SIGNALS (session-signal-state.cjs)
+  // by fabric-hint "crack 2" but never mirrored here. The hook path reads raw
+  // JSON so it worked at runtime, yet the documented contract rejected it — see
+  // the parity test that now pins hook ⊆ enum in both directions of drift.
   hint_dismiss_signals: external_exports.array(
     external_exports.enum([
       "archive",
+      // Stop-hook cross-session backlog safety net (fabric-hint crack 2).
+      "archive_backlog",
       "review",
       "import",
       "maintenance",

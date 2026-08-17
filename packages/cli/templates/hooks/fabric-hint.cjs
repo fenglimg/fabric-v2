@@ -341,7 +341,11 @@ function resolveHookSessionId(payload, env) {
 //
 // Two suppression levers, both honoured at emit time (a chosen signal whose
 // type is dismissed exits silently, exactly like a cooldown hit):
-//   1. Durable opt-out — fabric-config.json#hint_dismiss_signals: string[].
+//   1. Durable opt-out — hint_dismiss_signals: string[] in the GLOBAL policy
+//      layer (~/.fabric/fabric-global.json → projects[<project_id>] ?? defaults).
+//      config-single-home W3 made the repo fabric-config.json identity-only, so
+//      a copy left there is inert — and renderDismissOption must name the file
+//      readDismissedSignals actually opens (dismiss-signal-parity.test.ts).
 //      Mirrors the cite_evict_interval=0 opt-out convention; survives across
 //      sessions. The concrete user-actionable lever surfaced in the nudge.
 //   2. Session-scoped — .fabric/.cache/hint-dismiss-{sessionId}.json
@@ -349,7 +353,8 @@ function resolveHookSessionId(payload, env) {
 //      asks to silence a nudge type for the current session (Fabric's
 //      AI-driven write convention — no new CLI surface).
 //
-// The four signal types ('archive' / 'review' / 'import' / 'maintenance')
+// The five signal types ('archive' / 'archive_backlog' / 'review' / 'import' /
+// 'maintenance' — DISMISSABLE_SIGNALS is the canonical list)
 // each have an independent cooldown ALREADY (signal-keyed SHOWN_CACHE for
 // A/B/C + the maintenance day-cooldown sidecar), so dismiss layers cleanly on
 // top of per-signal cadence without a physical 4-hook split (which would 4×

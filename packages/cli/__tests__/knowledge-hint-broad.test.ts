@@ -2107,14 +2107,25 @@ describe("knowledge-hint-broad.cjs — scope-primary HUD + backlog summary (H2/H
 
   it("backlog summary: hint_dismiss_signals silences segments per C-004 (TASK-005)", () => {
     withIsolatedFabricHome((home) => {
-      // dismiss all three summary signals durably.
+      // config-single-home W3: `hint_dismiss_signals` is a PREFERENCE knob, so it
+      // lives in the GLOBAL policy layer. This case used to write it into the
+      // repo's fabric-config.json and pass, because readDismissedSummarySignals
+      // was the one dismiss reader still opening that file — one key, two homes.
+      // See dismiss-signal-parity.test.ts for the oracle that pins all four
+      // readers (and the user-facing affordance) to this single home.
       mkdirSync(join(tempRoot, ".fabric"), { recursive: true });
       writeFileSync(
         join(tempRoot, ".fabric", "fabric-config.json"),
+        JSON.stringify({ project_id: PROJECT_ID, fabric_language: "en" }),
+        "utf8",
+      );
+      mkdirSync(join(home, ".fabric"), { recursive: true });
+      writeFileSync(
+        join(home, ".fabric", "fabric-global.json"),
         JSON.stringify({
-          project_id: PROJECT_ID,
-          fabric_language: "en",
-          hint_dismiss_signals: ["review", "import", "maintenance"],
+          uid: "test-uid",
+          stores: [],
+          defaults: { hint_dismiss_signals: ["review", "import", "maintenance"] },
         }),
         "utf8",
       );

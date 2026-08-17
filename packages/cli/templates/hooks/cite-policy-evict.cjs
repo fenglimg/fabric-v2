@@ -96,8 +96,9 @@ function readNudgeEnabled(cwd) {
 
 /**
  * TASK-005 (grill G5 / C-004 "全 nudge MUST 可 dismiss"): unified per-signal
- * opt-out. Returns true when "cite-evict" is listed in
- * project/global `hint_dismiss_signals` — the same enum that
+ * opt-out. Returns true when "cite-evict" is listed in the GLOBAL policy layer's
+ * `hint_dismiss_signals` (config-single-home W3 — the repo fabric-config.json is
+ * identity-only, so a copy there is inert) — the same enum that
  * silences the Stop (archive) and SessionStart (review/import/maintenance)
  * surfaces. This is a SECOND opt-out lever alongside the pre-existing
  * `cite_recall_nudge:false` boolean (both silence this hook); listing the key

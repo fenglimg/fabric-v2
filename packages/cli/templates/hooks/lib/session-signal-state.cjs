@@ -120,11 +120,21 @@ function writeSessionDismiss(projectRoot, sessionId, signals) {
   stateStore.writeJsonState(projectRoot, fileName, { dismissed: [...merged] });
 }
 
+// The file this affordance MUST name is the one `readDismissedSignals` above
+// actually consults — the global policy layer, NOT the repo config. Until now it
+// said `.fabric/fabric-config.json`, so following the instruction was a silent
+// no-op: `readPolicy()` never opens the repo file for a preference key, and the
+// nudge kept firing with no error anywhere (KT-PIT-0071 — a remedy pointer whose
+// scope differs from the reader's is a nudge that can never be satisfied).
+// `dismiss-signal-parity.test.ts` writes to whatever path THIS string names and
+// asserts the nudge goes quiet, so the two can no longer drift apart.
+const DISMISS_CONFIG_DISPLAY_PATH = "~/.fabric/fabric-global.json";
+
 function renderDismissOption(signal, variant) {
   const zh = variant === "zh-CN" || variant === "zh-CN-hybrid";
   return zh
-    ? `  (不想再看到此类提醒？在 .fabric/fabric-config.json 设 "hint_dismiss_signals": ["${signal}"]，或让我本会话关闭 ${signal} 提醒)`
-    : `  (Silence this nudge? Set "hint_dismiss_signals": ["${signal}"] in .fabric/fabric-config.json, or ask me to dismiss ${signal} for this session)`;
+    ? `  (不想再看到此类提醒？在 ${DISMISS_CONFIG_DISPLAY_PATH} 的 "defaults" 里设 "hint_dismiss_signals": ["${signal}"]，或让我本会话关闭 ${signal} 提醒)`
+    : `  (Silence this nudge? Set "hint_dismiss_signals": ["${signal}"] under "defaults" in ${DISMISS_CONFIG_DISPLAY_PATH}, or ask me to dismiss ${signal} for this session)`;
 }
 
 function readMaintenanceLastEmit(projectRoot, sessionId) {

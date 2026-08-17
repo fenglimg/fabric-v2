@@ -1336,7 +1336,8 @@ async function main(env, stdio) {
     if (paths.length === 0) return;
 
     // TASK-005 (grill G5 / C-004): durable per-signal opt-out. When "narrow" is
-    // listed in fabric-config.json#hint_dismiss_signals, this per-edit hint is
+    // listed in hint_dismiss_signals (global policy layer — config-single-home
+    // W3; the repo fabric-config.json is inert for it), this per-edit hint is
     // silenced across all sessions — treated exactly like a cooldown hit
     // (silent return AFTER the unconditional edit-counter side-effect above, so
     // telemetry still measures the edit cadence). Test seam env.skipDismiss.

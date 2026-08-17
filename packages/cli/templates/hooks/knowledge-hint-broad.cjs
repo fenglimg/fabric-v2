@@ -73,6 +73,7 @@ const {
   readConfigNumber,
   readConfigBoolean,
   readConfigString,
+  readPolicy,
 } = require("./lib/config-cache.cjs");
 const {
   readTextState,
@@ -136,19 +137,31 @@ function readWorkspaceBindingId(cwd) {
 }
 
 // TASK-005 (grill G5 / C-004): read the durable `hint_dismiss_signals` opt-out
-// list from `.fabric/fabric-config.json`. The same enum silences a signal on
-// EVERY surface — so a `"review"` / `"import"` / `"maintenance"` entry here
-// suppresses that segment of the SessionStart summary line, exactly as it
-// suppresses the corresponding Stop nudge (before the split) and the per-edit
-// nudges. Returns a Set (empty on any read/parse error — never-block).
+// list. The same enum silences a signal on EVERY surface — so a `"review"` /
+// `"import"` / `"maintenance"` entry suppresses that segment of the SessionStart
+// summary line, exactly as it suppresses the corresponding Stop nudge and the
+// per-edit nudges. Returns a Set (empty on any read/parse error — never-block).
+//
+// config-single-home W3: `hint_dismiss_signals` is a PREFERENCE knob, so it
+// resolves from the global policy layer (`projects[<project_id>]` then
+// `defaults`) — the first layer that DECLARES the list wins, and an empty array
+// is a meaningful "dismiss nothing". This reader used to open the repo's
+// `.fabric/fabric-config.json` directly, making it the only one of the four
+// dismiss readers (the others: lib/session-signal-state.cjs,
+// lib/hint-narrow-config.cjs, templates/hooks/cite-policy-evict.cjs) that looked
+// at a file the W3 split turned identity-only. One key, two homes: dismissing
+// "review" in the repo file silenced the SessionStart segment but not the Stop
+// nudge, and vice-versa in the global file. Now all four share readPolicy().
 function readDismissedSummarySignals(cwd) {
   const dismissed = new Set();
   try {
-    const raw = readFileSync(join(cwd, ".fabric", "fabric-config.json"), "utf8");
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed.hint_dismiss_signals)) {
-      for (const s of parsed.hint_dismiss_signals) {
-        if (typeof s === "string") dismissed.add(s);
+    for (const layer of readPolicy(cwd)) {
+      const list = layer && layer.hint_dismiss_signals;
+      if (Array.isArray(list)) {
+        for (const s of list) {
+          if (typeof s === "string") dismissed.add(s);
+        }
+        break;
       }
     }
   } catch {
