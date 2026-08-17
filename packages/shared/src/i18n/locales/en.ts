@@ -351,6 +351,17 @@ export const enMessages: Messages = {
     "Rewrite as reusable decision/pitfall/guideline altitude (## structure), not a session transcript; re-archive via fabric-archive / fab_propose",
   "doctor.check.knowledge_body_altitude_dump.scan_error":
     "Body-altitude scan failed ({detail}); doctor cannot confirm corpus is clean.",
+  "doctor.check.knowledge_summary_session_voice.name": "Knowledge summary voice",
+  "doctor.check.knowledge_summary_session_voice.ok":
+    "No session-minute summaries found.",
+  "doctor.check.knowledge_summary_session_voice.message.singular":
+    "1 summary reads as a session minute: {detail}",
+  "doctor.check.knowledge_summary_session_voice.message.plural":
+    "{count} summaries read as session minutes (e.g. {detail})",
+  "doctor.check.knowledge_summary_session_voice.remediation":
+    "summary is the only field fab_recall puts on the wire — write it as a standalone declarative conclusion (what to do + why) with no session pronouns; rewrite via fabric-review modify-content",
+  "doctor.check.knowledge_summary_session_voice.scan_error":
+    "Summary voice scan failed ({detail}); doctor cannot confirm the corpus is clean.",
   "doctor.check.knowledge_body_dedup.name": "Knowledge body dedup (v-next)",
   "doctor.check.knowledge_body_dedup.ok":
     "No legacy body sections or deprecated frontmatter detected (## Summary / ## Evidence / ## Why proposed / ## Session context / tech_stack all clean).",

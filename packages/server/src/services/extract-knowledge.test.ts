@@ -335,11 +335,17 @@ describe("extractKnowledge", () => {
     expect(fileContents).toMatch(/^proposed_reason: decision-confirmation$/mu);
     expect(fileContents).toMatch(/^tags: \[\]$/mu);
     expect(fileContents).toMatch(/^x-fabric-idempotency-key: sha256:[0-9a-f]{64}$/mu);
-    // v-next (grill D1/D5/D8): body sections — Context + Evidence (legacy fallback)
+    // v-next (grill D1/D5/D8): body is the single ## Context section.
     expect(fileContents).not.toMatch(/^## Summary$/mu);
     expect(fileContents).not.toMatch(/^## Why proposed$/mu);
     expect(fileContents).toMatch(/^## Context$/mu);
-    expect(fileContents).toMatch(/^## Evidence$/mu);
+    // B1.1: with no explicit evidence_paths, recent_paths now DERIVE it into
+    // frontmatter, so the legacy `## Evidence` fallback is not taken. Before
+    // this, the fallback fired on 84% of real archives and copied `summary`
+    // verbatim into a `Notes:` block nothing ever read.
+    expect(fileContents).toMatch(/^evidence_paths: \["packages\/server\/src\/index\.ts"\]$/mu);
+    expect(fileContents).not.toMatch(/^## Evidence$/mu);
+    expect(fileContents).not.toMatch(/^Notes:$/mu);
     // No more `## Evidence (call N)` blocks.
     expect(fileContents).not.toMatch(/^## Evidence \(call \d+\)$/mu);
 
@@ -351,6 +357,36 @@ describe("extractKnowledge", () => {
       session_id: "sess-001",
       reason: "extract_knowledge:triple-idempotency",
     });
+  });
+
+  it("explicit evidence_paths still wins over the recent_paths derivation", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-ep-explicit"],
+      recent_paths: ["read/only/probe.ts"],
+      evidence_paths: ["authoritative/evidence.ts"],
+      type: "decisions",
+      slug: "explicit-evidence-paths-win",
+    }));
+
+    const fileContents = await readFile(pendingAbs(result.pending_path), "utf8");
+    expect(fileContents).toMatch(/^evidence_paths: \["authoritative\/evidence\.ts"\]$/mu);
+    expect(fileContents).not.toMatch(/^## Evidence$/mu);
+  });
+
+  it("emits no ## Evidence block when neither evidence_paths nor recent_paths are given", async () => {
+    const projectRoot = await createTempProject();
+    const result = await extractKnowledge(projectRoot, buildInput({
+      source_sessions: ["sess-ep-none"],
+      recent_paths: [],
+      type: "decisions",
+      slug: "no-paths-no-evidence-block",
+    }));
+
+    const fileContents = await readFile(pendingAbs(result.pending_path), "utf8");
+    expect(fileContents).not.toMatch(/^evidence_paths:/mu);
+    expect(fileContents).not.toMatch(/^## Evidence$/mu);
+    expect(fileContents).toMatch(/^## Context$/mu);
   });
 
   it("extractKnowledge_is_idempotent_on_triple", async () => {
@@ -1532,6 +1568,38 @@ describe("extractKnowledge", () => {
       );
       expect(result.pending_path).not.toBe("");
       expect(result.warnings?.some((w) => w.code.includes("body_altitude"))).toBe(true);
+    });
+
+    it("warns on session-minute summary but still writes pending (B1.2 floor)", async () => {
+      const projectRoot = await createTempProject();
+      const result = await extractKnowledge(
+        projectRoot,
+        buildInput({
+          source_sessions: ["sess-voice-warn"],
+          user_messages_summary:
+            "用户要求把马甲包的颜色差异写进代码，我先直接改了 prefab 被否掉，此后每次都重申只在代码里改。",
+          type: "decisions",
+          slug: "summary-voice-should-warn",
+        }),
+      );
+      expect(result.pending_path).not.toBe("");
+      expect(result.warnings?.some((w) => w.code === "summary_session_voice")).toBe(true);
+    });
+
+    it("does not warn on a declarative summary carrying a domain noun", async () => {
+      const projectRoot = await createTempProject();
+      const result = await extractKnowledge(
+        projectRoot,
+        buildInput({
+          source_sessions: ["sess-voice-clean"],
+          user_messages_summary:
+            "用户信息弹窗的 renderUser 写入会与 refreshSimpleGameStat 冲突，导致局数与胜率被主页战绩错误覆盖。",
+          type: "pitfalls",
+          slug: "summary-voice-domain-noun",
+        }),
+      );
+      expect(result.pending_path).not.toBe("");
+      expect(result.warnings?.some((w) => w.code === "summary_session_voice")).toBeFalsy();
     });
 
     it("refuses dump-shaped body when FABRIC_ALTITUDE_PROPOSE_GATE=1", async () => {

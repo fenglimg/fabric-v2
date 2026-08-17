@@ -110,6 +110,7 @@ import {
 } from "../cross-store-recall.js";
 import { lintStoreScopes } from "./doctor-scope-lint.js";
 import { inspectBodyAltitude } from "./doctor-body-altitude.js";
+import { inspectSummaryVoice } from "./doctor-summary-voice.js";
 import { inspectBodyDedup, fixBodyDedup } from "./doctor-body-dedup.js";
 // v2.3.0-rc.11: stray_fabric_dir_detected — walker + rescue-rename fix arm for
 // residue `.fabric/` dirs left by pre-rc.10 hooks / pre-rc.11 server-side
@@ -452,6 +453,7 @@ export async function runDoctorReport(
   // ISS-20260711-221: wire body_read misfire into main doctor report.
   const bodyReadMisfire = await runDoctorBodyReadMisfireCheck(projectRoot);
   const bodyAltitude = await inspectBodyAltitude(projectRoot);
+  const summaryVoice = await inspectSummaryVoice(projectRoot);
   const bodyDedup = await inspectBodyDedup(projectRoot);
   const hookCacheWritability = await inspectHookCacheWritability(projectRoot);
   // rc.23 TASK-010 (e): stale .fabric/.serve.lock advisory. Read-side only —
@@ -544,6 +546,7 @@ export async function runDoctorReport(
     driftUnconsumed,
     bodyReadMisfire,
     bodyAltitude,
+    summaryVoice,
     bodyDedup,
     storeCounterDrift,
     storeOrphans,

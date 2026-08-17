@@ -140,6 +140,10 @@ describe("runDoctorReport", () => {
       "Knowledge body-read wiring",
       // Peer micro-transfer P0-2: dump-shaped body altitude warn-only lint.
       "Knowledge body altitude",
+      // B1.2: session-minute summary warn-only lint. Counterpart of the body
+      // altitude check above — that one owns the body, this one owns `summary`
+      // (the only field fab_recall puts on the wire).
+      "Knowledge summary voice",
       // v-next grill D5/D7/D8: legacy body section dedup check.
       "Knowledge body dedup (v-next)",
       // rc.36 TASK-09 (P1-NEW1): drift unconsumed observability lint.
@@ -268,7 +272,8 @@ describe("runDoctorReport", () => {
     // legacy `.fabric/cache/{bm25,vectors}` → `.fabric/.cache/…`) → 50.
     // v-next grill D5/D7/D8: +1 knowledge_body_dedup → 51.
     // W2 #16: +1 install_copy_drift → 52. W2 #9: +1 mcp_root_pin → 53.
-    expect(report.checks).toHaveLength(53);
+    // B1.2: +1 knowledge_summary_session_voice → 54.
+    expect(report.checks).toHaveLength(54);
   });
 
   it("v2.0: clean post-init repo (mocked layout) reports zero errors AND zero warnings", async () => {
