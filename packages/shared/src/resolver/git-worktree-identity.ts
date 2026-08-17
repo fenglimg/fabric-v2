@@ -15,8 +15,22 @@ function git(start: string, args: string[]): string {
   }).trim();
 }
 
+/**
+ * The ONE canonical form every path in this package is compared in.
+ *
+ * `.native` rather than plain `realpathSync` because of Windows 8.3 short names:
+ * plain `realpathSync` resolves symlinks but leaves a short component alone
+ * (`C:\Users\RUNNER~1\...` stays short), while `.native` — and, importantly,
+ * `git rev-parse` below — both report the long form (`C:\Users\runneradmin\...`).
+ * Mixing the two produces paths that name the same directory yet fail `===`, so
+ * every canonicalizer that can meet a git-derived path must use `.native`:
+ * this one, project-context-resolver#canonicalCandidate, the server's
+ * normalizeRoot, and review-shared#realpathExistingPrefix.
+ *
+ * On POSIX the two are equivalent, so this is a no-op there.
+ */
 function canonical(path: string): string {
-  return realpathSync(path);
+  return realpathSync.native(path);
 }
 
 /** Read the Git facts about the active checkout. Reports only what Git states —

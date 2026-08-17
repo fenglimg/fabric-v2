@@ -28,7 +28,12 @@ function canonicalCandidate(raw: string, cwd: string): string | null {
   const absolute = isAbsolute(trimmed) ? trimmed : resolve(cwd, trimmed);
   if (!existsSync(absolute)) return null;
   try {
-    return realpathSync(absolute);
+    // `.native`, not plain realpathSync — see git-worktree-identity#canonical.
+    // The candidate produced here is the START path handed to Git, and the
+    // workspaceRoot that comes back is git-canonicalized (long form on Windows).
+    // Canonicalizing the two differently is what made the same directory compare
+    // unequal to itself under an 8.3 short name.
+    return realpathSync.native(absolute);
   } catch {
     return null;
   }

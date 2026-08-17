@@ -56,9 +56,15 @@ export function storeKnowledgeRoots(projectRoot: string): string[] {
 // ISS-20260711-147: resolve through realpath so a symlink under an admitted
 // store root cannot escape to a non-store location (isUnder on lexical paths
 // alone is insufficient when the leaf or an intermediate component is a link).
+// `.native` for the same reason the resolver uses it: this result is fed to
+// `isUnder(abs, root)` against store roots that may have been canonicalized by
+// the resolver (git-derived, long form on Windows). Under an 8.3 short name the
+// two forms name the same directory but fail the prefix test — fail-closed, so
+// it rejects a legitimate write rather than admitting an escape, but wrong
+// either way.
 export function realpathExistingPrefix(path: string): string {
   try {
-    return realpathSync(path);
+    return realpathSync.native(path);
   } catch {
     // File may not exist yet (approve writes a new canonical path). Resolve the
     // deepest existing ancestor and rejoin the missing suffix.
@@ -68,7 +74,7 @@ export function realpathExistingPrefix(path: string): string {
       missing.unshift(basename(cursor));
       cursor = dirname(cursor);
       try {
-        return missing.reduce((acc, part) => join(acc, part), realpathSync(cursor));
+        return missing.reduce((acc, part) => join(acc, part), realpathSync.native(cursor));
       } catch {
         // keep walking up
       }

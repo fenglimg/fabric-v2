@@ -108,7 +108,7 @@ function buildLayout(base: string, seed: string, kind: GitLayoutKind): GitLayout
     configureCommitter(main);
     const linked = join(container, "linked");
     git(main, ["worktree", "add", "-b", "layout-linked", linked]);
-    return { ...common, mainCheckout: realpathSync(main), worktrees: [realpathSync(linked)] };
+    return { ...common, mainCheckout: realpathSync.native(main), worktrees: [realpathSync.native(linked)] };
   }
 
   if (kind === "submodule") {
@@ -135,8 +135,8 @@ function buildLayout(base: string, seed: string, kind: GitLayoutKind): GitLayout
     // is a different repository and must never become its identity root.
     return {
       ...common,
-      mainCheckout: realpathSync(join(superproject, "sub")),
-      worktrees: [realpathSync(join(superproject, "sub"))],
+      mainCheckout: realpathSync.native(join(superproject, "sub")),
+      worktrees: [realpathSync.native(join(superproject, "sub"))],
     };
   }
 
@@ -159,14 +159,19 @@ function buildLayout(base: string, seed: string, kind: GitLayoutKind): GitLayout
   const worktrees = names.map((name, index) => {
     const path = join(container, name);
     git(bareDir, ["worktree", "add", "-b", `layout-${kind}-${index}`, path]);
-    return realpathSync(path);
+    return realpathSync.native(path);
   });
 
   return { ...common, mainCheckout: null, worktrees };
 }
 
 export function createGitLayoutFixture(): GitLayoutFixture {
-  const base = realpathSync(mkdtempSync(join(tmpdir(), "fabric-git-layout-")));
+  // `.native` everywhere in this file, matching the resolver's canonical form.
+  // On the Windows CI runner `tmpdir()` is the 8.3 short path
+  // (`C:\Users\RUNNER~1\...`); plain realpathSync leaves it short while the
+  // resolver reports Git's long form, so every expectation built from this base
+  // compared unequal to the very directory it named.
+  const base = realpathSync.native(mkdtempSync(join(tmpdir(), "fabric-git-layout-")));
   const seed = createSeed(base);
   const built = new Map<GitLayoutKind, GitLayout>();
 

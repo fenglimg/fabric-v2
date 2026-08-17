@@ -14,7 +14,11 @@ function normalizeRoot(raw: string): string | null {
   if (trimmed.length === 0) return null;
   try {
     const absolute = isAbsolute(trimmed) ? trimmed : resolve(trimmed);
-    const real = existsSync(absolute) ? realpathSync(absolute) : absolute;
+    // `.native` keeps this in the SAME canonical form the shared resolver and
+    // `git rev-parse` produce — plain realpathSync leaves Windows 8.3 short
+    // components intact, so a root normalised here would not compare equal to
+    // the workspaceRoot the resolver hands back for the same directory.
+    const real = existsSync(absolute) ? realpathSync.native(absolute) : absolute;
     if (real === "/" || /^[A-Za-z]:[\\/]?$/u.test(real)) return null;
     return real;
   } catch {
