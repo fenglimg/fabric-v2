@@ -3,7 +3,7 @@
   "name": "console-shell",
   "title": "控制台骨架：preview 扩为多页面 + 写通道安全边界",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

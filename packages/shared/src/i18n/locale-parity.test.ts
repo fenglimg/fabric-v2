@@ -131,8 +131,30 @@ describe("i18n locale parity census", () => {
   // 0/3 判死。形状与上一轮的 worktree 假阴性完全相同(扫描器把自己的副本当作
   // 引用)。修法是把脚本自身排除出 sources。**任何把 canary 字面量写进被扫描
   // 目录的做法都会复发这个坑。**
+  // 2026-08-17 (console 骨架 Step 1): 883 → 882。净 −1 = `cli.preview.arg.host`,
+  // 随 `fabric preview --host` flag 一起删除。该 flag 让 `--host 0.0.0.0` 把只读
+  // 预览服务暴露到局域网 —— 而同一个文件的两处注释都声明「binds 127.0.0.1 ONLY
+  // (never 0.0.0.0)」。控制台正要给这个服务加写通道,那时同一个 flag 会变成
+  // 「局域网任意机器可改本机 Fabric 配置」。绑定地址改为 startPreviewServer 内的
+  // ALLOWED_HOSTS 白名单(非法值抛错,不静默降级),CLI 侧不再有任何改绑入口。
+  // 按上面的规矩重跑了 census:1999 文件、59 个 template pattern、0 provably dead,
+  // canary 3/3 判死。
+  //
+  // ⚠️ 这轮 canary 连抓两个盲区,都是「扫描器恒判活」的形状:
+  // ① **模板模式必须锚定点分前缀。** 从 `${` 往前取字面段会把通用插值
+  //    (`${a}.${b}`)也收进来,它编译成 `^[A-Za-z0-9_.-]+\.[A-Za-z0-9_.-]+$`
+  //    —— 匹配一切点分字符串,于是任何输入都是 0 dead(canary 首跑 0/3)。
+  // ② **贪婪左到右扫嵌套模板会吞掉内层 key。** 对
+  //    `` `${paint.muted(t(`cli.sync.state.${s}`))}` ``,外层 `${...}` 一路吃到
+  //    内层的 `}`,内层 key 模板根本不会被发射 → `cli.sync.state.*` /
+  //    `cli.uninstall.plan.action.*` / `cli.config.source.*` 共 14 个活 key 被
+  //    报成 dead。改为锚定「点分字面前缀 + `${`」的形状后,外层形态不可匹配,
+  //    内层自然被单独找到。这与注释 ② 记的是同一族坑的两个变体。
+  // 另:census 脚本这轮写在 /tmp 而非仓库内 —— 上一轮的自捕获假阴性(脚本把
+  // canary 字面量写在自己文件里、自己又在扫描范围内)靠物理隔离根除,而不是靠
+  // 记得维护一条排除规则。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(883);
+    expect(enKeys.length).toBe(882);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

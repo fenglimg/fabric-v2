@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric 控制台 · 状态</title>
+<link rel="stylesheet" href="/assets/shell.css" />
+<script src="/assets/shell.js"></script>
+<style>
+  /* 页面专有规则。令牌 / body 基线 / .navbar / .seg 来自 /assets/shell.css。
+     .card/.row 这类原子暂时留在这里 —— 只有本页在用,按 shell.css 的口径还不算
+     "共享";第二个页面要用时再上提。 */
+  main{max-width:920px;margin:0 auto;padding:22px 18px 60px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:14px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px 18px;box-shadow:var(--shadow)}
+  .card h2{margin:0 0 10px;font-size:13px;font-weight:600;color:var(--text-secondary)}
+  .big{font-size:22px;font-weight:600;letter-spacing:-.01em}
+  .row{display:flex;align-items:baseline;gap:10px;padding:7px 0;font-size:13px;line-height:1.6;
+    border-bottom:1px solid var(--border)}
+  .row:last-child{border-bottom:none}
+  .row .k{color:var(--text-tertiary);min-width:104px;flex:none}
+  .row .v{color:var(--text);word-break:break-all}
+  .mono{font-family:var(--mono);font-size:12px}
+  .pill{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--border-strong);color:var(--text-secondary);margin-left:6px}
+  .pill.write{color:#fff;background:var(--accent);border-color:transparent}
+  .guide{padding:22px 18px;text-align:center;line-height:1.95;color:var(--text-tertiary);font-size:13px}
+  .guide .what{display:block;color:var(--text);font-size:14px;margin-bottom:6px}
+  .guide code{font-family:var(--mono);font-size:12px;background:var(--surface-2);
+    border-radius:var(--radius-sm);padding:2px 6px}
+  .muted{color:var(--text-tertiary)}
+  .err{color:#ef4444}
+</style></head><body>
+<nav class="navbar">
+  <h1 class="nav-title">Fabric 控制台</h1>
+  <a class="seg" href="/">知识</a>
+  <a class="seg" href="/graph">关联图</a>
+  <a class="seg" href="/status">状态</a>
+  <span class="spacer"></span>
+  <button class="seg" id="shellThemeBtn" title="切换主题">☀</button>
+</nav>
+<main id="main"><div class="guide">正在读取本机状态…</div></main>
+<script>
+(function(){
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':'&quot;'; }); }
+
+  // 空状态文案按 emptyReason 分三种,而不是共用一句「暂无数据」。
+  // 三种情况的下一步命令互不相同,合成一句就等于把用户推向错的那条。
+  var GUIDE={
+    'no-config':{
+      what:'这个目录还没装 Fabric',
+      body:'当前目录下没有 <code>.fabric/fabric-config.json</code>。在项目根目录跑 <code>fabric install</code> 即可接入知识层。'
+    },
+    'no-stores':{
+      what:'装好了,但还没接知识库',
+      body:'Fabric 已安装,但本项目没有挂载任何 store —— 所以没有知识会浮现给 AI。用 <code>fabric store bind &lt;alias&gt;</code> 绑定一个,再用 <code>fabric store switch-write &lt;alias&gt;</code> 选定写入目标。'
+    },
+    'no-entries':{
+      what:'知识库是空的',
+      body:'store 已挂载但里面还没有条目。空库不是正常起点 —— 装完却永远没有命中,就等于知识层没生效。用 <code>fabric-archive</code> 归档第一条,或 <code>fabric first-hit --seed</code> 灌入样例。'
+    }
+  };
+
+  function renderGuide(reason){
+    var g=GUIDE[reason];
+    if(!g) return '';
+    return '<div class="card"><div class="guide"><span class="what">'+g.what+'</span>'+g.body+'</div></div>';
+  }
+
+  function render(d){
+    var html='';
+    if(d.emptyReason){ html+=renderGuide(d.emptyReason); }
+
+    html+='<div class="grid">';
+    html+='<div class="card"><h2>知识条目</h2><div class="big">'+d.entryCount+'</div></div>';
+    html+='<div class="card"><h2>挂载 store</h2><div class="big">'+d.stores.length+'</div></div>';
+    html+='<div class="card"><h2>CLI 版本</h2><div class="big mono">'+esc(d.fabricVersion)+'</div></div>';
+    html+='</div>';
+
+    html+='<div class="card" style="margin-bottom:14px"><h2>本项目</h2>';
+    html+='<div class="row"><span class="k">项目根</span><span class="v mono">'+esc(d.projectRoot)+'</span></div>';
+    html+='<div class="row"><span class="k">project_id</span><span class="v mono">'+
+      (d.projectId?esc(d.projectId):'<span class="muted">未分配 — 绑定 store 时才写入</span>')+'</span></div>';
+    html+='<div class="row"><span class="k">写入 store</span><span class="v">'+
+      (d.activeWriteStore?esc(d.activeWriteStore):'<span class="muted">未选定</span>')+'</span></div>';
+    html+='<div class="row"><span class="k">read-set 版本</span><span class="v mono">'+esc(d.revision)+'</span></div>';
+    html+='</div>';
+
+    html+='<div class="card"><h2>read-set 内的 store</h2>';
+    if(!d.stores.length){
+      html+='<div class="guide">本项目 read-set 为空 —— 上方已说明原因与下一步。</div>';
+    } else {
+      d.stores.forEach(function(s){
+        html+='<div class="row"><span class="k mono">'+esc(s.alias)+
+          (s.write?'<span class="pill write">写入</span>':'')+'</span>'+
+          '<span class="v">'+s.entryCount+' 条<span class="pill">'+esc(s.layer)+'</span></span></div>';
+      });
+    }
+    html+='</div>';
+    document.getElementById('main').innerHTML=html;
+  }
+
+  fetch('/api/status',{cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(render)
+    .catch(function(e){
+      // 失败也要说清是什么失败了。一片空白读起来是「坏了」,不是「读不到」。
+      document.getElementById('main').innerHTML=
+        '<div class="card"><div class="guide"><span class="what err">读取状态失败</span>'+
+        esc(e.message)+'<br>控制台只连本机,通常是服务已停止 —— 回终端看 <code>fabric preview</code> 还在不在跑。</div></div>';
+    });
+})();
+</script>
+</body></html>

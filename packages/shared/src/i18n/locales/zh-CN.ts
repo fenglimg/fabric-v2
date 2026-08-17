@@ -42,7 +42,6 @@ export const zhCNMessages: Messages = {
   // `fabric preview` — 本地只读知识预览 web 服务(loopback-only)。
   "cli.preview.description": "启动本地只读知识预览页(浏览器里按受众分组浏览)",
   "cli.preview.arg.port": "监听端口(默认 7777)。",
-  "cli.preview.arg.host": "监听地址(默认 127.0.0.1,仅本机可访问)。",
   "cli.preview.arg.open": "启动后自动打开浏览器(默认开;传 --no-open 关闭)。",
   "cli.preview.arg.target": "覆盖项目根目录(默认取 cwd)。",
   "cli.preview.arg.all":

@@ -26,12 +26,14 @@
 
 ## Acceptance Criteria
 
-- [ ] AC1 至少两个页面（现有知识页 + 一个新页）可互相跳转，视觉一致。
-- [ ] AC2 有测试断言服务只在 `127.0.0.1` 可达，且不存在改绑地址的入口。
-- [ ] AC3 有测试断言：伪造非 loopback `Origin` 的 POST 被拒绝。
-- [ ] AC4 有测试断言：写端点不接受 `GET`。
-- [ ] AC5 既有 preview 测试（`preview-graph` / `preview-port-fallback` / `preview-source-toggle` / `preview-title`）全绿。
-- [ ] AC6 样式为共享来源，改一处两页同时生效。
+- [x] AC1 至少两个页面（现有知识页 + 一个新页）可互相跳转，视觉一致。
+- [x] AC2 有测试断言服务只在 `127.0.0.1` 可达，且不存在改绑地址的入口。
+  > 落地时发现 C1 原本是**被违反**的：`fabric preview --host 0.0.0.0` 存在且可用，而同一文件里有两处注释声明「binds 127.0.0.1 ONLY」。已删 flag + 加 `ALLOWED_HOSTS` 白名单（非法值抛错，不静默降级），并断言 citty `args` 里不存在 `host` 键 —— 只测运行时的话，将来把 flag 加回来会变成「一个总是报错的 flag」，测试仍绿。
+- [x] AC3 有测试断言：伪造非 loopback `Origin` 的 POST 被拒绝。
+- [x] AC4 有测试断言：写端点不接受 `GET`。
+- [x] AC5 既有 preview 测试（`preview-graph` / `preview-port-fallback` / `preview-source-toggle` / `preview-title`）全绿。
+- [x] AC6 样式为共享来源，改一处两页同时生效。
+  > 验收对象是 `/graph` 与 `/status`（均 link `/assets/shell.css`）。`lumen.html` 只取 `.navbar`，其 2220 行自带调色板未收编 —— 收编要通读全部硬编码色号，风险与「交付骨架」不匹配，另开任务。
 
 ## Out of Scope
 

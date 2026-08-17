@@ -50,7 +50,6 @@ export const enMessages: Messages = {
   "cli.preview.description":
     "Start a local read-only knowledge preview (browse in your browser, grouped by scope)",
   "cli.preview.arg.port": "Port to listen on (default 7777).",
-  "cli.preview.arg.host": "Host to bind (default 127.0.0.1, loopback only).",
   "cli.preview.arg.open":
     "Open the browser on start (default on; use --no-open to disable).",
   "cli.preview.arg.target": "Override the project root (defaults to cwd).",
