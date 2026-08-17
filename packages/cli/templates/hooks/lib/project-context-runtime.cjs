@@ -4904,7 +4904,7 @@ function git(start, args) {
   }).trim();
 }
 function canonical(path) {
-  return fs.realpathSync(path);
+  return fs.realpathSync.native(path);
 }
 function resolveGitWorktreeIdentity(start) {
   const absolute = path.resolve(start);
@@ -4954,7 +4954,7 @@ function canonicalCandidate(raw, cwd) {
   const absolute = path.isAbsolute(trimmed) ? trimmed : path.resolve(cwd, trimmed);
   if (!fs.existsSync(absolute)) return null;
   try {
-    return fs.realpathSync(absolute);
+    return fs.realpathSync.native(absolute);
   } catch {
     return null;
   }

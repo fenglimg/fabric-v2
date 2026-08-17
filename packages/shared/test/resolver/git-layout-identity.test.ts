@@ -71,7 +71,7 @@ describe("identity resolution across git layouts — committed config (the norma
     // to workspaceRoot by accident. Here it is the answer by rule, not by luck.
     expect(context.identityRoot).toBe(sub);
     expect(context.identitySource).toBe("local");
-    expect(context.identityRoot).not.toBe(realpathSync(join(layout.container, "super")));
+    expect(context.identityRoot).not.toBe(realpathSync.native(join(layout.container, "super")));
   });
 
   it("bare-as-dotgit: identity root is never the non-checkout container", () => {
@@ -104,7 +104,7 @@ describe("resolveMainWorktree reports Git's own answer", () => {
     const sub = layout.worktrees[0]!;
     const main = resolveMainWorktree(sub);
     expect(main).toBeNull();
-    expect(main).not.toBe(join(realpathSync(join(layout.container, "super")), ".git", "modules", "sub"));
+    expect(main).not.toBe(join(realpathSync.native(join(layout.container, "super")), ".git", "modules", "sub"));
   });
 
   it.each(BARE_HOSTED)("%s: returns null — a bare repository has no checkout", (kind) => {

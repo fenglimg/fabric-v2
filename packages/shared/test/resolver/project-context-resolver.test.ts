@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,7 +18,12 @@ const dirs: string[] = [];
 function tempDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   dirs.push(dir);
-  return dir;
+  // Canonicalize the SAME way the resolver does (realpathSync.native), so
+  // expectations built from this path are an independent oracle rather than a
+  // second copy of the code under test. macOS routes tmpdir() through the
+  // /var → /private/var symlink and Windows CI hands back an 8.3 short name;
+  // both are folded here, once.
+  return realpathSync.native(dir);
 }
 
 function git(cwd: string, args: string[]): string {
@@ -112,12 +117,14 @@ describe("createProjectContextResolver", () => {
       explicitRoot: selected,
       roots: [selected, other],
     });
-    // Oracle via the resolver's own canonicalization (git toplevel), not
-    // realpathSync — the two diverge on Windows 8.3 short paths (RUNNER~1 vs
-    // runneradmin). This asserts the intent: explicit-pin selects `selected`
-    // over the ambiguous `other` without throwing.
-    const canonicalSelected = createProjectContextResolver({ roots: [selected] }).workspaceRoot;
-    expect(context.workspaceRoot).toBe(canonicalSelected);
+    // Independent oracle again: `tempDir` now canonicalizes with the same
+    // realpathSync.native the resolver uses, so `selected` IS the expected
+    // value. This previously had to route the oracle through
+    // createProjectContextResolver itself — i.e. assert the code under test
+    // against itself — purely to dodge the Windows 8.3 divergence that the
+    // resolver's own canonicalizer now removes. If that divergence ever comes
+    // back, this line is where it surfaces.
+    expect(context.workspaceRoot).toBe(selected);
     expect(context.source).toBe("explicit-pin");
   });
 
