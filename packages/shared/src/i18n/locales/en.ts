@@ -55,6 +55,37 @@ export const enMessages: Messages = {
   "cli.preview.arg.target": "Override the project root (defaults to cwd).",
   "cli.preview.arg.all":
     "Show knowledge from every mounted store (bypass this project's read-set; default shows only this project).",
+  // Console config page chrome. Delivered through `/api/config` rather than
+  // hard-coded in the template so the page follows the machine-wide `language`
+  // the same way the CLI does.
+  "cli.console.config.title": "Configuration",
+  "cli.console.config.intro":
+    "The value in effect for this project, and which layer supplied it.",
+  "cli.console.config.group.A_locale": "Language and scope",
+  "cli.console.config.group.B_hint_threshold": "Reminder thresholds",
+  "cli.console.config.group.C_audit": "Audit",
+  "cli.console.config.group.D_behavior": "Behaviour",
+  "cli.console.config.scope.label": "Apply to",
+  "cli.console.config.scope.project": "this project only",
+  "cli.console.config.scope.defaults": "every project on this machine",
+  "cli.console.config.scope.unavailable":
+    "This repo has no project_id yet, so a per-project value cannot be stored. Bind a store first (fabric store bind).",
+  "cli.console.config.save": "Save",
+  "cli.console.config.saved": "Saved to {target}.",
+  "cli.console.config.save-failed": "Could not save: {reason}",
+  "cli.console.config.env-locked":
+    "Set by {name} in this process. Editing a config file would not change it.",
+  "cli.console.config.env-available": "can be overridden by {name}",
+  "cli.console.config.loading": "Reading configuration…",
+  "cli.console.config.load-failed": "Could not read configuration",
+  "cli.console.config.remote.title": "Remote embedding",
+  "cli.console.config.remote.off": "Off — recall ranks locally.",
+  "cli.console.config.remote.on": "On — embeddings are computed at {host}.",
+  "cli.console.config.remote.key-set": "API key set (never shown here)",
+  "cli.console.config.remote.key-missing":
+    "No API key — recall falls back to text-only ranking",
+  "cli.console.config.store-missing":
+    "No team store is bound, so store-owned settings cannot be changed here.",
   "cli.preview.port-fallback":
     "Port {requested} was busy — using {actual} instead.",
   "cli.preview.started": "Knowledge preview started: {url}",
@@ -182,6 +213,10 @@ export const enMessages: Messages = {
   // config-single-home W6: which layer supplied the value. The same key can be
   // set machine-wide, per-project, or by the team store — naming the source is
   // what explains "why does this repo resolve a different value".
+  // The env layer only exists for the keys in PANEL_ENV_OVERRIDES; a field
+  // tagged with it cannot be changed by editing a config file, which is the
+  // whole reason the source is worth naming.
+  "cli.config.source.env": "environment",
   "cli.config.source.project": "this project",
   "cli.config.source.defaults": "machine-wide",
   "cli.config.source.store": "team store",

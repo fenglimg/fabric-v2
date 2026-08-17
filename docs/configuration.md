@@ -1,64 +1,118 @@
 # Configuration layering
 
-Fabric configuration has three homes. Put a value in the narrowest home that
-matches who owns it.
+Every Fabric setting has exactly ONE home. There is no key you can set in two
+places, and therefore no "which one wins" to reason about — only "where does this
+one live".
 
-| Home | File or source | Owner | Typical values |
+That is a deliberate design (KT-MOD-0004): as long as two files can both hold a
+key, some user will eventually be looking at a value that is not the value in
+effect, which is the most expensive kind of configuration bug to diagnose.
+
+## The three homes
+
+| Home | File | Owns | Who it describes |
 | --- | --- | --- | --- |
-| Machine | Environment variables and `~/.fabric/fabric-config.json` | One workstation | Remote endpoint, API key, local cache path |
-| Store | `<store-root>/store-config.json` | Everyone using that shared store | Recall, ranking, and embedding-model defaults |
-| Repo | `<repo>/.fabric/fabric-config.json` | One repository | Store bindings and intentional repo overrides |
+| Preference | `~/.fabric/fabric-global.json` → `projects[<project_id>]` then `defaults` | Retrieval tuning, nudge cadence, behaviour policies | How *you* want Fabric to behave |
+| Corpus | `<store-root>/store-config.json` | Staleness, similarity, and scale thresholds | What a *knowledge base* is like |
+| Global root | `~/.fabric/fabric-global.json` top level | `language` | This machine's tone |
 
-For knobs that support all layers, resolution is:
+`<repo>/.fabric/fabric-config.json` is **identity only** — `project_id`,
+`required_stores`, `active_write_store`, `active_project`, `write_routes`,
+`default_write_store`. It holds no policy knobs. A policy key left in it from an
+older layout has no effect; `fabric doctor` reports it as a
+`config_key_relocated` INFO advisory and names its new home.
+
+## Resolution order
+
+The cascade is per class, not global:
 
 ```text
-environment > repo > store > library default
+preference   env (see below) > projects[<project_id>] > defaults > code default
+corpus       env (see below) > store-config.json > code default
+global root  ~/.fabric/fabric-global.json > code default
 ```
 
-Each layer is validated independently. A missing or invalid value falls through
-to the next layer; one invalid Store field does not discard valid sibling fields.
-Repo overrides are allowed. `fabric doctor` reports an informational
-`store_knob_repo_override` advisory when a Repo and Store explicitly set the
-same Store-overridable knob.
+`projects[<project_id>]` is this repository's exception to your machine-wide
+`defaults`; the `project_id` linking them is the one key the repo config still
+owns.
+
+Each layer is validated independently. A missing, malformed, or unrecognised
+value falls through to the next layer and never throws — one bad field does not
+discard its valid siblings.
+
+## Environment variables
+
+Env is **not** a uniform override layer. Only these four settings have a reader
+that consults the environment:
+
+| Setting | Variable | Read by |
+| --- | --- | --- |
+| `default_layer_filter` | `FABRIC_DEFAULT_LAYER_FILTER` | MCP server |
+| `fusion` | `FABRIC_FUSION` | MCP server |
+| `nudge_mode` | `FABRIC_NUDGE_MODE` | hooks |
+| `underseed_node_threshold` | `FABRIC_UNDERSEED_NODE_THRESHOLD` | hooks |
+
+For every other setting, exporting a `FABRIC_`-prefixed variable does nothing.
+The authoritative list is `PANEL_ENV_OVERRIDES`
+(`packages/shared/src/schemas/config-env-registry.ts`); a census test fails if it
+disagrees with the code in either direction, so it cannot quietly go stale.
+
+Additional `FABRIC_*` variables exist for non-panel internals (embedding
+transport, credibility half-lives, orphan-demotion thresholds); those are read
+where they are defined and are not part of the settings surface.
+
+Both `fabric config` and the console configuration page label the layer each
+value came from, including `environment`. A value the environment is deciding
+cannot be edited from either surface — writing it to a file would persist a
+value that nothing reads.
 
 ## Store configuration
 
-`store-config.json` is stored beside `store.json` at the shared Store root. A
-new Store receives an empty object by default. Supported Store values include:
+`store-config.json` sits beside `store.json` at the shared store root. A new
+store gets an empty object. `storeConfigSchema`
+(`packages/shared/src/schemas/store.ts`) is the sole definition of what a store
+may configure — corpus properties only: staleness and credibility windows,
+conflict-lint similarity, index scale thresholds.
 
-- Recall selection: `plan_context_top_k`, `recall_relevance_ratio`,
-  `default_layer_filter`, `broad_index_backstop` and
-  `underseed_node_threshold`.
-- Embedding and fusion: `embed_weight`, `embed_model` and `fusion`.
-- Review, conflict, credibility and orphan-demotion thresholds.
+Preference knobs are not accepted here. A preference key written into a
+store-config is simply not part of that shape and is ignored; there is no
+allow-list to keep in sync, which is what removed a long-standing drift between
+a declared set of overridable knobs and the smaller set that actually worked.
 
-`embed_enabled` remains a Repo decision; a Store cannot enable embeddings for a
-Repo. Unknown Store keys are tolerated for forward compatibility but are not
-used as configuration knobs.
+Unknown store keys are tolerated for forward compatibility and are not used as
+configuration.
 
 ## Remote embeddings
 
-Remote embedding configuration is deliberately split by ownership:
+Remote embedding configuration moves as one unit, under `embed_remote` in the
+global config:
 
-- Model selection (`embed_model`) may be a Store default, with Repo and
-  environment overrides.
-- Endpoint (`FABRIC_EMBED_ENDPOINT` or machine `embed_endpoint`) and API key
-  (`FABRIC_EMBED_API_KEY` or machine `embed_api_key`) are Machine-only.
+- `endpoint`, `api_key`, and `model` travel together — a remote endpoint paired
+  with a local model name is an unusable combination, so they are one object
+  rather than three independent keys.
+- Presence of the object IS the mode switch: set means remote, absent means the
+  local `fastembed` provider.
 - Secrets are never read from or written to `store-config.json`.
+- `FABRIC_EMBED_ENDPOINT` / `FABRIC_EMBED_API_KEY` / `FABRIC_EMBED_MODEL`
+  override the corresponding fields for one process.
 
-When an endpoint and key are present, recall uses the remote OpenAI-compatible
-embedding endpoint. When an endpoint is present without a key, recall degrades
-to text-only ranking and emits a one-time hint. It does not silently switch to a
-local model. Without a remote endpoint, Fabric uses the optional local
-`fastembed` provider and degrades to text-only ranking when it is unavailable.
+With an endpoint and key present, recall uses the remote OpenAI-compatible
+endpoint. With an endpoint but no key, recall degrades to text-only ranking and
+emits a one-time hint — it does not silently fall back to a local model. Without
+a remote endpoint, Fabric uses the optional local `fastembed` provider and
+degrades to text-only ranking when it is unavailable.
 
-Vector caches are isolated by transport, model, and an endpoint fingerprint.
-The fingerprint never includes the API key.
+Vector caches are isolated by transport, model, and an endpoint fingerprint. The
+fingerprint never includes the API key.
+
+The console configuration page reports remote embedding as shape only — host,
+whether a key is set, and the model. The key itself is never sent to the browser
+and cannot be edited there; use `fabric config` or edit the global config
+directly.
 
 ## Deferred work
 
-The following are intentionally outside the current configuration-layering
-implementation:
+Intentionally outside the current implementation:
 
-- A Repo-local `fabric-config.local.json` overlay.
-- `fabric info` remote-readiness reporting and model warm-up behavior.
+- A repo-local `fabric-config.local.json` overlay.
+- `fabric info` remote-readiness reporting and model warm-up behaviour.

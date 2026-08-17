@@ -100,6 +100,30 @@ describe("write endpoints over HTTP", () => {
     expect(res.status).toBe(405);
   });
 
+  // The guard is driven by the WRITE_ROUTES table, so every route in it must
+  // inherit the same treatment. Pinning the SECOND route is what turns "the
+  // table works" from a claim about one endpoint into a claim about the
+  // mechanism — a per-handler guard would pass the /api/open cases above and
+  // still leave this one open.
+  it("refuses GET on /api/config/set (405) while /api/config stays readable", async () => {
+    const { base } = await start();
+    // The read and the write deliberately live at different paths: membership in
+    // WRITE_ROUTES refuses every non-POST method, so sharing one path would need
+    // an exception carved into the guard.
+    expect((await fetch(`${base}/api/config`, { method: "GET" })).status).toBe(200);
+    expect((await fetch(`${base}/api/config/set`, { method: "GET" })).status).toBe(405);
+  });
+
+  it("refuses a config POST carrying a foreign Origin (403)", async () => {
+    const { base } = await start();
+    const res = await fetch(`${base}/api/config/set`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ key: "nudge_mode", value: "silent" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("refuses a POST carrying a foreign Origin (403)", async () => {
     const { base } = await start();
     const res = await fetch(`${base}/api/open`, {

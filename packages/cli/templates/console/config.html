@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric 控制台 · 配置</title>
+<link rel="stylesheet" href="/assets/shell.css" />
+<script src="/assets/shell.js"></script>
+<style>
+  /* 页面专有规则。令牌 / body 基线 / .navbar / .seg 来自 /assets/shell.css。 */
+  main{max-width:980px;margin:0 auto;padding:22px 18px 60px}
+  .intro{color:var(--text-tertiary);font-size:13px;margin:0 0 18px;line-height:1.7}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px}
+  .card h2{margin:0 0 4px;font-size:13px;font-weight:600;color:var(--text-secondary)}
+  .frow{display:grid;grid-template-columns:1fr auto;gap:10px 14px;align-items:start;
+    padding:12px 0;border-bottom:1px solid var(--border)}
+  .frow:last-child{border-bottom:none}
+  .fkey{font-family:var(--mono);font-size:12px;color:var(--text)}
+  .flabel{font-size:13px;color:var(--text);margin-bottom:2px}
+  .fdesc{font-size:12px;color:var(--text-tertiary);line-height:1.6}
+  .fctl{display:flex;align-items:center;gap:8px;justify-self:end}
+  .fctl input,.fctl select{font:inherit;font-size:12px;padding:4px 7px;min-width:132px;
+    color:var(--text);background:var(--surface-2);border:1px solid var(--border-strong);
+    border-radius:var(--radius-sm)}
+  .fctl button{font:inherit;font-size:12px;padding:4px 11px;cursor:pointer;color:#fff;
+    background:var(--accent);border:1px solid transparent;border-radius:var(--radius-sm)}
+  .fctl button:disabled,.fctl input:disabled,.fctl select:disabled{opacity:.5;cursor:not-allowed}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
+    border:1px solid var(--border-strong);color:var(--text-secondary);margin-left:6px}
+  /* env 用警示色:它同时意味着"这是当前生效值"和"你在这里改不动"。 */
+  .tag.env{color:#b45309;border-color:#b45309}
+  [data-theme="dark"] .tag.env{color:#fbbf24;border-color:#fbbf24}
+  .note{font-size:11px;color:var(--text-tertiary);margin-top:4px;line-height:1.6}
+  .note.warn{color:#b45309}
+  [data-theme="dark"] .note.warn{color:#fbbf24}
+  .scopebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;
+    color:var(--text-secondary);padding:12px 0 2px}
+  .scopebar select{font:inherit;font-size:12px;padding:4px 7px;color:var(--text);
+    background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--radius-sm)}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;z-index:9;
+    font-size:12px;padding:8px 14px;border-radius:var(--radius-sm);color:#fff;
+    background:#111827;box-shadow:var(--shadow);opacity:0;transition:opacity .18s}
+  .toast.show{opacity:.94}
+  .toast.bad{background:#b91c1c}
+  .guide{padding:20px 18px;text-align:center;line-height:1.9;color:var(--text-tertiary);font-size:13px}
+  .err{color:#ef4444}
+  code{font-family:var(--mono);font-size:12px;background:var(--surface-2);
+    border-radius:var(--radius-sm);padding:1px 5px}
+</style></head><body>
+<nav class="navbar">
+  <h1 class="nav-title">Fabric 控制台</h1>
+  <a class="seg" href="/">知识</a>
+  <a class="seg" href="/graph">关联图</a>
+  <a class="seg" href="/status">状态</a>
+  <a class="seg" href="/config">配置</a>
+  <span class="spacer"></span>
+  <button class="seg" id="shellThemeBtn" title="切换主题">☀</button>
+</nav>
+<main id="main"><div class="guide">…</div></main>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':'&quot;'; }); }
+  function fmt(tpl,vars){ return String(tpl).replace(/\{(\w+)\}/g,function(m,k){
+    return vars[k]==null?m:vars[k]; }); }
+
+  var DATA=null;
+  var GROUP_ORDER=['A_locale','B_hint_threshold','C_audit','D_behavior'];
+
+  function toast(msg,bad){
+    var el=document.getElementById('toast');
+    el.textContent=msg; el.className='toast show'+(bad?' bad':'');
+    setTimeout(function(){ el.className='toast'+(bad?' bad':''); },3200);
+  }
+
+  function control(f){
+    if(!f.editable){
+      // env 顶着时不渲染禁用控件而是直接不给控件:一个点不动的输入框会让人反复
+      // 试,不如把原因说在它本来的位置上。
+      return '<span class="note warn">'+esc(fmt(DATA.strings['env-locked'],{name:f.envVar}))+'</span>';
+    }
+    var input;
+    if(f.widget==='select'){
+      input='<select data-key="'+esc(f.key)+'">'+(f.enumValues||[]).map(function(v){
+        return '<option value="'+esc(v)+'"'+(v===f.effective?' selected':'')+'>'+esc(v)+'</option>';
+      }).join('')+'</select>';
+    } else {
+      input='<input type="text" data-key="'+esc(f.key)+'" value="'+esc(f.effective)+'" />';
+    }
+    return '<div class="fctl">'+input+
+      '<button data-save="'+esc(f.key)+'">'+esc(DATA.strings.save)+'</button></div>';
+  }
+
+  function row(f){
+    var tag='<span class="tag'+(f.source==='env'?' env':'')+'">'+esc(f.sourceLabel)+'</span>';
+    // 没生效但存在的 env 变量也要标出来 —— 用户排查"我改了怎么没用"时,这一行
+    // 往往就是答案。
+    var envNote=(f.envVar&&f.source!=='env')
+      ? '<div class="note">'+esc(fmt(DATA.strings['env-available'],{name:f.envVar}))+'</div>' : '';
+    return '<div class="frow"><div>'+
+      '<div class="flabel">'+esc(f.label)+tag+'</div>'+
+      '<div class="fkey">'+esc(f.key)+'</div>'+
+      '<div class="fdesc">'+esc(f.description)+'</div>'+envNote+
+      '</div>'+control(f)+'</div>';
+  }
+
+  function remoteCard(r,s){
+    var body;
+    if(!r.configured){ body=esc(s['remote.off']); }
+    else {
+      body=esc(fmt(s['remote.on'],{host:r.endpointHost||'?'}))+
+        '<span class="tag">'+esc(r.hasApiKey?s['remote.key-set']:s['remote.key-missing'])+'</span>'+
+        (r.model?'<span class="tag">'+esc(r.model)+'</span>':'');
+    }
+    return '<div class="card"><h2>'+esc(s['remote.title'])+'</h2><div class="fdesc">'+body+'</div></div>';
+  }
+
+  function render(){
+    var s=DATA.strings, html='';
+    html+='<p class="intro">'+esc(s.intro)+'</p>';
+
+    html+='<div class="card"><div class="scopebar"><span>'+esc(s['scope.label'])+'</span>'+
+      '<select id="scope"'+(DATA.projectId?'':' disabled')+'>'+
+        '<option value="project"'+(DATA.projectId?' selected':'')+'>'+esc(s['scope.project'])+'</option>'+
+        '<option value="defaults"'+(DATA.projectId?'':' selected')+'>'+esc(s['scope.defaults'])+'</option>'+
+      '</select>'+
+      (DATA.projectId?'':'<span class="note warn">'+esc(s['scope.unavailable'])+'</span>')+
+      (DATA.storeRoot?'':'<span class="note warn">'+esc(s['store-missing'])+'</span>')+
+      '</div></div>';
+
+    GROUP_ORDER.forEach(function(g){
+      var fields=DATA.fields.filter(function(f){ return f.group===g; });
+      if(!fields.length) return;
+      html+='<div class="card"><h2>'+esc(s['group.'+g])+'</h2>'+fields.map(row).join('')+'</div>';
+    });
+
+    html+=remoteCard(DATA.remoteEmbedding,s);
+    document.getElementById('main').innerHTML=html;
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-save]'),function(btn){
+      btn.addEventListener('click',function(){ save(btn.getAttribute('data-save'),btn); });
+    });
+  }
+
+  function save(key,btn){
+    var ctl=document.querySelector('[data-key="'+key+'"]');
+    if(!ctl) return;
+    var scopeEl=document.getElementById('scope');
+    btn.disabled=true;
+    fetch('/api/config/set',{
+      method:'POST', cache:'no-store',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({key:key,value:ctl.value,scope:scopeEl?scopeEl.value:'defaults'})
+    })
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+    .then(function(res){
+      if(!res.ok){ throw new Error(res.body&&res.body.error?res.body.error:'HTTP error'); }
+      toast(fmt(DATA.strings.saved,{target:res.body.target}));
+      // 重新拉一次而不是乐观更新:写进哪一层、有没有被 env 顶掉,只有重新 resolve
+      // 才知道。乐观更新会显示一个我们并未验证过的状态。
+      return load();
+    })
+    .catch(function(e){
+      toast(fmt(DATA.strings['save-failed'],{reason:e.message}),true);
+      btn.disabled=false;
+    });
+  }
+
+  function load(){
+    return fetch('/api/config',{cache:'no-store'})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(d){ DATA=d; render(); })
+      .catch(function(e){
+        document.getElementById('main').innerHTML=
+          '<div class="card"><div class="guide"><span class="err">'+
+          esc(DATA&&DATA.strings?DATA.strings['load-failed']:'读取配置失败')+'</span><br>'+
+          esc(e.message)+'<br>控制台只连本机,通常是服务已停止 —— 回终端看 '+
+          '<code>fabric preview</code> 还在不在跑。</div></div>';
+      });
+  }
+
+  load();
+})();
+</script>
+</body></html>

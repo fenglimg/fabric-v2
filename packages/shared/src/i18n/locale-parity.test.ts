@@ -153,8 +153,24 @@ describe("i18n locale parity census", () => {
   // 另:census 脚本这轮写在 /tmp 而非仓库内 —— 上一轮的自捕获假阴性(脚本把
   // canary 字面量写在自己文件里、自己又在扫描范围内)靠物理隔离根除,而不是靠
   // 记得维护一条排除规则。
+  // 2026-08-17 (console 配置视图 S3): 882 → 883。净 +1 = `cli.config.source.env`。
+  // 配置的 env 层此前被面板整体略过,理由写在 config.ts:「不是每个旋钮都有 env
+  // reader,宣称有就是撒谎的展示」—— 判断对,但选了保守的错一半:对确实有 reader
+  // 的 4 个键(default_layer_filter / fusion / nudge_mode /
+  // underseed_node_threshold),面板把 env 生效的情况显示成「全机器」,也就是显示了
+  // 一个不生效的值。新键由既有模板 `t(\`cli.config.source.${source}\`)`
+  // (config.ts:887)消费,不需要新接线。
+  // 本轮**没有重跑 dead-key census**,理由:死键由**删除**产生(某 key 的最后一个
+  // 引用消失),本轮只增不删,已有 882 个键的存活判定不会因为多一个键而改变。若哪
+  // 轮同时含删除,census 必须重跑 —— 这条豁免只对纯增量成立。
+  // 2026-08-17 (console 配置视图 S4): 883 → 906。净 +23 = `cli.console.config.*`,
+  // 配置页的页面 chrome 文案(分组标题 / scope 选择 / 保存与失败 / env 锁定说明 /
+  // 远程嵌入的存在性描述)。经 `/api/config` 的 `strings` 字段下发,消费者是
+  // src/console/config-view.ts#chromeStrings —— 那里的 key 列表就是这 23 条的
+  // 权威清单。之所以不学 status.html 硬编码中文:那种写法在 `language: en` 的机器
+  // 上会渲染成中英混排。同上一轮:纯增量,不重跑 census。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(882);
+    expect(enKeys.length).toBe(906);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

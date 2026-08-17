@@ -46,6 +46,33 @@ export const zhCNMessages: Messages = {
   "cli.preview.arg.target": "覆盖项目根目录(默认取 cwd)。",
   "cli.preview.arg.all":
     "显示所有已挂载 store 的知识(越过本项目 read-set;默认只显示本项目)。",
+  // 控制台配置页的页面文案。走 `/api/config` 下发而不是硬编码进模板,这样页面和
+  // CLI 一样跟随机器级 `language`。
+  "cli.console.config.title": "配置",
+  "cli.console.config.intro": "这个项目当前实际按什么在跑,以及每个值来自哪一层。",
+  "cli.console.config.group.A_locale": "语言与范围",
+  "cli.console.config.group.B_hint_threshold": "提醒阈值",
+  "cli.console.config.group.C_audit": "审计",
+  "cli.console.config.group.D_behavior": "行为",
+  "cli.console.config.scope.label": "改动作用于",
+  "cli.console.config.scope.project": "仅本项目",
+  "cli.console.config.scope.defaults": "本机所有项目",
+  "cli.console.config.scope.unavailable":
+    "本仓库还没有 project_id,存不了「仅本项目」的值。先绑一个 store(fabric store bind)。",
+  "cli.console.config.save": "保存",
+  "cli.console.config.saved": "已保存到 {target}。",
+  "cli.console.config.save-failed": "保存失败:{reason}",
+  "cli.console.config.env-locked":
+    "当前由环境变量 {name} 决定。改配置文件不会生效。",
+  "cli.console.config.env-available": "可被 {name} 覆盖",
+  "cli.console.config.loading": "正在读取配置…",
+  "cli.console.config.load-failed": "读取配置失败",
+  "cli.console.config.remote.title": "远程嵌入",
+  "cli.console.config.remote.off": "未开启 —— 召回在本机排序。",
+  "cli.console.config.remote.on": "已开启 —— 嵌入在 {host} 计算。",
+  "cli.console.config.remote.key-set": "已设置 API key(此处永不显示原文)",
+  "cli.console.config.remote.key-missing": "未设置 API key —— 召回降级为纯文本排序",
+  "cli.console.config.store-missing": "未绑定团队 store,store 侧的设置在这里改不了。",
   "cli.preview.port-fallback": "端口 {requested} 被占用,已自动改用 {actual}。",
   "cli.preview.started": "知识预览已启动:{url}",
   "cli.preview.opening": "正在打开浏览器…",
@@ -154,6 +181,9 @@ export const zhCNMessages: Messages = {
   "cli.config.value.default-marker": "（默认）",
   // config-single-home W6：值来自哪一层。同一个键可以在机器级、本项目级或团队
   // store 里被设置，标出来源才解释得清"为什么这个仓库读到的不一样"。
+  // env 层只对 PANEL_ENV_OVERRIDES 里的键存在；标成这一层意味着改配置文件不会
+  // 生效——这正是它值得单独标出来的原因。
+  "cli.config.source.env": "环境变量",
   "cli.config.source.project": "本项目",
   "cli.config.source.defaults": "全机器",
   "cli.config.source.store": "团队 store",

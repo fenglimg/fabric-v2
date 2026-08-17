@@ -94,3 +94,11 @@ console-shell ──────────────┴──> console-confi
 - 不做通用任务编排面板（KT-DEC-0072：Fabric 是知识层，编排是 maestro-flow 的地盘）。
 - 不迁移/不兼容任何历史 web 产物（`serve` 已删除，不复活）。
 - 不引入前端构建链。
+
+## 9. shell 收尾待办（子任务收口时累积）
+
+四个模板（`console/config.html` `console/graph.html` `console/status.html` `preview/lumen.html`）共享同一段**硬编码中文导航条**。`config-view` 的正文已服务端按 `language` 渲染并在 `en` 机器实测通过，导航条没有——`en` 机器上是中文导航配英文正文。修法是把导航抽成一处、字符串随数据下发，正好和下面两项动同一批文件，一起做一次比分三次动更省 review：
+
+- 导航条 i18n（抽共享导航 + 服务端下发字符串）。
+- `lumen.html` 迁到 `shell.css` 令牌。
+- `fabric preview` → `fabric console` 改名。

@@ -14,6 +14,8 @@ import {
 } from "@fenglimg/fabric-server";
 
 import { paint } from "../colors.js";
+import { collectConfigView } from "../console/config-view.js";
+import { applyConfigEdit, type ConfigWriteRequest } from "../console/config-write.js";
 import { openKnowledgeEntry, type Opener } from "../console/open-entry.js";
 import { isSameOriginLoopback } from "../console/security.js";
 import { collectConsoleStatus } from "../console/status.js";
@@ -60,7 +62,11 @@ const ALLOWED_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 
 // Every mutating route, in one place. Membership is what turns on the POST-only
 // + loopback-Origin guard in the request dispatcher.
-const WRITE_ROUTES = new Set(["/api/open"]);
+// Note the write path is `/api/config/set`, NOT `/api/config`. Membership here
+// means "every method other than POST is refused", so a read and a write cannot
+// share one path without carving an exception into the guard — and an exception
+// is precisely what makes a table-driven guard stop being a guarantee.
+const WRITE_ROUTES = new Set(["/api/open", "/api/config/set"]);
 
 const STATIC_ASSETS: Record<string, { file: string; type: string }> = {
   "/assets/shell.css": { file: "console/shell.css", type: "text/css; charset=utf-8" },
@@ -328,6 +334,13 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
             else sendJson(res, result.status, { error: result.error });
             return;
           }
+          if (pathname === "/api/config/set") {
+            const body = (await readJsonBody(req)) as ConfigWriteRequest | null;
+            const result = await applyConfigEdit(projectRoot, body);
+            if (result.ok) sendJson(res, 200, { ok: true, target: result.target });
+            else sendJson(res, result.status, { error: result.error });
+            return;
+          }
         }
 
         if (method !== "GET") {
@@ -387,6 +400,18 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           res.end(html);
           return;
         }
+        if (pathname === "/config") {
+          const html = readFileSync(findTemplatePath("console/config.html"), "utf8");
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+          res.end(html);
+          return;
+        }
+
+        if (pathname === "/api/config") {
+          sendJson(res, 200, collectConfigView(projectRoot));
+          return;
+        }
+
         if (pathname === "/api/status") {
           sendJson(res, 200, await collectConsoleStatus(projectRoot));
           return;
