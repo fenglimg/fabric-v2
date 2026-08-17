@@ -16,7 +16,7 @@
 
 ## Requirements
 
-- **R1** 新增机器级注册表 `~/.fabric/state/projects.json`，记录每个已安装项目的：仓库绝对路径、project_id、上次 install 的 fabric 版本、上次登记时间。
+- **R1** 新增机器级注册表 `~/.fabric/state/projects.json`，记录每个已安装项目的：仓库绝对路径（主键）、上次 install 的 fabric 版本、上次登记时间，以及 project_id（**可选**——不绑 store 的 install 不产生 project_id，详见 design §2.1）。
 - **R2** `fabric install` 成功后自动登记/更新当前仓库条目。
 - **R3** 记录的路径必须与本次 install 实际写入的根**完全一致**，不得另起一套路径解析。
   > S1 核实更正：原写「以 `.git` 为锚点、复用 `resolveProjectRoot`」。该函数会无条件短路返回 `CLAUDE_PROJECT_DIR`（在 Claude Code 会话中恒被设置），跨仓执行时会登记错误的仓库；且它是标注待迁移的遗留适配器。改为直接用 `InstallContext.target`——零解析，且自动尊重 `--target`。详见 design §3.1。
@@ -40,17 +40,18 @@
 
 ## Acceptance Criteria
 
-- [ ] AC1 在一个干净仓库跑 `fabric install`，`~/.fabric/state/projects.json` 出现该仓库条目，含正确的绝对路径与当前 CLI 版本。
-- [ ] AC2 连续跑三次 `fabric install`，注册表中该项目仍只有一条条目，内容为最后一次的快照（幂等性验证）。
-- [ ] AC3 跑 `fabric install --dry-run`，注册表**不发生任何变化**（含文件 mtime）。
-- [ ] AC4 把已登记项目的目录改名后查询，该条目被标记为 `stale`，且不影响其余条目返回。
-- [ ] AC5 注册表记录的路径与本次 install 实际写入 `.fabric/` 的根一致，二者永不分叉；含 `--target <dir>` 指定他处安装的用例。
+- [x] AC1 在一个干净仓库跑 `fabric install`，`~/.fabric/state/projects.json` 出现该仓库条目，含正确的绝对路径与当前 CLI 版本。
+- [x] AC2 连续跑三次 `fabric install`，注册表中该项目仍只有一条条目，内容为最后一次的快照（幂等性验证）。
+- [x] AC3 跑 `fabric install --dry-run`，注册表**不发生任何变化**（含文件 mtime）。
+- [x] AC4 把已登记项目的目录改名后查询，该条目被标记为 `stale`，且不影响其余条目返回。
+- [x] AC5 注册表记录的路径与本次 install 实际写入 `.fabric/` 的根一致，二者永不分叉。
+  > 验证方式：wiring 测试里 install 的目标是临时夹具目录，与进程 `cwd`（仓库根）不同，因此「登记的是 target 而非 cwd」被直接证明。未额外写 `--target` flag 的 CLI 级用例——`--target` 正是经由同一个 `context.target` 生效，再测一遍是同一条路径。
   > 更正自原 AC5「从子目录执行应登记仓库根」。核实发现 install 的 target 是 `--target` > `EXTERNAL_FIXTURE_PATH` > `cwd`，不回溯 git root——从子目录跑就是装在子目录。要求注册表回溯到仓库根，反而制造了与磁盘现实的分叉。
-- [ ] AC9 两个 install 并发收尾时，两条登记都在，无一丢失（`withFileLock` 生效验证）。
-- [ ] AC10 对一个已登记项目跑 `fabric uninstall`，其注册表条目消失，其余条目不受影响；注销不存在的条目是无声的 no-op（不报错）。
-- [ ] AC6 注册表文件被手动写成非法 JSON 时，`fabric install` 仍能成功完成（C6 never-throw），并能自愈或明确报出该状况。
-- [ ] AC7 CLI 有可见入口能列出注册表内容。
-- [ ] AC8 既有 install 相关测试全绿，install 的终端输出没有新增旁白行。
+- [x] AC9 两个 install 并发收尾时，两条登记都在，无一丢失（`withFileLock` 生效验证）。
+- [x] AC10 对一个已登记项目跑 `fabric uninstall`，其注册表条目消失，其余条目不受影响；注销不存在的条目是无声的 no-op（不报错）。
+- [x] AC6 注册表文件被手动写成非法 JSON 时，`fabric install` 仍能成功完成（C6 never-throw），并能自愈或明确报出该状况。
+- [x] AC7 CLI 有可见入口能列出注册表内容。
+- [x] AC8 既有 install 相关测试全绿，install 的终端输出没有新增旁白行。
 
 ## Out of Scope
 
