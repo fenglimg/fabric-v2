@@ -1,0 +1,32 @@
+[
+ {
+  "id": "CTRL-pending/decisions/invite-click-closes-modal-no-10010.md",
+  "knowledge_type": "decisions",
+  "summary": "用户提出 7sp3 需求变更:邀请好友弹窗(cmd 2035)原先仅倒计时归零/手动关闭才关,预期点击【邀请】后立即消失;实现后就「点邀请是否上报 10010」权衡,用户拍板不上报。"
+ },
+ {
+  "id": "CTRL-pending/pitfalls/editor-stale-after-large-merge.md",
+  "knowledge_type": "pitfalls",
+  "summary": "在 feat/btn-disable-style 分支合并落后 720 个提交的 main 后，需要用 Cocos 编辑器改 5 个 prefab。打开第一个时发现编辑器显示的节点结构是合并前的旧版，与磁盘内容不符。后续编辑器彻底卡死（open_prefab 报成功但进不了编辑模式），重启也没恢复，用户最终要求直接改 prefab JSON 绕过编辑器。"
+ },
+ {
+  "id": "CTRL-pending/processes/iteration-scopes-branch-own-only.md",
+  "knowledge_type": "processes",
+  "summary": "用户要求按 MR 规范把 bugfix/26.14.0-rejoin-missing-game-state 提 MR 给 origin/release/7sp4 并填迭代范围。我按 KT-PRO-0015 §2.1 先 merge 目标 release，cr.config.mjs 的 iterationScopes 冲突时取了「release 侧 11 条 + 本分支 5 条」并集。用户随即纠正：「当前具体的 cr.config.mjs 只填自己迭代分支做的事情就行，具体合并后可以不用管」——即冲突一律取本分支侧，release 侧条目不并入。"
+ },
+ {
+  "id": "CTRL-pending/decisions/display-gate-server-side-single-seam.md",
+  "knowledge_type": "decisions",
+  "summary": "用户要做「狼王锦囊」Footer 入口：仅准备阶段、仅注册 7 天内且局数 ≤5 的玩家、开启后保留 3 天、每天 3 次用完即消失。被问数据源时答\\\"当前服务器暂时还没有出协议，看看怎么处理合适\\\"。"
+ },
+ {
+  "id": "CTRL-pending/pitfalls/cocos-opacity-cascades-to-children.md",
+  "knowledge_type": "pitfalls",
+  "summary": "用户要求给派对房任务弹窗新增卧底房专用的底部半屏预制体，功能与居中版 PartyTaskModalV2 完全一致，背景用 bg_actionsheet_with_top_sheet 九宫格。实现中把设计稿的「白 8% 半透明卡片」直接设成底板节点的 opacity，结果卡片上的奖励位与右上角角标一起被压暗，改成另起只画背景的子节点才对。"
+ },
+ {
+  "id": "CTRL-pending/processes/vest-merge-main-prefab-triage.md",
+  "knowledge_type": "processes",
+  "summary": "用户准备把 main 的变更同步进开心卧底（vest）马甲包线，先让我盘点 main 与 vest 的分叉面，随后主动贴出一套团队内既有的「卧底分支合并处理流程」作为同步规范，并在会话末尾要求把这套流程归档进团队知识库。流程按「main 侧改动量大小」分档处理预制体，并给出 main 改动大时的换肤与脚本合并注意事项。"
+ }
+]

@@ -1,0 +1,77 @@
+[
+ {
+  "id": "pending/decisions/bugfix-landing-without-inflight-release.md",
+  "knowledge_type": "decisions",
+  "summary": "没有在途常规迭代 release 时,bugfix 分支不单独开 MR、也不绕过 release 直接提 main:从 main 建 bugfix/<线上版本号>-<bug名>,修好推上去后直接 merge 进所有需要它的在途分支,bugfix 分支本身挂着,等下一个 release/<月份SP序号> 建出来再一次性提 MR 进去。依据是 MR 规范 1.4.4 的版本号约束。"
+ },
+ {
+  "id": "pending/decisions/button-spec-constrain-landing-not-means.md",
+  "knowledge_type": "decisions",
+  "summary": "按钮灰态规范只约束落点、不强制手段——表述定为「按钮的视觉状态变化,其落点节点的子树不得包含 Label」,用 interactable 还是手写 opacity 交给业务定:真禁用(点不动,视觉由引擎出)与视觉暗示(仍可点,点了 toast 说明原因)是互补语义,实测 9 个手写 opacity 的点里 8 个属后者,强推 interactable 会把提示全删掉。不写 eslint 规则,因为违规与否取决于 prefab 子树里有没有 Label,而 eslint 只有类型信息——判据不完整会把正确代码报成错误,比不报更糟。"
+ },
+ {
+  "id": "pending/decisions/display-gate-server-side-single-seam.md",
+  "knowledge_type": "decisions",
+  "summary": "展示门禁与每日次数重置一律由服务端一次性下发 {show,leftTimes},客户端不自算:局数字段根本不在 store.userInfo 里,「开启后 N 天」是按人计时的服务端记录,而「次日零点重置」用本地时间算等于把门禁交给可篡改的设备时钟。协议未就绪时建单函数 seam——mock 分支读 MockSwitch 直接返回放行态,真实分支留 TODO,失败或未接入统一返回不展示态(宁可不展示,也不要展示了点不动);协议到位只替换函数体,ViewModel 与 View 零改动。"
+ },
+ {
+  "id": "pending/decisions/enter-gift-redpacket-before-task-panel.md",
+  "knowledge_type": "decisions",
+  "summary": "进房有礼「去下红包雨」这条路,任务详情面板必须等红包真撒出去之后再开;撒红包失败(同阶段他人在撒、服务端报错)不阻断,照样开面板——红包已进背包,24 小时内还能自己去撒。落法是 onConfirm 里 void sendRewardRedPacket().catch(warn).then(openTaskPanel),并用一个 sending 标志防止点叉那条路与它各开一次面板。只约束真发红包的那条分支,「去送礼」不涉及等待。"
+ },
+ {
+  "id": "pending/decisions/invite-click-closes-modal-no-10010.md",
+  "knowledge_type": "decisions",
+  "summary": "GameInviteFriendModal 点击【邀请】后立即 doClose(先取 kind/rid/gameType 上下文再关,分享流独立继续),但不上报 cmd 10010:10010 的语义是用户拒绝、服务端据此标记该房间不再弹,而点邀请是正向动作,不该把房间拉黑。副作用已确认为预期——同房间后续缺人时服务端可再推 2035 再弹一次,不是 bug。"
+ },
+ {
+  "id": "pending/pitfalls/cocos-asset-move-across-bundles.md",
+  "knowledge_type": "pitfalls",
+  "summary": "用 f2c-hub 的 cocos_manage_asset move 跨 bundle 移动资源会断链:它在 Cocos 2.4 里实现为 delete 加 create,目标文件的 .meta uuid 被重新生成且不会回改引用方——实测 prefab 移包后 uuid 变了,引用它的另一份 prefab 仍指旧 uuid;贴图更糟,.meta 的 subMetas 里 spriteFrame 子 uuid 同样重生成。正确做法是用文件系统 mv 把资源与它的 .meta 一次性同行移动,meta 带着原 uuid 与 subMetas 走,引用全部保持有效,git 也会识别为纯 rename。"
+ },
+ {
+  "id": "pending/pitfalls/cocos-opacity-cascades-to-children.md",
+  "knowledge_type": "pitfalls",
+  "summary": "Cocos 的 opacity 会级联给所有子节点(_color 不级联),所以把设计稿的半透明直接设在承载内容的容器节点上,会把卡片里的奖励位与角标一起压暗。正确做法是容器本身保持 opacity 255,另起一个只画背景的子节点铺在子节点列表最前面、把半透明放在它身上,容器尺寸动态变化时给这个背景节点挂 cc.Widget 全拉伸跟随。判据:一个节点既要半透明又要承载内容,就拆成半透明的背景层加不透明的内容层两层。"
+ },
+ {
+  "id": "pending/pitfalls/editor-autosave-overwrites-cli-prefab.md",
+  "knowledge_type": "pitfalls",
+  "summary": "Cocos 编辑器把已打开的 prefab 当作内存里的权威副本,磁盘被外部改写它并不知情,退出编辑模式时会自动保存、以内存版整体覆盖回磁盘——脚本刚写进去的 script class id 被退回源值,还会带进编辑态几何漂移(根节点变成预制体编辑画布尺寸、Label 被重新量成小数、按钮坐标偏移)。正确顺序是先 close_prefab,再跑生成脚本,然后只做单文件 refresh_editor(目录级刷新会被拒绝且阻塞主线程),之后不要再 open;要验证渲染就用截图接口。"
+ },
+ {
+  "id": "pending/pitfalls/editor-stale-after-large-merge.md",
+  "knowledge_type": "pitfalls",
+  "summary": "git 侧大范围改动 prefab(合并、切分支、rebase)后,正在运行的 Cocos Creator 仍持有改动前的内存版本,节点树与磁盘不一致而界面上没有任何提示;此时按保存会把旧结构整份写回磁盘、静默覆盖掉 git 带来的改动。处置是打开任何 prefab 前先对该资源做定向刷新(切忌全局刷新,大项目会长时间卡死),刷新后用 get_scene_hierarchy 与磁盘 JSON 对一次结构再动手。编辑器显示 MissingScript 往往不是脚本真丢了,而是该脚本由新分支引入、资源库还没有;合并规模很大时编辑器可能整个失效,兜底是直接改 prefab JSON。"
+ },
+ {
+  "id": "pending/pitfalls/game-over-close-entry-fragility.md",
+  "knowledge_type": "pitfalls",
+  "summary": "狼人局末唯一的状态重置入口是 GameOver 结算界面关闭(点空白或 15 秒自动)触发的 oneMoreGame,该入口有两个脆弱点,叠加后会让全房死亡与身份状态永不重置:①GameOver.onEnable 在 scheduleOnce 之前读 gameModel.gameResult.result,recover 进结算时该字段为 null 直接 TypeError,onEnable 中断导致 15 秒自动关闭没注册;②onClickBlankArea 有 spineId 空守卫,而 spineId 要等胜负 spine 入场动画播完才赋值,该 spine 在 GameRemote 远程包,加载失败或版本错配时点击全被吞。截至 2026-07-24 分析尚未落修复。"
+ },
+ {
+  "id": "pending/processes/cocos-prefab-cli-reparent-node.md",
+  "knowledge_type": "processes",
+  "summary": "用 CLI 移动 prefab 里已有节点的父子关系不需要重编号:__id__ 是数组下标、位置稳定,改父子关系只动三个字段——子节点的 _parent、旧父的 _children、新父的 _children,TS 侧 @property 的绑定按 __id__ 走,全部不受影响。这与「新增节点」那套 append-only 规则是两种不同操作,别混用。落地要点是先断言 JSON 解析再序列化与原文逐字节相等,确认序列化无副作用后再动手。"
+ },
+ {
+  "id": "pending/processes/cocos-web-build-local-standalone-preview.md",
+  "knowledge_type": "processes",
+  "summary": "把线上 App 内小游戏的 web-mobile 构建包放进本地 http-server 裸浏览器跑起来,可以完整复现手机端 web 包体验、用于排查只在 web 包出现的问题。两类必踩的坑:ThinkingData 小游戏 SDK 把工具集定义为顶层 var 下划线变量,小游戏环境每文件独立作用域没事,web 构建的 jsList 拼接后会撞名并在 checkAppId 处崩;以及大量 no bundle 报错,需按 bundle 实际路径逐个补齐后才能进主流程。"
+ },
+ {
+  "id": "pending/processes/iteration-scopes-branch-own-only.md",
+  "knowledge_type": "processes",
+  "summary": "cr.config.mjs 的 iterationScopes 在「提 MR 前先合并目标 release」时必然冲突,规则是一律取本分支侧:该数组只描述本分支自己做的事,不与 release 侧已有条目取并集——release 侧的并集去重由合入时自动完成,分支作者不用管。反例是把 release 的 11 条与本分支 5 条拼成 16 条写回,结果 MR diff 里凭空多出十几行别人迭代的条目,本分支的真实范围反被稀释。"
+ },
+ {
+  "id": "pending/processes/shared-component-change-baseline-diff.md",
+  "knowledge_type": "processes",
+  "summary": "改共享核心组件的准入是「能用测试证明不影响其他路径就直接改」,不接受为了回避风险而在业务侧留绕过代码。验收三件套:回归用例必须先红后绿(修复前真的失败,证明它测的是这个 bug 而不是别的);针对同一分支的其他触发域各写一条护栏用例,修复前后都必须绿;全量基线逐行 diff——还原修复跑一次全量存基线、打上修复再跑一次,然后 diff 两份失败清单。必须 diff 清单而不是看失败总数,因为本仓全量 jest 本身就有约 15 个与改动无关的存量失败套件。"
+ },
+ {
+  "id": "pending/processes/vest-merge-main-prefab-triage.md",
+  "knowledge_type": "processes",
+  "summary": "马甲包线合并 main 的预制体按「main 侧改动量」分档处理,而不是一律手动解冲突:新增的预制体与代码直接用 main,脚本冲突手动解;main 改了老预制体则先看双边 diff,把改动少的那边回填进多的那边;main 只是改位置换贴图这类小调整,合一下或直接用本线的再在编辑器手调;main 改动较大直接用 main(这种情况美术一般也会出对应新图),然后走换肤流程——预制体根节点挂 SkinAutoApply 自动替换文本颜色,内部不希望被替换的节点挂 SkinIgnore。"
+ }
+]

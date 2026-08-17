@@ -101,6 +101,12 @@ export const enMessages: Messages = {
   // `fabric audit why-not-surfaced <id>` — three-axis diagnosis (store / scope / timing).
   "cli.audit.why.not-found":
     "'{id}' not found in any mounted store. Check the id (try `fabric store list`).",
+  "cli.audit.why.deprecated":
+    "'{id}' is retired (deprecated: true), so it no longer surfaces — recall filters it out of every surfacing channel.",
+  "cli.audit.why.deprecated.superseded":
+    "'{id}' is retired (deprecated: true, superseded_by: {superseded}), so it no longer surfaces — recall filters it out of every surfacing channel.",
+  "cli.audit.why.deprecated.hint":
+    "retirement is a soft delete: the entry stays on disk and audit tooling still sees it. To restore it, remove the deprecated key from frontmatter.",
   "cli.audit.why.store-unbound":
     "'{id}' lives in store '{store}', which is NOT bound to this project.",
   "cli.audit.why.store-unbound.hint": "bind it: fabric store bind {store}",
@@ -351,6 +357,17 @@ export const enMessages: Messages = {
     "Rewrite as reusable decision/pitfall/guideline altitude (## structure), not a session transcript; re-archive via fabric-archive / fab_propose",
   "doctor.check.knowledge_body_altitude_dump.scan_error":
     "Body-altitude scan failed ({detail}); doctor cannot confirm corpus is clean.",
+  "doctor.check.knowledge_summary_session_voice.name": "Knowledge summary voice",
+  "doctor.check.knowledge_summary_session_voice.ok":
+    "No session-minute summaries found.",
+  "doctor.check.knowledge_summary_session_voice.message.singular":
+    "1 summary reads as a session minute: {detail}",
+  "doctor.check.knowledge_summary_session_voice.message.plural":
+    "{count} summaries read as session minutes (e.g. {detail})",
+  "doctor.check.knowledge_summary_session_voice.remediation":
+    "summary is the only field fab_recall puts on the wire — write it as a standalone declarative conclusion (what to do + why) with no session pronouns; rewrite via fabric-review modify-content",
+  "doctor.check.knowledge_summary_session_voice.scan_error":
+    "Summary voice scan failed ({detail}); doctor cannot confirm the corpus is clean.",
   "doctor.check.knowledge_body_dedup.name": "Knowledge body dedup (v-next)",
   "doctor.check.knowledge_body_dedup.ok":
     "No legacy body sections or deprecated frontmatter detected (## Summary / ## Evidence / ## Why proposed / ## Session context / tech_stack all clean).",

@@ -87,6 +87,32 @@ async function writeGuideline(storeUuid: string, id: string, maturity: string): 
   await writeFile(join(dir, `${id}--fixture.md`), entry(id, "team", "broad", maturity, "guideline"));
 }
 
+/**
+ * A retired entry. Writes the EXACT frontmatter shape `fab_review retire`
+ * emits (`deprecated: true` + optional `superseded_by`), appended after the
+ * fixture's own keys — retire merges into existing frontmatter, it does not
+ * rewrite the file.
+ */
+async function writeDeprecated(
+  storeUuid: string,
+  id: string,
+  supersededBy?: string,
+): Promise<void> {
+  const dir = join(
+    resolveGlobalRoot(),
+    storeRelativePathForMount({ store_uuid: storeUuid }),
+    STORE_LAYOUT.knowledgeDir,
+    "decisions",
+  );
+  await mkdir(dir, { recursive: true });
+  const extra = ["deprecated: true", ...(supersededBy === undefined ? [] : [`superseded_by: ${supersededBy}`])];
+  const source = entry(id, "team", "broad").replace(
+    /^summary: (.*)$/mu,
+    `summary: $1\n${extra.join("\n")}`,
+  );
+  await writeFile(join(dir, `${id}--fixture.md`), source);
+}
+
 // Project bound to the `team` store (alias) + active_project alpha. A second
 // store (`orphan`) is mounted machine-wide but NOT in the read-set.
 async function setup(activeProject?: string): Promise<string> {
@@ -189,6 +215,50 @@ describe("explainWhyNotSurfaced — first blocking cause across the 3 scope axes
     const decision = await explainWhyNotSurfaced(root, "KT-DEC-0004");
     expect(decision.verdict).toBe("should_surface");
     expect(decision.maturity).toBe("draft");
+  });
+
+  // retire: cross-store-recall drops `deprecated: true` from every surfacing
+  // builder, but this command had no branch for it — so it answered
+  // `should_surface` for every retired entry (22 of them on the wespy store),
+  // i.e. the one command whose job is "why isn't this showing" confidently
+  // said it was. Same failure shape as the F04 maturity gap above.
+  it("deprecated: a retired entry is reported as retired, not should_surface", async () => {
+    const root = await setup("alpha");
+    await writeDeprecated(BOUND, "KT-DEC-0010");
+    const r = await explainWhyNotSurfaced(root, "KT-DEC-0010");
+    expect(r.verdict).toBe("deprecated");
+    expect(r.deprecated).toBe(true);
+    expect(r.supersededBy).toBeNull();
+    // Every OTHER axis passes — retirement is the sole cause, which is exactly
+    // why the pre-fix behaviour was `should_surface`.
+    expect(r.storeBound).toBe(true);
+    expect(r.relevanceScope).toBe("broad");
+  });
+
+  it("deprecated reports superseded_by when retire recorded one", async () => {
+    const root = await setup("alpha");
+    await writeDeprecated(BOUND, "KT-DEC-0011", "KT-DEC-0003");
+    const r = await explainWhyNotSurfaced(root, "KT-DEC-0011");
+    expect(r.verdict).toBe("deprecated");
+    expect(r.supersededBy).toBe("KT-DEC-0003");
+  });
+
+  // Reported BEFORE the scope axes on purpose: binding the store would not
+  // bring a retired entry back, so `store_unbound` would be a wrong-but-
+  // plausible answer that sends the reader off to do something useless.
+  it("deprecated outranks store_unbound (binding it back would change nothing)", async () => {
+    const root = await setup("alpha");
+    await writeDeprecated(UNBOUND, "KT-DEC-0012");
+    const r = await explainWhyNotSurfaced(root, "KT-DEC-0012");
+    expect(r.verdict).toBe("deprecated");
+    expect(r.storeBound).toBe(false);
+  });
+
+  it("deprecated: false / absent does not trip the branch", async () => {
+    const root = await setup("alpha");
+    const r = await explainWhyNotSurfaced(root, "KT-DEC-0001");
+    expect(r.deprecated).toBe(false);
+    expect(r.verdict).toBe("should_surface");
   });
 
   it("unbound repo (no active_project): project-scoped entry is NOT a mismatch", async () => {

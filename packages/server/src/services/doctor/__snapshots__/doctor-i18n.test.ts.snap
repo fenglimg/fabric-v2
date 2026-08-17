@@ -141,15 +141,15 @@ exports[`runDoctorReport i18n snapshots > locks machine check order for registry
     "status": "ok",
   },
   {
-    "code": "knowledge_underseeded",
+    "code": null,
     "index": 23,
-    "kind": "info",
+    "kind": null,
     "status": "ok",
   },
   {
-    "code": null,
+    "code": "knowledge_underseeded",
     "index": 24,
-    "kind": null,
+    "kind": "info",
     "status": "ok",
   },
   {
@@ -171,15 +171,15 @@ exports[`runDoctorReport i18n snapshots > locks machine check order for registry
     "status": "ok",
   },
   {
-    "code": "onboard_coverage_incomplete",
+    "code": null,
     "index": 28,
-    "kind": "info",
+    "kind": null,
     "status": "ok",
   },
   {
-    "code": null,
+    "code": "onboard_coverage_incomplete",
     "index": 29,
-    "kind": null,
+    "kind": "info",
     "status": "ok",
   },
   {
@@ -315,8 +315,14 @@ exports[`runDoctorReport i18n snapshots > locks machine check order for registry
     "status": "ok",
   },
   {
-    "code": "preexisting_root_claude_md",
+    "code": null,
     "index": 52,
+    "kind": null,
+    "status": "ok",
+  },
+  {
+    "code": "preexisting_root_claude_md",
+    "index": 53,
     "kind": "info",
     "status": "ok",
   },
@@ -467,6 +473,14 @@ exports[`runDoctorReport i18n snapshots > renders stable Chinese doctor checks f
     "kind": null,
     "message_prefix_30_chars": "未发现 dump 形态的知识正文。",
     "name": "知识正文 altitude",
+    "status": "ok",
+  },
+  {
+    "actionHint_prefix_30_chars": null,
+    "code": null,
+    "kind": null,
+    "message_prefix_30_chars": "未发现会话纪要式的 summary。",
+    "name": "知识 summary 叙述人称",
     "status": "ok",
   },
   {
@@ -896,6 +910,14 @@ exports[`runDoctorReport i18n snapshots > renders stable English doctor checks f
     "kind": null,
     "message_prefix_30_chars": "No dump-shaped knowledge bodie",
     "name": "Knowledge body altitude",
+    "status": "ok",
+  },
+  {
+    "actionHint_prefix_30_chars": null,
+    "code": null,
+    "kind": null,
+    "message_prefix_30_chars": "No session-minute summaries fo",
+    "name": "Knowledge summary voice",
     "status": "ok",
   },
   {

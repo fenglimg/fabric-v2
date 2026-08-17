@@ -1,0 +1,14 @@
+{
+ "S1": "CTRL-pending/decisions/invite-click-closes-modal-no-10010.md",
+ "S2": "pending/decisions/bugfix-landing-without-inflight-release.md",
+ "S3": "CTRL-pending/pitfalls/editor-stale-after-large-merge.md",
+ "S4": "pending/decisions/button-spec-constrain-landing-not-means.md",
+ "S5": "CTRL-pending/processes/iteration-scopes-branch-own-only.md",
+ "S6": "pending/decisions/display-gate-server-side-single-seam.md",
+ "S7": "CTRL-pending/decisions/display-gate-server-side-single-seam.md",
+ "S8": "pending/decisions/enter-gift-redpacket-before-task-panel.md",
+ "S9": "CTRL-pending/pitfalls/cocos-opacity-cascades-to-children.md",
+ "S10": "pending/decisions/invite-click-closes-modal-no-10010.md",
+ "S11": "CTRL-pending/processes/vest-merge-main-prefab-triage.md",
+ "S12": "pending/pitfalls/cocos-asset-move-across-bundles.md"
+}

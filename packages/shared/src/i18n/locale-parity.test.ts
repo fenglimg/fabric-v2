@@ -87,8 +87,38 @@ describe("i18n locale parity census", () => {
   // 未被改动,而那正是 `.fabric/` 已被前面阶段建好的那种失败。消费者是
   // packages/cli/src/install/pipeline/pipeline.ts 的 rollback()。
   // 按上面的规矩重跑了 census:1926 文件、205 个 template pattern、0 provably dead。
+  // 2026-08-17 (知识叙述装置): 868 → 874。净 +6 = `doctor.check
+  // .knowledge_summary_session_voice.{name,ok,message.singular,message.plural,
+  // remediation,scan_error}`,给「summary 写成会话纪要」这条新 doctor lint 的整套
+  // 文案。summary 是 fab_recall 唯一投递上线的字段,写成纪要等于这条知识不可发现;
+  // 消费者是 packages/server/src/services/doctor/doctor-summary-voice.ts。
+  // 按上面的规矩重跑了 census:1940 文件、59 个 template pattern、0 provably dead。
+  //
+  // ⚠️ 这轮踩到两个会让 census 静默失真的坑,都值得记下来:
+  // ① **嵌套 worktree 必须排除。** `.claude/worktrees/<name>/` 下是整份仓库副本,
+  //    含第二份 locale 表 —— 不排除它,每个 key 都被自己的副本判「活」,census 恒
+  //    输出 0 dead 而毫无鉴别力。第一遍扫 3002 文件得 0 dead 就是这个假阴性。
+  // ② **别按反引号切模板字面量。** 真实调用点是嵌套的
+  //    (`` `  - ${t(`cli.sync.state.${s}`)}` ``),从外层反引号扫到下一个反引号会
+  //    在内层处截断,拿到的字面段里根本没有 key 路径,于是 `cli.sync.state.*` 与
+  //    `cli.uninstall.plan.action.*` 共 9 个活 key 被报成 dead。改为直接匹配
+  //    「点分路径 + `${...}`」这个形状,不依赖定界符配对。
+  // template pattern 计数从 205 掉到 59 是这次换匹配口径的结果(去重口径变了),
+  // 不是模板变少;判据看的是 0 dead,该数字只用于说明扫描口径。
+  // 2026-08-17 (why-not-surfaced retire 分支): 874 → 877。净 +3 = `cli.audit
+  // .why.deprecated{,.superseded,.hint}`,给 `fabric audit why-not-surfaced`
+  // 补的第四条归因分支。此前该命令对已 retire(`deprecated: true`)的条目一律
+  // 回答「应当正在浮现」—— 召回侧 cross-store-recall 明明把它们全过滤掉了,
+  // 而 why-not-surfaced.ts 全文 0 处引用 deprecated。两条消息(带/不带
+  // superseded_by)而不是拼串,是为了避免渲染出悬空的 ", superseded_by: "。
+  // 消费者是 packages/cli/src/commands/audit.ts。
+  // 按上面的规矩重跑了 census:3027 文件、141 个 template pattern、0 provably dead。
+  //
+  // ⚠️ 这轮给 census 补了**对照组**:注入 3 个绝无引用的假 key,断言它们全被判死。
+  // 「0 dead」单独看是无法证伪的 —— 一个恒判活的扫描器给出的也是 0 dead(上一轮
+  // 的 worktree 假阴性正是这个形状)。canary 判死 3/3 才说明这次扫描有鉴别力。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(868);
+    expect(enKeys.length).toBe(877);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

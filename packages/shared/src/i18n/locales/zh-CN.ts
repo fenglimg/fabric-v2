@@ -84,6 +84,12 @@ export const zhCNMessages: Messages = {
   // `fabric audit why-not-surfaced <id>` — 三轴诊断(store / scope / timing)。
   "cli.audit.why.not-found":
     "未在任何已挂载 store 中找到 '{id}'。请核对 id(可试 `fabric store list`)。",
+  "cli.audit.why.deprecated":
+    "'{id}' 已语义淘汰(deprecated: true),因此不再浮现 —— 召回侧把它从所有浮现通道过滤掉了。",
+  "cli.audit.why.deprecated.superseded":
+    "'{id}' 已语义淘汰(deprecated: true,superseded_by: {superseded}),因此不再浮现 —— 召回侧把它从所有浮现通道过滤掉了。",
+  "cli.audit.why.deprecated.hint":
+    "淘汰是软删:条目仍在库里、审计工具仍看得到。要恢复,移除 frontmatter 的 deprecated 键。",
   "cli.audit.why.store-unbound":
     "'{id}' 位于 store '{store}',但该 store 未绑定到本项目。",
   "cli.audit.why.store-unbound.hint": "绑定它:fabric store bind {store}",
@@ -308,6 +314,17 @@ export const zhCNMessages: Messages = {
     "改写成可复用的 decision/pitfall/guideline altitude(带 ## 结构),不要贴 session 流水;经 fabric-archive / fab_propose 重归档",
   "doctor.check.knowledge_body_altitude_dump.scan_error":
     "正文 altitude 扫描失败({detail});doctor 无法确认语料干净。",
+  "doctor.check.knowledge_summary_session_voice.name": "知识 summary 叙述人称",
+  "doctor.check.knowledge_summary_session_voice.ok":
+    "未发现会话纪要式的 summary。",
+  "doctor.check.knowledge_summary_session_voice.message.singular":
+    "1 条 summary 写成了会话纪要: {detail}",
+  "doctor.check.knowledge_summary_session_voice.message.plural":
+    "{count} 条 summary 写成了会话纪要(例如 {detail})",
+  "doctor.check.knowledge_summary_session_voice.remediation":
+    "summary 是 fab_recall 唯一投递的字段,写成独立成句的结论(做什么 + 为什么),去掉「用户/我/本次」这类会话人称;经 fabric-review modify-content 改写",
+  "doctor.check.knowledge_summary_session_voice.scan_error":
+    "summary 人称扫描失败({detail});doctor 无法确认语料干净。",
   "doctor.check.knowledge_body_dedup.name": "知识正文去重(v-next)",
   "doctor.check.knowledge_body_dedup.ok":
     "未发现旧格式正文段落或废弃 frontmatter(## Summary / ## Evidence / ## Why proposed / ## Session context / tech_stack 均已清理)。",

@@ -125,14 +125,24 @@ DO NOT AskUserQuestion "is this a duplicate?" — LLM already judged. User only 
 
 `Read ref/semantic-check.md` for full procedure + 三类判断的细化定义.
 
-## Summary Self-Sufficiency Gate (guideline / model only — KT-GLD-0006)
+## Summary Self-Sufficiency Gate (ALL FIVE types, two bars — KT-GLD-0006)
 
-Guideline/model entries surface in the SessionStart **ALWAYS-ACTIVE** sink as a body-less INDEX line, so an opaque summary (`Code style guidelines`) leaks in as an unactionable "rule". Before approving/promoting a **guideline or model** (only these two types — decision/pitfall/process surface as `must_read_if` triggers and are exempt), run the summary through the **zero-context cold-eval judge**, never your own judgment:
+`summary` is the ONLY field `fab_recall` puts on the wire, so a summary that fails to carry its own point makes the entry effectively unreachable. Before approving/promoting **any** type, run the summary through the **zero-context cold-eval judge**, never your own judgment.
+
+**Two bars, routed by type** — `buildColdEvalBatch` groups candidates automatically:
+
+| Types | Family | Bar |
+| --- | --- | --- |
+| guideline / model | `rule` (`COLD_EVAL_RUBRIC`) | They land in the SessionStart **ALWAYS-ACTIVE** sink as a body-less INDEX line, so the summary IS the operative rule — it must be directly actionable. An opaque `Code style guidelines` leaks in as an unactionable "rule". |
+| decision / pitfall / process | `reference` (`COLD_EVAL_RUBRIC_REFERENCE`) | They surface as `must_read_if` triggers, so the summary must state the **conclusion** (what was decided / what breaks) — enough to decide whether to open the body. It may point at *when* it applies, never at *what it says*. |
+
+> These three types were previously EXEMPT from this gate on the reasoning that they are "deliberately pointers". That did not hold: `must_read_if` is optional (authors are told to omit rather than guess), and `summary` ships either way. Measured on a real store, the exempt types ran **54%** session-minute summaries among reviewed entries vs **32%** for the covered types — `decisions` alone ran **70%**. The exemption's observation was right (a decision summary is not an always-active rule) but its conclusion was wrong; hence a second bar rather than no bar.
 
 - The reviewing agent self-judging sufficiency is curse-of-knowledge — it back-fills from context it already has and rubber-stamps pointers (KT-GLD-0006). The withheld-body cold eval is the whole point.
-- Build the batch with `summary-cold-eval.ts#buildColdEvalBatch` (rubric = `COLD_EVAL_RUBRIC`, candidates = the guideline/model summaries) and hand it to an **offline** judge via `maestro delegate` (zero-context, batched — NOT on the hot path). The judge returns `ColdEvalVerdict[]`.
+- Build the batches with `summary-cold-eval.ts#buildColdEvalBatch` (returns one batch per family, `rule` first; pass each candidate's `knowledge_type`) and hand each to an **offline** judge via `maestro delegate` (zero-context, batched — NOT on the hot path). The judge returns `ColdEvalVerdict[]`.
 - For each `self_sufficient=false` verdict: surface `⚠ Summary not act-on-able (cold-eval); suggested: <suggested_summary>` and route to `modify-content` (summary rewrite, stable_id preserved) — do NOT approve as-is. `self_sufficient=true` → no action.
 - This is a nudge, not a hard block (KT-DEC-0007): the user may still approve over a failed verdict, but the flag must be shown.
+- Write-time counterpart: `fab_propose` emits a `summary_session_voice` warning for the crude cases (session pronouns). That is the FLOOR; this cold eval is the gate. A summary can pass the lint and still fail here.
 
 ## Activation Gate (all knowledge types)
 

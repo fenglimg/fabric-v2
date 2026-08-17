@@ -22,6 +22,9 @@ import { classifyArchiveCandidate, formatDedupMarker } from "./archive-dedup-gat
 import { assessBodyAltitude } from "./body-altitude.js";
 export type { BodyAltitudeAssessment } from "./body-altitude.js";
 export { assessBodyAltitude } from "./body-altitude.js";
+import { assessSummaryVoice } from "./summary-voice.js";
+export type { SummaryVoiceAssessment } from "./summary-voice.js";
+export { assessSummaryVoice } from "./summary-voice.js";
 
 import { withFileLock } from "@fenglimg/fabric-shared/node/atomic-write";
 
@@ -442,6 +445,37 @@ export async function extractKnowledge(
     altitudeWarnings = [warn];
   }
 
+  // B1.2: summary session-voice floor. `summary` is the only field fab_recall
+  // puts on the wire, so a minute-shaped summary ("the user asked X, I tried Y")
+  // makes the entry undiscoverable. Warn-only and folded into the SAME warnings
+  // channel as body altitude — deliberately not a third notification surface.
+  // This is the write-time FLOOR only; semantic self-sufficiency is judged by the
+  // zero-context cold-eval at review time (KT-GLD-0006).
+  const summaryVoice = assessSummaryVoice(summary);
+  if (!summaryVoice.ok) {
+    const voiceWarn = {
+      code: summaryVoice.code,
+      file: `pending:${sanitizedSlug || input.slug}`,
+      message: `summary reads as a session minute (${summaryVoice.detail}); state the conclusion, not who said what`,
+      action_hint:
+        "Rewrite summary as a standalone declarative conclusion (what to do + why), with no session pronouns",
+    };
+    altitudeWarnings = altitudeWarnings === undefined ? [voiceWarn] : [...altitudeWarnings, voiceWarn];
+  }
+
+  // B1.1: converge fresh writes on the shape merge already converges to.
+  // renderFreshEntry only emits the legacy `## Evidence` + `Notes:` block on a
+  // backward-compat fallback taken when evidence_paths is absent; that fallback
+  // copies `summary` verbatim into Notes. `evidence_paths` is optional and its
+  // authoring step lives one ref hop away in the archive skill, so the fallback
+  // was measured firing on 151/180 wespy entries (84%). Deriving it from
+  // recent_paths here retires the fallback at the source instead of relying on
+  // every caller remembering the step.
+  const effectiveEvidencePaths =
+    input.evidence_paths !== undefined && input.evidence_paths.length > 0
+      ? input.evidence_paths
+      : input.recent_paths;
+
   // rc.5 B1: route to layer-specific pending root.
   //   team     → workspace .fabric/knowledge/pending  (reported workspace-relative)
   //   personal → ~/.fabric/knowledge/pending          (reported as `~/...` form,
@@ -578,7 +612,9 @@ export async function extractKnowledge(
           // v2.0.0-rc.37 NEW-37: pass-through topic tags.
           tags: input.tags,
           // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
-          evidencePaths: input.evidence_paths,
+      // B1.1: derived — falls back to recent_paths so the legacy ## Evidence
+      // branch in renderFreshEntry is never taken.
+          evidencePaths: effectiveEvidencePaths,
         });
         const augmented = mergeEvidenceNotes(existing, fresh);
         await atomicWriteText(absolutePath, augmented);
@@ -644,7 +680,9 @@ export async function extractKnowledge(
       onboardSlot: input.onboard_slot,
       tags: input.tags,
       // v2.0.0-rc.37 NEW-7: pass-through evidence_paths to frontmatter.
-      evidencePaths: input.evidence_paths,
+      // B1.1: derived — falls back to recent_paths so the legacy ## Evidence
+      // branch in renderFreshEntry is never taken.
+      evidencePaths: effectiveEvidencePaths,
       dedupMarker,
     });
     await atomicWriteText(absolutePath, fresh);
@@ -949,7 +987,7 @@ function renderFreshEntry(args: FreshEntryArgs): string {
     args.recentPaths !== undefined &&
     args.recentPaths.length > 0
   ) {
-    bodyParts.push("", "## Evidence", "", renderEvidenceBlock(args.summary, args.recentPaths));
+    bodyParts.push("", "## Evidence", "", renderEvidenceBlock(args.recentPaths));
   }
   bodyParts.push("");
   const body = bodyParts.join("\n");
@@ -978,19 +1016,14 @@ export function quoteRelevancePath(value: string): string {
   return `"${escaped}"`;
 }
 
-function renderEvidenceBlock(summary: string, recentPaths: string[]): string {
+function renderEvidenceBlock(recentPaths: string[]): string {
   const pathLines = recentPaths.length === 0
     ? "_(no recent paths reported)_"
     : recentPaths.map((p) => `- ${p}`).join("\n");
-  return [
-    "Recent paths:",
-    "",
-    pathLines,
-    "",
-    "Notes:",
-    "",
-    `- ${summary.trim()}`,
-  ].join("\n");
+  // B1.1: `Notes:` retired — it copied `summary` verbatim into the body, and the
+  // merge path (mergeEvidenceNotes) collects notes then never writes them back,
+  // so nothing consumed them. Recent paths stay for read-compat with old files.
+  return ["Recent paths:", "", pathLines].join("\n");
 }
 
 // v-next grill D1: classify body ## Summary text vs frontmatter summary.
