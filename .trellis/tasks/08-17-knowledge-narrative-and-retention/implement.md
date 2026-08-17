@@ -9,11 +9,11 @@ B1 未发布前不得动 store(`KT-DEC-0083` 回污)。
 
 ### B1.1 止血:evidence_paths 兜底派生
 
-- [ ] `packages/server/src/services/extract-knowledge.ts` — `fab_propose` 入口处,`evidence_paths` 缺失/空时从 `recent_paths` 派生
-- [ ] 同文件 `renderEvidenceBlock:981-994` — 移除 `Notes` 段渲染,保留 `Recent paths`(容读旧格式)
-- [ ] 测试:传 `recent_paths` 不传 `evidence_paths` → 产物含 frontmatter `evidence_paths`,**不含** `## Evidence`
-- [ ] 测试:两者都不传 → 不产 `## Evidence`,不崩
-- [ ] 回归:`mergeEvidenceNotes` 既有测试全绿(二次写入路径未被触碰)
+- [x] `packages/server/src/services/extract-knowledge.ts` — `fab_propose` 入口处,`evidence_paths` 缺失/空时从 `recent_paths` 派生
+- [x] 同文件 `renderEvidenceBlock:981-994` — 移除 `Notes` 段渲染,保留 `Recent paths`(容读旧格式)
+- [x] 测试:传 `recent_paths` 不传 `evidence_paths` → 产物含 frontmatter `evidence_paths`,**不含** `## Evidence`
+- [x] 测试:两者都不传 → 不产 `## Evidence`,不崩
+- [x] 回归:`mergeEvidenceNotes` 既有测试全绿(二次写入路径未被触碰)
 
 > 派生用 `z.input` 而非 `z.infer` 取输入型(`KT-PIT-0087`:`z.infer` 是解析后输出型,带 `.default()` 的字段在调用方会变必填)。
 
@@ -21,38 +21,38 @@ B1 未发布前不得动 store(`KT-DEC-0083` 回污)。
 
 ### B1.2 地板:summary 人称 lint
 
-- [ ] 新增 `packages/server/src/services/summary-voice.ts`,导出 `checkSummaryVoice(summary)`
-- [ ] 口径按 design B1.2 校准版:先剥离领域名词组合,再匹配人称词表
-- [ ] 接入 `fab_propose`,复用 `body-altitude` 的 warn 通道与开关形态(**不新建第三套**)
-- [ ] 新增 doctor lint `knowledge_summary_session_voice`(warn-only)
-- [ ] i18n:`zh-CN.ts` + `en.ts` 同步加文案(两个 locale 必须同时加,否则缺键)
-- [ ] **校准回归测试**:把 design 里那 3 条误报条目的 summary 作为固定用例断言 `ok:true`;另取 3 条真纪要式断言 `ok:false`
+- [x] 新增 `packages/server/src/services/summary-voice.ts`,导出 `checkSummaryVoice(summary)`
+- [x] 口径按 design B1.2 校准版:先剥离领域名词组合,再匹配人称词表
+- [x] 接入 `fab_propose`,复用 `body-altitude` 的 warn 通道与开关形态(**不新建第三套**)
+- [x] 新增 doctor lint `knowledge_summary_session_voice`(warn-only)
+- [x] i18n:`zh-CN.ts` + `en.ts` 同步加文案(两个 locale 必须同时加,否则缺键)
+- [x] **校准回归测试**:把 design 里那 3 条误报条目的 summary 作为固定用例断言 `ok:true`;另取 3 条真纪要式断言 `ok:false`
 
 验证:`pnpm --filter @fenglimg/fabric-server test -- summary-voice doctor`
 
 ### B1.3 闸:冷评扩到全 5 型
 
-- [ ] `packages/server/src/services/summary-cold-eval.ts` — 新增 `COLD_EVAL_RUBRIC_REFERENCE` 常量(decisions/pitfalls/processes 用)
-- [ ] `buildColdEvalBatch` 按 type 路由 rubric;**调用骨架不改**
-- [ ] 删豁免条款 —— 三处措辞必须一致(`KT-PIT-0079`:ref 漂移不入类型系统,测试查不出来):
-  - [ ] `packages/cli/templates/skills/fabric-archive/SKILL.md:155`
-  - [ ] `packages/cli/templates/skills/fabric-review/SKILL.md:130`
-  - [ ] `packages/cli/templates/skills/fabric-review/ref/modify-flow.md:60`
-- [ ] 测试:5 种 type 各取一条,断言路由到正确 rubric
+- [x] `packages/server/src/services/summary-cold-eval.ts` — 新增 `COLD_EVAL_RUBRIC_REFERENCE` 常量(decisions/pitfalls/processes 用)
+- [x] `buildColdEvalBatch` 按 type 路由 rubric;**调用骨架不改**
+- [x] 删豁免条款 —— 三处措辞必须一致(`KT-PIT-0079`:ref 漂移不入类型系统,测试查不出来):
+  - [x] `packages/cli/templates/skills/fabric-archive/SKILL.md:155`
+  - [x] `packages/cli/templates/skills/fabric-review/SKILL.md:130`
+  - [x] `packages/cli/templates/skills/fabric-review/ref/modify-flow.md:60`
+- [x] 测试:5 种 type 各取一条,断言路由到正确 rubric
 
 > 改完 `.md` 模板后确认 `.claude/skills/` 与 `.codex/skills/` 两份已安装副本同步(装置改的是 templates,已安装副本靠 `fabric install` 刷新)。
 
 ### B1.4 store README
 
-- [ ] 在 wespy store `README.md` 写入 R1 骨架 + R2 二轴判据
-- [ ] **描述判据,不重抄词表**(`KT-GLD-0021`:手抄清单必漂,一律指向权威源)
+- [x] 在 wespy store `README.md` 写入 R1 骨架 + R2 二轴判据
+- [x] **描述判据,不重抄词表**(`KT-GLD-0021`:手抄清单必漂,一律指向权威源)
 
 ### B1 收口
 
-- [ ] `pnpm -r exec tsc --noEmit`(本地必跑 —— `feedback_local_tsc_vs_ci_tsc`,rc.21/24/29 三次复发)
-- [ ] 改了 shared schema 则 `pnpm --filter @fenglimg/fabric-shared build`
-- [ ] 全量测试 + `fabric doctor`
-- [ ] 走 `release-rc` 发版 → **B2/B3 的解锁条件**
+- [x] `pnpm -r exec tsc --noEmit`(本地必跑 —— `feedback_local_tsc_vs_ci_tsc`,rc.21/24/29 三次复发)
+- [x] 改了 shared schema 则 `pnpm --filter @fenglimg/fabric-shared build`
+- [x] 全量测试 + `fabric doctor`
+- [ ] 走 `release-rc` 发版 ⛔ **未执行 —— 对外发版属不可逆动作,留给用户** → **B2/B3 的解锁条件**
 
 ---
 
@@ -60,24 +60,58 @@ B1 未发布前不得动 store(`KT-DEC-0083` 回污)。
 
 **前置**:B1 已发布。**授权**:`KT-GLD-0020`,批量写共享 store 前须显式确认。
 
+> ### ⛔ 当前状态:分析与脚本已就绪,**写入面停在授权闸前**
+>
+> 2026-08-17 自主执行时,批量 retire 被权限闸拦下,理由正是 `KT-GLD-0020` —— 退哪些条目
+> 是 AI 判的,用户没有逐条看过,"你睡我做"不构成对这次具体批量修改的授权。**没有绕过。**
+>
+> 需要用户做的:读 `triage.md`(每条判决都有一句依据),然后授权下面两条命令。
+> 两者都只动本地 store 工作副本,**不 push**;store 是 git 仓库,按批 revert 即可。
+>
+> ```bash
+> node .trellis/tasks/08-17-knowledge-narrative-and-retention/scripts/normalize-bodies.mjs --root ~/.fabric/stores/team/wespy-team-cocos-knowledge-base
+> ```
+>
+> retire 那 22 条需以 `/Users/wepie/Desktop/projects/werewolf-minigame` 为 projectRoot 调
+> `fab_review action="retire"`(pcf 这个仓库只绑 `fabric-team`,解析不到 wespy 路径 ——
+> 这是正确行为不是 bug,别当故障排)。
+
 ### S0 建立基线
 
-- [ ] 记录治理前快照:每条的字符数 / 是否含 `## Evidence` / summary 是否命中 B1.2 lint
-- [ ] 该快照是 S2 "diverged 零纯删" 的验证基准
+- [x] 记录治理前快照:每条的字符数 / 是否含 `## Evidence` / summary 是否命中 B1.2 lint
+- [x] 该快照是 S2 "diverged 零纯删" 的验证基准
+
+> 实测:canonical 107 + pending 68 = 175;import-origin 47(全在 canonical);
+> summary 命中人称 lint 83/175(47%),分层 pending 84% / project 29% / team 11%。
 
 ### S1 分诊(逐条,不得按类型批处理)
 
-- [ ] 47 条导入条目逐条过 R2 二轴,输出 `retire | backfill | rewrite` + 一句依据
-- [ ] 其余 124 条同样过一遍(导入只是来源标签,非导入条目同样可能是代码复述)
-- [ ] 判定顺序:**先 R2(该不该留),再看正文规模(怎么留)**
-- [ ] 已知陷阱:12 条空壳里混着 `KT-PIT-0001` 这类真资产 —— 通过 R2 但正文空 = backfill,**不是** retire
+- [x] 47 条导入条目逐条过 R2 二轴 → retire 21 / backfill 6 / rewrite 20(见 `triage.md`)
+- [x] 其余 128 条同样过一遍 → 再 retire 1(`KT-PIT-0012`,结论是"查完发现不是问题")、
+      1 条待用户裁决(`KT-MOD-0020` 部署注册表)、其余 rewrite
+- [x] 判定顺序:**先 R2(该不该留),再看正文规模(怎么留)**
+- [x] 已知陷阱:空壳里混着 `KT-PIT-0001` 这类真资产 —— 通过 R2 但正文空 = backfill,**不是** retire
+- [ ] 执行 retire(⛔ 待授权)
 
 ### S2 复读段三态处置
 
-- [ ] **先在 wespy 上跑三态分类拿本地分布**(不得套用 fabric-team 的 26/21/56 —— 那是另一个语料)
-- [ ] `verbatim` / `near` → 删段
-- [ ] `diverged` → 整段搬入 `## Context` 后删段头
-- [ ] 护栏验证:处置前后字符数比对,`diverged` 条目**零净减**(纯删会净减,搬家不会)
+- [x] **先在 wespy 上跑分类拿本地分布**(未套用 fabric-team 的 26/21/56)
+- [x] 实测得**四态**而非三态:多测一维「Notes 文本是否在条目间逐字重复」——
+      canonical `verbatim 16 / near 24 / boilerplate 16 / diverged 44 / none 7`;
+      pending `verbatim 46 / near 3 / none 19`。**分叉 ≠ 有增量**:16 条 boilerplate
+      是同一句 import 批次话术(8x + 8x 逐字重复),每条增量为零,可直接删
+- [x] `verbatim` / `near` / `boilerplate` → 删段;`diverged` → 增量并入 `## Context` 后删段
+- [x] 脚本 `scripts/normalize-bodies.mjs`,在真库**副本**上跑通:
+      175 文件 / 改动 166 / 出处话术剥离 171 / `evidence_paths` 迁移 148
+- [x] 护栏验证(独立口径 round-trip):148 文件 448 条证据路径,**0 lost**
+- [ ] 落到真库(⛔ 待授权)
+
+> 沙箱抓出两个缺陷,都不是跑一遍就能看见的:
+> ① 直接删 `## Evidence` 会**丢 Recent paths** —— 存量路径只活在该段里,frontmatter 带
+>    `evidence_paths` 的是少数(180 条里 29 条)。B1 只修了生产侧,存量必须先迁再删。
+> ② 首版路径提取正则 `(?=\n\S)` 只吃到第一条 bullet,其余静默丢弃;**而校验脚本复用了同一个
+>    坏正则,报出 0 lost 的假绿**。oracle 不能与被测代码共享同一个 bug —— 改用以 `Notes:`
+>    行为界的逐行扫作独立口径,才测出真实的 448 条。
 
 ### S3 重写
 
@@ -104,6 +138,10 @@ B1 未发布前不得动 store(`KT-DEC-0083` 回污)。
 ## B3 — 归档 backlog 回补(51 会话)
 
 **前置**:B1 已发布。与 B2 无相互依赖,可并行。
+
+> ⛔ **未开始**,同样卡在写入授权:回补会往共享 store 的 pending 批量写条目。
+> 且它的前置是 B1 已**发布** —— 发版这一步也留给了用户(见 B1 收口)。
+> `fabric doctor` 当前报 backlog 55 条(最老 43 天),比 PRD 记录的 51 条又涨了。
 
 - [ ] 走 `fabric-archive` source mode 回补 51 个会话
 - [ ] 产出条目 100% 通过 B1.2 lint + B1.3 冷评
