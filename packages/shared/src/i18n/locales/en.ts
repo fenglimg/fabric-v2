@@ -60,21 +60,43 @@ export const enMessages: Messages = {
   // the same way the CLI does.
   "cli.console.config.title": "Configuration",
   "cli.console.config.intro":
-    "The value in effect for this project, and which layer supplied it.",
+    "How Fabric is configured on this machine. Settings live in ~/.fabric and do not depend on which directory you opened the console from.",
+  "cli.console.config.machine.title": "Machine defaults",
+  "cli.console.config.machine.intro": "Every project that has no setting of its own uses these.",
+  "cli.console.config.projects.title": "Per-project settings",
+  "cli.console.config.projects.intro":
+    "Only the values that DIFFER from the defaults are listed; everything else is inherited from above.",
+  "cli.console.config.projects.empty": "No projects are registered on this machine yet.",
+  "cli.console.config.projects.empty-hint":
+    "Registration happens during fabric install. Repos installed before that feature will not appear on their own — re-run fabric install in each one.",
+  "cli.console.config.projects.current": "current",
+  "cli.console.config.projects.no-overrides": "all defaults inherited",
+  "cli.console.config.projects.override-count": "{count} differ from the defaults",
+  "cli.console.config.projects.add": "Set one value for this project",
+  "cli.console.config.projects.add-placeholder": "Pick a setting…",
+  "cli.console.config.projects.unbound":
+    "No knowledge base bound, so this project has no id — a per-project value cannot be stored. Run fabric store bind first.",
+  "cli.console.config.projects.unregistered":
+    "not registered (installed by an older version, or the repo has moved)",
+  "cli.console.config.projects.stale": "the registered path no longer exists",
+  "cli.console.config.projects.inherited": "inherited",
+  "cli.console.config.stores.title": "Per knowledge base",
+  "cli.console.config.stores.intro":
+    "Properties of a knowledge base itself. They travel with the store and are shared by the whole team, so they belong to no single project.",
+  "cli.console.config.stores.empty": "No knowledge bases are mounted.",
+  "cli.console.config.stores.personal": "personal",
   "cli.console.config.group.A_locale": "Language and scope",
   "cli.console.config.group.B_hint_threshold": "Reminder thresholds",
   "cli.console.config.group.C_audit": "Audit",
   "cli.console.config.group.D_behavior": "Behaviour",
-  "cli.console.config.scope.label": "Apply to",
-  "cli.console.config.scope.project": "this project only",
-  "cli.console.config.scope.defaults": "every project on this machine",
-  "cli.console.config.scope.unavailable":
-    "This repo has no project_id yet, so a per-project value cannot be stored. Bind a store first (fabric store bind).",
   "cli.console.config.save": "Save",
   "cli.console.config.saved": "Saved to {target}.",
   "cli.console.config.save-failed": "Could not save: {reason}",
+  // The strong claim is reserved for the launch directory's own project — the one
+  // process environment the console actually observes. Other projects read these
+  // variables in their own hook / MCP processes, which we cannot see.
   "cli.console.config.env-locked":
-    "Set by {name} in this process. Editing a config file would not change it.",
+    "This console process sees {name} set; a client carrying the same variable reads that value, and editing a config file will not change it.",
   "cli.console.config.env-available": "can be overridden by {name}",
   "cli.console.config.loading": "Reading configuration…",
   "cli.console.config.load-failed": "Could not read configuration",
@@ -84,8 +106,6 @@ export const enMessages: Messages = {
   "cli.console.config.remote.key-set": "API key set (never shown here)",
   "cli.console.config.remote.key-missing":
     "No API key — recall falls back to text-only ranking",
-  "cli.console.config.store-missing":
-    "No team store is bound, so store-owned settings cannot be changed here.",
   "cli.preview.port-fallback":
     "Port {requested} was busy — using {actual} instead.",
   "cli.preview.started": "Knowledge preview started: {url}",

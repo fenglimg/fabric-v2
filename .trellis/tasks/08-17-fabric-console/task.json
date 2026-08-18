@@ -22,7 +22,8 @@
     "08-17-console-project-registry",
     "08-17-console-shell",
     "08-17-console-config-view",
-    "08-17-console-version-upgrade"
+    "08-17-console-version-upgrade",
+    "08-18-console-global-config"
   ],
   "parent": null,
   "relatedFiles": [],

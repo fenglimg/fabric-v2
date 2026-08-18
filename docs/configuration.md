@@ -66,6 +66,42 @@ value came from, including `environment`. A value the environment is deciding
 cannot be edited from either surface — writing it to a file would persist a
 value that nothing reads.
 
+## The console configuration page is machine-scoped
+
+`fabric preview` serves a configuration page that shows **this machine**, not the
+directory it was started from. It lists the machine-wide `defaults`, every
+project that has settings of its own, and every mounted store — and it lists the
+same things whether you launched it inside a repo or from your home directory.
+
+The working directory decides exactly two things, both cosmetic: which row is
+badged as the one you are standing in, and — when that project appears in
+neither `~/.fabric/state/projects.json` nor the `projects` segment — that it gets
+a row at all, so the project you are in is never invisible on its own machine.
+That row carries nothing but the id. Nothing else about the page moves, including
+the order of the list.
+
+Two consequences worth knowing:
+
+- **The project list is merged from two half-complete sources.** The registry has
+  paths but a project registered without a store binding has no `project_id`;
+  the `projects` segment has ids and the actual overrides but can never supply a
+  path. A project with a path and no id is shown but cannot be configured —
+  per-project settings live under `projects[<id>]`, so there is nowhere to write.
+  Run `fabric store bind` first.
+- **The environment layer can only be read for one project.** A console process
+  sees its own `process.env`, but the processes that actually consult
+  `FABRIC_NUDGE_MODE` and friends are each project's own hooks and MCP server.
+  So the page states an env override as fact only for the launch directory's
+  project and locks that field; for every other project it says the variable is
+  set in *this console's* environment, as a possibility, and leaves the field
+  editable.
+
+Writes from the page go to the home of the key being written — machine defaults
+and per-project overrides to `~/.fabric/fabric-global.json`, corpus keys to the
+chosen store's `store-config.json`. The request names a project id or a store
+uuid, never a path; the server derives the file and refuses anything outside the
+set it enumerated itself.
+
 ## Store configuration
 
 `store-config.json` sits beside `store.json` at the shared store root. A new

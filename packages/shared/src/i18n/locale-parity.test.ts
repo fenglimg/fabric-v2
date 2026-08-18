@@ -169,8 +169,26 @@ describe("i18n locale parity census", () => {
   // src/console/config-view.ts#chromeStrings —— 那里的 key 列表就是这 23 条的
   // 权威清单。之所以不学 status.html 硬编码中文:那种写法在 `language: en` 的机器
   // 上会渲染成中英混排。同上一轮:纯增量,不重跑 census。
+  // 2026-08-18 (全局配置管理页 S4): 906 → 920。净 +14 = 新增 20 条
+  // `cli.console.config.{machine,projects,stores}.*`(机器视角三个区的区标题、
+  // 项目行的四种状态说明、空态与其可执行指引、知识库区文案),减去 6 条:
+  // `cli.console.config.scope.{label,project,defaults,unavailable}` 与
+  // `store-missing` 随「改动作用于」下拉一起退役 —— 写入目标不再从 cwd 推断,
+  // 而是由请求显式指定,那个下拉没有指代对象了。
+  //
+  // 本轮**含删除,按规矩重跑了 census**:2030 文件、55 个 template pattern、
+  // 0 provably dead,canary 3/3 判死。
+  //
+  // ⚠️ canary 首跑 0/3,根因是上面注释 ① 那条坑的一个**新变体**,值得单记:
+  // 收紧规则当时写成「从 `${` 往前取字面段」,仓库里一条临时文件名模板
+  // `` `${process.pid}.${Date.now()}.${randomBytes(4).toString("hex")}` `` 的
+  // 前缀是空串,却仍被收进模式集,编译成「任意三段点分串」——`cli.a.b` 形状的
+  // key 全被它判活,于是 920 个键 0 dead 而 canary 也 0 dead。判据改为「静态
+  // 前缀长度 ≥3 且含点」后,模式集 332 → 55,canary 立刻 3/3。
+  // 教训与 ① ② 同族:**通配模式的宽度必须由 canary 量,不能靠读代码判断**——
+  // 一个过宽的模式不会报错,只会让普查安静地永远返回 0。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(906);
+    expect(enKeys.length).toBe(920);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

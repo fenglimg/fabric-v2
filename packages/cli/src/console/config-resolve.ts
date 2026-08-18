@@ -87,6 +87,19 @@ export interface PanelContext {
   readonly global: Record<string, unknown>;
   readonly storeConfig: Record<string, unknown>;
   readonly storeRoot: string | null;
+  /**
+   * Whether `process.env` may decide a value here.
+   *
+   * True is only honest when THIS process's environment stands in for the
+   * environment of the process that actually reads the variable — the CLI panel
+   * (same shell as the user) and the console's own project. It is false for
+   * every other project on the machine: `FABRIC_NUDGE_MODE` is read by each
+   * project's hook processes, and the console has no window into those. Claiming
+   * otherwise would describe one process's environment as another's, which is
+   * the "the value you see is not the value in effect" failure (KT-MOD-0004)
+   * manufactured by the display itself.
+   */
+  readonly applyEnv: boolean;
 }
 
 export function asPlainObject(value: unknown): Record<string, unknown> {
@@ -103,18 +116,57 @@ function readJsonObject(path: string): Record<string, unknown> {
   }
 }
 
+/**
+ * Build a context for an EXPLICIT target — a project id and a store root the
+ * caller already decided on.
+ *
+ * The console's machine-scoped page needs to resolve values for a project it is
+ * not sitting in, and to write into a store the current repo may not even mount.
+ * Both are just "a different `projectId` / `storeRoot`", so the whole targeting
+ * question collapses into which context you build; `resolveEffective` and
+ * `writeFieldValue` need no knowledge of it.
+ */
+export function buildPanelContext(input: {
+  projectId: string | null;
+  storeRoot: string | null;
+  applyEnv: boolean;
+  /** Reuse an already-parsed global config; re-read per call when omitted. */
+  global?: Record<string, unknown>;
+}): PanelContext {
+  return {
+    // No workspace is involved in an explicitly targeted context. Kept on the
+    // shape because the CLI panel's error messages still name the repo.
+    workspaceRoot: "",
+    projectId: input.projectId,
+    global: input.global ?? asPlainObject(loadGlobalConfig(resolveGlobalRoot())),
+    storeConfig:
+      input.storeRoot === null
+        ? {}
+        : readJsonObject(join(input.storeRoot, STORE_LAYOUT.configFile)),
+    storeRoot: input.storeRoot,
+    applyEnv: input.applyEnv,
+  };
+}
+
+/**
+ * Derive a context from a workspace: `project_id` out of the repo's identity
+ * config, store root out of that repo's write target.
+ *
+ * `applyEnv` is true here because both callers — `fabric config` and the
+ * console's current-project row — run in the user's own shell.
+ */
 export function loadPanelContext(workspaceRoot: string): PanelContext {
   const repo = readJsonObject(join(workspaceRoot, ...PANEL_CONFIG_RELATIVE_PATH));
   const projectIdRaw = repo.project_id;
   const storeRoot = resolveWriteTargetStoreRoot(workspaceRoot);
   return {
+    ...buildPanelContext({
+      projectId:
+        typeof projectIdRaw === "string" && projectIdRaw.length > 0 ? projectIdRaw : null,
+      storeRoot,
+      applyEnv: true,
+    }),
     workspaceRoot,
-    projectId:
-      typeof projectIdRaw === "string" && projectIdRaw.length > 0 ? projectIdRaw : null,
-    global: asPlainObject(loadGlobalConfig(resolveGlobalRoot())),
-    storeConfig:
-      storeRoot === null ? {} : readJsonObject(join(storeRoot, STORE_LAYOUT.configFile)),
-    storeRoot,
   };
 }
 
@@ -140,7 +192,7 @@ export function resolveEffective(
 ): { value: unknown; source: ValueSource } {
   const key = field.key as string;
 
-  const envVar = envOverrideFor(key);
+  const envVar = ctx.applyEnv ? envOverrideFor(key) : null;
   if (envVar !== null) {
     const raw = process.env[envVar];
     if (raw !== undefined && raw.length > 0) {

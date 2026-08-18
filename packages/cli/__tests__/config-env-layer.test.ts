@@ -21,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getPanelFields, PANEL_ENV_OVERRIDES } from "@fenglimg/fabric-shared";
 
-import { loadPanelContext, resolveEffective } from "../src/console/config-resolve.ts";
+import { buildPanelContext, loadPanelContext, resolveEffective } from "../src/console/config-resolve.ts";
 
 const dirs: string[] = [];
 let savedHome: string | undefined;
@@ -205,5 +205,39 @@ describe("resolveEffective — env layer", () => {
     } finally {
       delete process.env.FABRIC_AUDIT_MODE;
     }
+  });
+
+  describe("applyEnv:false takes this process's environment out of the answer", () => {
+    // The console's machine-scoped page resolves values for projects it is not
+    // running in. `FABRIC_NUDGE_MODE` is read by each project's own hook
+    // processes, so answering with the CONSOLE's environment would describe one
+    // process using another's state — a lie the page manufactures itself.
+
+    it("resolves from the config layers, ignoring a set variable", () => {
+      writeGlobal({ defaults: { fusion: "additive" } });
+      process.env.FABRIC_FUSION = "rrf";
+
+      const ctx = buildPanelContext({ projectId: null, storeRoot: null, applyEnv: false });
+      const resolved = resolveEffective(fieldFor("fusion"), ctx);
+
+      // Not "rrf": the variable is real and set, and is still not the answer.
+      expect(resolved.source).toBe("defaults");
+      expect(resolved.value).toBe("additive");
+    });
+
+    it("control: the same context with applyEnv:true DOES see it", () => {
+      // Without this, the case above would pass just as well if `fusion` were
+      // unreadable, misconfigured, or the fixture never landed — it pins that
+      // the only difference between the two answers is the flag.
+      writeGlobal({ defaults: { fusion: "additive" } });
+      process.env.FABRIC_FUSION = "rrf";
+
+      const resolved = resolveEffective(
+        fieldFor("fusion"),
+        buildPanelContext({ projectId: null, storeRoot: null, applyEnv: true }),
+      );
+      expect(resolved.source).toBe("env");
+      expect(resolved.value).toBe("rrf");
+    });
   });
 });

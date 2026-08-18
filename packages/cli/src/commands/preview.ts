@@ -14,8 +14,11 @@ import {
 } from "@fenglimg/fabric-server";
 
 import { paint } from "../colors.js";
-import { collectConfigView } from "../console/config-view.js";
-import { applyConfigEdit, type ConfigWriteRequest } from "../console/config-write.js";
+import { collectGlobalConfigView } from "../console/global-config-view.js";
+import {
+  applyGlobalConfigEdit,
+  type ConfigWriteRequest,
+} from "../console/global-config-write.js";
 import { openKnowledgeEntry, type Opener } from "../console/open-entry.js";
 import { isSameOriginLoopback } from "../console/security.js";
 import { collectConsoleStatus } from "../console/status.js";
@@ -336,7 +339,10 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           }
           if (pathname === "/api/config/set") {
             const body = (await readJsonBody(req)) as ConfigWriteRequest | null;
-            const result = await applyConfigEdit(projectRoot, body);
+            // No projectRoot: the write target is named by the request and
+            // validated against the server's own enumerated sets. See
+            // global-config-write.ts — the launch directory decides nothing here.
+            const result = await applyGlobalConfigEdit(body);
             if (result.ok) sendJson(res, 200, { ok: true, target: result.target });
             else sendJson(res, result.status, { error: result.error });
             return;
@@ -408,7 +414,10 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
         }
 
         if (pathname === "/api/config") {
-          sendJson(res, 200, collectConfigView(projectRoot));
+          // `projectRoot` contributes exactly one thing downstream — which
+          // project is flagged `isCurrent`. Everything else comes off the
+          // machine's own state.
+          sendJson(res, 200, await collectGlobalConfigView(projectRoot));
           return;
         }
 

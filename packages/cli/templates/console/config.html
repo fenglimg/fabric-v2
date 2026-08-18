@@ -8,13 +8,17 @@
   /* 页面专有规则。令牌 / body 基线 / .navbar / .seg 来自 /assets/shell.css。 */
   main{max-width:980px;margin:0 auto;padding:22px 18px 60px}
   .intro{color:var(--text-tertiary);font-size:13px;margin:0 0 18px;line-height:1.7}
+  .sec{margin-bottom:26px}
+  .sec>h2{margin:0 0 2px;font-size:14px;font-weight:600;color:var(--text)}
+  .sec>.sub{margin:0 0 10px;font-size:12px;color:var(--text-tertiary);line-height:1.6}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-    padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px}
-  .card h2{margin:0 0 4px;font-size:13px;font-weight:600;color:var(--text-secondary)}
+    padding:16px 18px;box-shadow:var(--shadow);margin-bottom:12px}
+  .card h3{margin:0 0 4px;font-size:12px;font-weight:600;color:var(--text-secondary);
+    text-transform:uppercase;letter-spacing:.04em}
   .frow{display:grid;grid-template-columns:1fr auto;gap:10px 14px;align-items:start;
     padding:12px 0;border-bottom:1px solid var(--border)}
   .frow:last-child{border-bottom:none}
-  .fkey{font-family:var(--mono);font-size:12px;color:var(--text)}
+  .fkey{font-family:var(--mono);font-size:12px;color:var(--text-tertiary)}
   .flabel{font-size:13px;color:var(--text);margin-bottom:2px}
   .fdesc{font-size:12px;color:var(--text-tertiary);line-height:1.6}
   .fctl{display:flex;align-items:center;gap:8px;justify-self:end}
@@ -28,14 +32,29 @@
     border:1px solid var(--border-strong);color:var(--text-secondary);margin-left:6px}
   /* env 用警示色:它同时意味着"这是当前生效值"和"你在这里改不动"。 */
   .tag.env{color:#b45309;border-color:#b45309}
+  .tag.cur{color:var(--accent);border-color:var(--accent)}
   [data-theme="dark"] .tag.env{color:#fbbf24;border-color:#fbbf24}
   .note{font-size:11px;color:var(--text-tertiary);margin-top:4px;line-height:1.6}
   .note.warn{color:#b45309}
   [data-theme="dark"] .note.warn{color:#fbbf24}
-  .scopebar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;
-    color:var(--text-secondary);padding:12px 0 2px}
-  .scopebar select{font:inherit;font-size:12px;padding:4px 7px;color:var(--text);
+  /* 项目行:整块可展开。收起时只给一行摘要,展开后才是覆盖列表 + 添加控件。 */
+  .prow{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;
+    background:var(--surface);box-shadow:var(--shadow)}
+  .phead{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;
+    user-select:none}
+  .phead .pname{font-size:13px;color:var(--text);font-weight:500}
+  .phead .ppath{font-family:var(--mono);font-size:11px;color:var(--text-tertiary);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px}
+  .phead .pcount{margin-left:auto;font-size:12px;color:var(--text-tertiary);white-space:nowrap}
+  .phead .caret{color:var(--text-tertiary);font-size:11px;width:10px}
+  .pbody{padding:0 14px 12px;border-top:1px solid var(--border)}
+  .addbar{display:flex;align-items:center;gap:8px;padding:12px 0 2px;flex-wrap:wrap}
+  .addbar select,.addbar input{font:inherit;font-size:12px;padding:4px 7px;color:var(--text);
     background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--radius-sm)}
+  .addbar button{font:inherit;font-size:12px;padding:4px 11px;cursor:pointer;color:#fff;
+    background:var(--accent);border:1px solid transparent;border-radius:var(--radius-sm)}
+  .empty{padding:18px 16px;text-align:center;color:var(--text-tertiary);font-size:13px;
+    line-height:1.8}
   .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;z-index:9;
     font-size:12px;padding:8px 14px;border-radius:var(--radius-sm);color:#fff;
     background:#111827;box-shadow:var(--shadow);opacity:0;transition:opacity .18s}
@@ -66,32 +85,36 @@
 
   var DATA=null;
   var GROUP_ORDER=['A_locale','B_hint_threshold','C_audit','D_behavior'];
+  // 展开状态按 project id 记住:保存后要重新拉数据重渲染,不记的话每次保存都会
+  // 把用户正在编辑的那一行收起来。
+  var OPEN={};
 
   function toast(msg,bad){
     var el=document.getElementById('toast');
     el.textContent=msg; el.className='toast show'+(bad?' bad':'');
-    setTimeout(function(){ el.className='toast'+(bad?' bad':''); },3200);
+    setTimeout(function(){ el.className='toast'+(bad?' bad':''); },3600);
   }
 
-  function control(f){
+  function control(f,target){
     if(!f.editable){
       // env 顶着时不渲染禁用控件而是直接不给控件:一个点不动的输入框会让人反复
       // 试,不如把原因说在它本来的位置上。
       return '<span class="note warn">'+esc(fmt(DATA.strings['env-locked'],{name:f.envVar}))+'</span>';
     }
+    var id='c'+Math.random().toString(36).slice(2,9);
     var input;
     if(f.widget==='select'){
-      input='<select data-key="'+esc(f.key)+'">'+(f.enumValues||[]).map(function(v){
+      input='<select id="'+id+'">'+(f.enumValues||[]).map(function(v){
         return '<option value="'+esc(v)+'"'+(v===f.effective?' selected':'')+'>'+esc(v)+'</option>';
       }).join('')+'</select>';
     } else {
-      input='<input type="text" data-key="'+esc(f.key)+'" value="'+esc(f.effective)+'" />';
+      input='<input type="text" id="'+id+'" value="'+esc(f.effective)+'" />';
     }
-    return '<div class="fctl">'+input+
-      '<button data-save="'+esc(f.key)+'">'+esc(DATA.strings.save)+'</button></div>';
+    return '<div class="fctl">'+input+'<button data-ctl="'+id+'" data-key="'+esc(f.key)+
+      '" data-target="'+esc(JSON.stringify(target))+'">'+esc(DATA.strings.save)+'</button></div>';
   }
 
-  function row(f){
+  function row(f,target){
     var tag='<span class="tag'+(f.source==='env'?' env':'')+'">'+esc(f.sourceLabel)+'</span>';
     // 没生效但存在的 env 变量也要标出来 —— 用户排查"我改了怎么没用"时,这一行
     // 往往就是答案。
@@ -101,7 +124,87 @@
       '<div class="flabel">'+esc(f.label)+tag+'</div>'+
       '<div class="fkey">'+esc(f.key)+'</div>'+
       '<div class="fdesc">'+esc(f.description)+'</div>'+envNote+
-      '</div>'+control(f)+'</div>';
+      '</div>'+control(f,target)+'</div>';
+  }
+
+  function machineSection(s){
+    var html='<section class="sec"><h2>'+esc(s['machine.title'])+'</h2>'+
+      '<p class="sub">'+esc(s['machine.intro'])+'</p>';
+    GROUP_ORDER.forEach(function(g){
+      var fields=DATA.machine.filter(function(f){ return f.group===g; });
+      if(!fields.length) return;
+      html+='<div class="card"><h3>'+esc(s['group.'+g])+'</h3>'+
+        fields.map(function(f){ return row(f,{scope:'machine'}); }).join('')+'</div>';
+    });
+    return html+'</section>';
+  }
+
+  function projectRow(p,s){
+    var target={scope:'project',projectId:p.projectId};
+    var open=!!OPEN[p.projectId||p.path];
+    var badges=(p.isCurrent?'<span class="tag cur">'+esc(s['projects.current'])+'</span>':'')+
+      (p.origin==='config-only'?'<span class="tag">'+esc(s['projects.unregistered'])+'</span>':'')+
+      (p.stale?'<span class="tag">'+esc(s['projects.stale'])+'</span>':'');
+    var count=p.overrides.length
+      ? fmt(s['projects.override-count'],{count:p.overrides.length})
+      : s['projects.no-overrides'];
+
+    var body='';
+    if(!p.editable){
+      // 未绑 store → 没有 project_id → 没有可写的位置。不给控件,给原因和下一步。
+      body='<div class="note warn" style="padding:10px 0">'+esc(s['projects.unbound'])+'</div>';
+    } else {
+      body=p.overrides.map(function(f){ return row(f,target); }).join('');
+      // 可加的项 = 全机器那 18 个里,这个项目还没单独设过的 preference 键。
+      var taken={}; p.overrides.forEach(function(f){ taken[f.key]=1; });
+      var addable=DATA.machine.filter(function(f){
+        return f.home==='preference' && !taken[f.key]; });
+      if(addable.length){
+        var selId='a'+(p.projectId||'x').replace(/[^a-z0-9]/gi,'');
+        body+='<div class="addbar"><select id="'+selId+'"><option value="">'+
+          esc(s['projects.add-placeholder'])+'</option>'+
+          addable.map(function(f){
+            return '<option value="'+esc(f.key)+'">'+esc(f.label)+'</option>'; }).join('')+
+          '</select><button data-add="'+selId+'" data-target="'+esc(JSON.stringify(target))+
+          '">'+esc(s['projects.add'])+'</button></div>';
+      }
+    }
+
+    return '<div class="prow"><div class="phead" data-toggle="'+esc(p.projectId||p.path)+'">'+
+      '<span class="caret">'+(open?'▾':'▸')+'</span>'+
+      '<span class="pname">'+esc(p.name)+'</span>'+badges+
+      (p.path?'<span class="ppath">'+esc(p.path)+'</span>':'')+
+      '<span class="pcount">'+esc(count)+'</span></div>'+
+      (open?'<div class="pbody">'+body+'</div>':'')+'</div>';
+  }
+
+  function projectsSection(s){
+    var html='<section class="sec"><h2>'+esc(s['projects.title'])+'</h2>'+
+      '<p class="sub">'+esc(s['projects.intro'])+'</p>';
+    if(!DATA.projects.length){
+      // 空态是这台机器当前的真实状态,不是错误。给出可执行的下一步。
+      html+='<div class="card"><div class="empty">'+esc(s['projects.empty'])+'<br>'+
+        esc(s['projects.empty-hint'])+'</div></div>';
+    } else {
+      html+=DATA.projects.map(function(p){ return projectRow(p,s); }).join('');
+    }
+    return html+'</section>';
+  }
+
+  function storesSection(s){
+    var html='<section class="sec"><h2>'+esc(s['stores.title'])+'</h2>'+
+      '<p class="sub">'+esc(s['stores.intro'])+'</p>';
+    if(!DATA.stores.length){
+      html+='<div class="card"><div class="empty">'+esc(s['stores.empty'])+'</div></div>';
+    } else {
+      html+=DATA.stores.map(function(st){
+        return '<div class="card"><h3>'+esc(st.alias)+
+          (st.personal?'<span class="tag">'+esc(s['stores.personal'])+'</span>':'')+'</h3>'+
+          st.fields.map(function(f){
+            return row(f,{scope:'store',storeUuid:st.storeUuid}); }).join('')+'</div>';
+      }).join('');
+    }
+    return html+'</section>';
   }
 
   function remoteCard(r,s){
@@ -112,45 +215,46 @@
         '<span class="tag">'+esc(r.hasApiKey?s['remote.key-set']:s['remote.key-missing'])+'</span>'+
         (r.model?'<span class="tag">'+esc(r.model)+'</span>':'');
     }
-    return '<div class="card"><h2>'+esc(s['remote.title'])+'</h2><div class="fdesc">'+body+'</div></div>';
+    return '<section class="sec"><div class="card"><h3>'+esc(s['remote.title'])+
+      '</h3><div class="fdesc">'+body+'</div></div></section>';
   }
 
   function render(){
-    var s=DATA.strings, html='';
-    html+='<p class="intro">'+esc(s.intro)+'</p>';
+    var s=DATA.strings;
+    document.getElementById('main').innerHTML=
+      '<p class="intro">'+esc(s.intro)+'</p>'+
+      machineSection(s)+projectsSection(s)+storesSection(s)+
+      remoteCard(DATA.remoteEmbedding,s);
 
-    html+='<div class="card"><div class="scopebar"><span>'+esc(s['scope.label'])+'</span>'+
-      '<select id="scope"'+(DATA.projectId?'':' disabled')+'>'+
-        '<option value="project"'+(DATA.projectId?' selected':'')+'>'+esc(s['scope.project'])+'</option>'+
-        '<option value="defaults"'+(DATA.projectId?'':' selected')+'>'+esc(s['scope.defaults'])+'</option>'+
-      '</select>'+
-      (DATA.projectId?'':'<span class="note warn">'+esc(s['scope.unavailable'])+'</span>')+
-      (DATA.storeRoot?'':'<span class="note warn">'+esc(s['store-missing'])+'</span>')+
-      '</div></div>';
-
-    GROUP_ORDER.forEach(function(g){
-      var fields=DATA.fields.filter(function(f){ return f.group===g; });
-      if(!fields.length) return;
-      html+='<div class="card"><h2>'+esc(s['group.'+g])+'</h2>'+fields.map(row).join('')+'</div>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-toggle]'),function(el){
+      el.addEventListener('click',function(){
+        var k=el.getAttribute('data-toggle'); OPEN[k]=!OPEN[k]; render();
+      });
     });
-
-    html+=remoteCard(DATA.remoteEmbedding,s);
-    document.getElementById('main').innerHTML=html;
-
-    Array.prototype.forEach.call(document.querySelectorAll('[data-save]'),function(btn){
-      btn.addEventListener('click',function(){ save(btn.getAttribute('data-save'),btn); });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ctl]'),function(btn){
+      btn.addEventListener('click',function(){
+        var ctl=document.getElementById(btn.getAttribute('data-ctl'));
+        if(ctl) save(btn.getAttribute('data-key'),ctl.value,
+          JSON.parse(btn.getAttribute('data-target')),btn);
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-add]'),function(btn){
+      btn.addEventListener('click',function(){
+        var sel=document.getElementById(btn.getAttribute('data-add'));
+        if(!sel||!sel.value) return;
+        // 新覆盖先落成当前生效值:用户点"添加"是要把这一项固定下来,不是要改它。
+        var f=DATA.machine.filter(function(m){ return m.key===sel.value; })[0];
+        save(sel.value,f?f.effective:'',JSON.parse(btn.getAttribute('data-target')),btn);
+      });
     });
   }
 
-  function save(key,btn){
-    var ctl=document.querySelector('[data-key="'+key+'"]');
-    if(!ctl) return;
-    var scopeEl=document.getElementById('scope');
+  function save(key,value,target,btn){
     btn.disabled=true;
     fetch('/api/config/set',{
       method:'POST', cache:'no-store',
       headers:{'content-type':'application/json'},
-      body:JSON.stringify({key:key,value:ctl.value,scope:scopeEl?scopeEl.value:'defaults'})
+      body:JSON.stringify({key:key,value:value,target:target})
     })
     .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
     .then(function(res){
