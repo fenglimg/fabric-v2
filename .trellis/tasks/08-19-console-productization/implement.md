@@ -42,11 +42,17 @@
 
 ## W3 集成页
 
-- [ ] W3-1 `GET /api/integrations`：客户端接入状态、MCP 条目、hook/skill 清单与漂移（manifest hash 对模板实际内容）、托管块状态。
-- [ ] W3-2 页面：左客户端列表 / 右详情；行为开关绑既有 config key；物理文件只读。
-- [ ] W3-3 `POST /api/repair`：动作枚举仅 `install` / `doctor --fix`，目标由作用域推导，请求体不带路径，输出流式可见；machine 作用域不提供修复。
-- [ ] 验证：`cd packages/cli && pnpm exec vitest run __tests__/console-write-guard.test.ts` + 新增 integrations 测试
-- [ ] 测试要点：① 非 POST / 跨源 Origin 被拒（复用既有写通道守卫矩阵）；② 非法 action 拒绝且不 spawn 子进程；③ 清单以文件系统为真源——删掉一个已装 skill 文件后，清单必须反映缺失（不得读任何布尔清单）。
+- [x] W3-1 `GET /api/integrations`：客户端接入状态、MCP 条目、hook/skill 清单与漂移、托管块状态。**唯一判据是「装在项目里的字节 vs 模板里的字节」**——不是 manifest hash：字节比对同时覆盖「装完被手改」和「装的是旧版 CLI 的模板」两种漂移，manifest 只覆盖前一种。manifest 只用来报一件字节答不了的事：这份安装是哪个 CLI 版本写的。
+- [x] W3-2 页面：左客户端列表 / 右详情；行为开关绑既有 config key；物理文件只读。行为的单位取 **hook 脚本**而非 config key —— key 是「渲染得出来就渲染」，脚本是「在盘上且已登记进客户端配置」才算在跑，「不在跑」再拆成文件缺失（去重装）与文件在但没登记（客户端配置被覆盖过）两种下一步。
+- [x] W3-2a 同一个 key 只画一个控件：`nudge_mode` / `hint_dismiss_signals` 各被三个 hook 读，按读者各画一份就成了三个控件管一个值，存了一个另外两个仍显示旧值。控件落在第一个读它的行为下，其余行为出一条指回去的引用（引用不能省——「这个旋钮影响哪些 hook」正是分组要回答的问题）。
+- [x] W3-2b 写入层由服务端 `writeTarget` 指定，不在浏览器里拼：值是按项目层解析的，存到机器层等于悄悄把设置挪了一层。浏览器实测保存 `archive_hint_hours` 落 `projects.<id>` 而非 `defaults`。
+- [x] W3-2c 控件渲染器提到 `shell.js` 的 `FabricField`（第二个消费者即上移，同 `shell.css` 自身的规则）；配置页改为调用它，浏览器实测保存回路未回归。
+- [x] W3-3 `POST /api/repair`：动作枚举仅 `install` / `doctor --fix`，argv 在服务端按枚举拼、请求体只带 scope id 不带路径，输出以 `text/plain` 边跑边回；machine 作用域 400 拒绝。
+- [x] 验证：`pnpm -r exec tsc --noEmit`、`pnpm lint`、`(cd packages/cli && pnpm exec vitest run)` 1700 绿、`(cd packages/shared && pnpm exec vitest run)` 668 绿。
+- [x] 测试要点：① 非 POST / 跨源 Origin 被拒（`/api/repair` 作为写通道表第四条，与前三条同矩阵）；② 非法 action 400 且**不 spawn** —— 判据取响应 `content-type`：子进程输出一旦开流就是 `text/plain` 且状态已随首块发出，所以 JSON 响应体即「流分支从未进入」，只断言状态码会漏掉「先跑了再判非法」；③ 清单以文件系统为真源（删/改/加文件后载荷跟着变）。
+- [x] 额外钉住：`BEHAVIORS[].keys ∪ NON_HOOK_KEYS ∪ UNWIRED_BEHAVIOR_KEYS` 必须**恰好等于**非 corpus 面板键全集且无重复——这条全划分是发现四个死键（`audit_mode` / `cite_policy_enabled` / `self_archive_policy_enabled` / `review_stale_pending_days`）的原因，也是新加 schema 键不会两边都不落的保证。
+- [x] 变异验证 5 个全被杀：M1 `compareFile` 装了就报 ok；M2 `active` 去掉 registered 合取；M3 MCP 以文件存在即视为已接入；M4 `NON_HOOK_KEYS` 少一个键；M5 Claude 托管块见 import 行即 ok。
+- [ ] 未做实机执行验证：`install` / `doctor --fix` 会改用户真实 store 与安装树，未在未经确认的情况下点。服务端流式（spawn → 边跑边写 → 退出码尾行）已用真实子进程测；浏览器侧 reader pump 未实跑。
 
 ## 收口（每段做完各跑一次）
 
@@ -56,8 +62,13 @@ pnpm lint
 (cd packages/cli && pnpm exec vitest run)
 ```
 
-- [ ] 每个 W 段收口即 `git commit`（分支 `feat/fabric-console` 已在）。
-- [ ] 全部完成后手工过一遍父任务 AC7/AC8：每页在「空数据 / 数据不全 / 获取失败」三态都给原因与下一步；界面不出现未翻译的内部术语。
+- [x] 每个 W 段收口即 `git commit`（分支 `feat/fabric-console` 已在）。
+- [x] 全部完成后手工过一遍父任务 AC7/AC8：每页在「空数据 / 数据不全 / 获取失败」三态都给原因与下一步；界面不出现未翻译的内部术语。结论见 prd.md AC13。
+
+## 本轮查出、但不在本任务范围内的两件事
+
+- **四个已渲染但无人读取的 config 键**（`audit_mode` / `cite_policy_enabled` / `self_archive_policy_enabled` / `review_stale_pending_days`）：schema 里声明了、设置页按能用的控件渲染、全仓库零消费者（全量普查确认）。已记进 `integrations-registry.ts` 的 `UNWIRED_BEHAVIOR_KEYS` 并注明——**只记不修**，因为每一个是接线还是退役都是产品决定。其中两个尤其扎眼：`review_stale_pending_days` 被三张预设卡分别写成三个不同的值；`self_archive_policy_enabled` 还坐在设置页的「常用」层，即一个死键占着最主要的位置。
+- **`config/resolver.ts` 里硬编码的 `installedCapabilities: {hook:true, skill:true}`**：ClaudeCodeCLI 无条件声称自己装好了 hook 与 skill。集成页因此拒绝把它当数据源，改以文件系统为唯一真源（KT-PIT-0067）。这条硬编码本身仍在。
 
 ## 风险文件
 

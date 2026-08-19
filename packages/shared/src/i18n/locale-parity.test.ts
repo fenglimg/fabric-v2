@@ -197,8 +197,17 @@ describe("i18n locale parity census", () => {
   // 另有 4 条 `*.label` 改了**值**没改 key(archive_hint_hours / audit_mode /
   // nudge_mode / fusion 的文案改成陈述句语域)—— 值变更不进 census。
   // 纯增量,按上面的豁免不重跑 dead-key scan。
+  // 2026-08-19 (控制台产品化 W3): 945 → 1010。净 +65,全部是新增:
+  // 51 条 `cli.console.integrations.*`(集成页的页面 chrome:MCP 接入 / 规则引用 /
+  // 物理文件三态与孤儿态 / 运行时行为 / 安装记录 / machine 作用域的空态,外加
+  // `behaviors.shared` —— 同一个 key 被多个 hook 读取时,控件只画在第一个读它的
+  // 行为下,其余行为出一条指向上面的引用 —— 以及 8 条 `repair.*`:两个动作各自的
+  // 按钮与「它等同于哪条命令」,加上运行中/已结束两条状态),
+  // 14 条 `cli.console.behavior.<hook>.{label,description}`(七个 hook 各一对 ——
+  // 界面上的单位是「它在什么时候做什么」,不是它的文件名)。
+  // 同样是纯增量,按上面的豁免不重跑 dead-key scan。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(945);
+    expect(enKeys.length).toBe(1010);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

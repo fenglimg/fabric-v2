@@ -186,6 +186,208 @@
 
   window.FabricScope = FabricScope;
 
+  // --- config field control ----------------------------------------------
+  // ONE renderer for "a config key you can change", used by the settings page
+  // and by the integrations page's behaviour rows.
+  //
+  // The alternative was for the second page to render its own control against
+  // the same `/api/config/set`. It would have worked on the day it was written,
+  // and then the two would have drifted the first time the field payload gained
+  // a case — a widget type, an env lock, a new reason a key is not editable.
+  // The server already refuses to have two producers of a field's value
+  // (KT-MOD-0004); the browser should not have two producers of its control.
+  //
+  // Write POLICY stays with the page: `bind` takes the page's own `post`, so
+  // each page keeps its toast copy, its reload strategy, and its error
+  // branches. What is shared is the markup and the DOM wiring, which is exactly
+  // the part that has no page-specific content.
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&quot;";
+    });
+  }
+
+  var FabricField = {
+    /**
+     * @param f       one FieldView from /api/config or /api/integrations
+     * @param target  the write target, serialized into the button's dataset
+     * @param strings the page's chrome strings; needs `save`, `reset`,
+     *                `env-locked`
+     */
+    control: function (f, target, strings) {
+      if (!f.editable) {
+        // An environment variable is deciding this value. Rendering a disabled
+        // input would invite people to keep trying it; the reason belongs in
+        // the place the control would have been.
+        return (
+          '<span class="note warn">' +
+          esc(String(strings["env-locked"]).replace("{name}", f.envVar)) +
+          "</span>"
+        );
+      }
+      var id = "c" + Math.random().toString(36).slice(2, 9);
+      var t = esc(JSON.stringify(target));
+      // "Restore default" appears only where THIS layer actually holds a value.
+      // Offering it on an inherited row gives you a button that does nothing.
+      var reset = f.modified
+        ? '<button class="ghost" data-reset="' +
+          esc(f.key) +
+          '" data-target="' +
+          t +
+          '">' +
+          esc(strings.reset) +
+          "</button>"
+        : "";
+      var save =
+        '<button data-ctl="' +
+        id +
+        '" data-key="' +
+        esc(f.key) +
+        '" data-target="' +
+        t +
+        '">' +
+        esc(strings.save) +
+        "</button>";
+
+      if (f.widget === "multiselect") {
+        // The checkboxes only update the hidden input; saving still reads
+        // `#id.value`. One code path for all three write actions — a second
+        // "how does this kind of control produce a value" branch is a second
+        // thing to forget to update. The comma-joined string is exactly what
+        // the server's validate accepts, so the transport never has to know
+        // which keys are sets.
+        var on = {};
+        String(f.effective || "")
+          .split(",")
+          .forEach(function (v) {
+            if (v) on[v] = true;
+          });
+        var boxes = (f.enumValues || [])
+          .map(function (v) {
+            return (
+              '<label><input type="checkbox" data-set="' +
+              id +
+              '" value="' +
+              esc(v) +
+              '"' +
+              (on[v] ? " checked" : "") +
+              " />" +
+              esc(v) +
+              "</label>"
+            );
+          })
+          .join("");
+        return (
+          '<div class="fctl multi"><div class="chk">' +
+          boxes +
+          '</div><input type="hidden" id="' +
+          id +
+          '" value="' +
+          esc(f.effective) +
+          '" /><div class="btns">' +
+          reset +
+          save +
+          "</div></div>"
+        );
+      }
+
+      var input;
+      if (f.widget === "select") {
+        input =
+          '<select id="' +
+          id +
+          '">' +
+          (f.enumValues || [])
+            .map(function (v) {
+              return (
+                '<option value="' +
+                esc(v) +
+                '"' +
+                (v === f.effective ? " selected" : "") +
+                ">" +
+                esc(v) +
+                "</option>"
+              );
+            })
+            .join("") +
+          "</select>";
+      } else {
+        input = '<input type="text" id="' + id + '" value="' + esc(f.effective) + '" />';
+      }
+      return '<div class="fctl">' + input + reset + save + "</div>";
+    },
+
+    /**
+     * Wire every control rendered since the last render.
+     *
+     * @param opts.post  post(url, body, btn, okMessageFn) — the page's own
+     * @param opts.saved  (target) => string   toast copy for a save
+     * @param opts.reset  (target) => string   toast copy for a reset
+     */
+    bind: function (root, opts) {
+      var scope = root || document;
+      scope.querySelectorAll("[data-set]").forEach(function (box) {
+        box.addEventListener("change", function () {
+          var target = box.getAttribute("data-set");
+          var picked = [];
+          scope.querySelectorAll('[data-set="' + target + '"]').forEach(function (b) {
+            if (b.checked) picked.push(b.value);
+          });
+          var hidden = document.getElementById(target);
+          if (hidden) hidden.value = picked.join(",");
+        });
+      });
+      scope.querySelectorAll("[data-ctl]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var ctl = document.getElementById(btn.getAttribute("data-ctl"));
+          if (!ctl) return;
+          opts.post(
+            "/api/config/set",
+            {
+              key: btn.getAttribute("data-key"),
+              value: ctl.value,
+              action: "set",
+              target: JSON.parse(btn.getAttribute("data-target")),
+            },
+            btn,
+            function (b) {
+              return opts.saved(b.target);
+            },
+          );
+        });
+      });
+      scope.querySelectorAll("[data-reset]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          opts.post(
+            "/api/config/set",
+            {
+              key: btn.getAttribute("data-reset"),
+              action: "reset",
+              target: JSON.parse(btn.getAttribute("data-target")),
+            },
+            btn,
+            function (b) {
+              return opts.reset(b.target);
+            },
+          );
+        });
+      });
+    },
+
+    /** The shared transient message. Expects `<div class="toast" id="toast">`. */
+    toast: function (msg, bad) {
+      var el = document.getElementById("toast");
+      if (!el) return;
+      el.textContent = msg;
+      el.className = "toast show" + (bad ? " bad" : "");
+      setTimeout(function () {
+        el.className = "toast" + (bad ? " bad" : "");
+      }, 3600);
+    },
+  };
+
+  window.FabricField = FabricField;
+
   // Render the switcher into the navbar. Injected here rather than copied into
   // four templates: unlike the nav links (frozen markup), this control has
   // state and behaviour, and four copies of it would be four things to keep in

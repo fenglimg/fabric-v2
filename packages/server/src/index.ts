@@ -146,6 +146,14 @@ export {
   type RelatedGraphNode,
   type RelatedHubEntry,
 } from "./services/doctor/doctor-related-graph.js";
+// The install-copy drift oracle. Exported for the console's integrations page,
+// which reports the same manifest state `fabric doctor` does — one inspector, so
+// the page and the command it tells you to run cannot disagree.
+export {
+  inspectInstallCopyDrift,
+  type InstallDriftInspection,
+  type InstallDriftStatus,
+} from "./services/doctor/doctor-install-drift.js";
 export {
   clearPrecheckCache,
   evaluateStoreDir,

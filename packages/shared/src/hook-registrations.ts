@@ -159,6 +159,37 @@ function commandsOf(entry: unknown): string[] {
 }
 
 /**
+ * Is `hookFile` wired into `existing` (an already-parsed client hook config)?
+ *
+ * The read-side twin of {@link mergeFabricHookRegistrations}, and deliberately
+ * in the same file: both answer "is this command already in that event's array"
+ * and they must answer it identically, or the console would report a hook as
+ * unregistered that a re-install then declines to add because it is already
+ * there. Sharing `commandsOf` is what makes that impossible.
+ *
+ * A hook registered under several events (Codex wires cite-policy-evict under
+ * SessionStart only, but the shape allows more) counts as registered when ANY
+ * of its registrations is present — the file runs either way.
+ */
+export function isHookRegistered(
+  existing: unknown,
+  client: HookClient,
+  hookFile: string,
+): boolean {
+  const { configRoot, registrations } = HOOK_REGISTRATIONS[client];
+  const events = registrations.filter((r) => r.hookFile === hookFile).map((r) => r.event);
+  if (events.length === 0) return false;
+  if (typeof existing !== "object" || existing === null || Array.isArray(existing)) return false;
+  const rootValue = (existing as Record<string, unknown>)[configRoot];
+  if (typeof rootValue !== "object" || rootValue === null || Array.isArray(rootValue)) return false;
+  const command = hookCommandFor(client, hookFile);
+  return events.some((event) => {
+    const entries = (rootValue as Record<string, unknown>)[event];
+    return Array.isArray(entries) && entries.some((entry) => commandsOf(entry).includes(command));
+  });
+}
+
+/**
  * Append Fabric's registrations into an existing (already-parsed) client hook
  * config, returning a new object. Entries are appended, never replaced, and a
  * registration whose command is already present anywhere in that event's array

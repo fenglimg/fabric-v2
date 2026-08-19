@@ -144,6 +144,97 @@ export const enMessages: Messages = {
   // without saying where to change it would leave the reader stuck.
   "cli.console.config.remote.how":
     "All three take effect only together, and the API key is a secret — this page takes no plaintext key. To change them: edit embed_endpoint / embed_model / embed_api_key in {path}, or set FABRIC_EMBED_ENDPOINT / FABRIC_EMBED_MODEL / FABRIC_EMBED_API_KEY (the environment wins).",
+  // The integrations page. It answers "what did Fabric put in this project, and
+  // which parts are actually running" — every state is computed from the tree:
+  // template bytes against installed bytes.
+  "cli.console.integrations.title": "Integrations",
+  "cli.console.integrations.intro":
+    "What Fabric installed into this project, and how each client is wired to it. Every state is read from disk now, not recorded at install time.",
+  "cli.console.integrations.machine-only": "Integrations are per project",
+  "cli.console.integrations.machine-only-hint":
+    "Hooks, skills and the managed block all live inside a repository. Switch to a project above to see them.",
+  "cli.console.integrations.mcp.title": "MCP connection",
+  "cli.console.integrations.mcp.on": "Connected — configured in {path}.",
+  "cli.console.integrations.mcp.off": "Not connected — no fabric entry in {path}.",
+  "cli.console.integrations.mcp.off-hint":
+    "This client cannot call fab_recall / fab_propose. Run fabric install to add it.",
+  "cli.console.integrations.mcp.location.project": "project scope",
+  "cli.console.integrations.mcp.location.user": "user scope",
+  "cli.console.integrations.bootstrap.title": "Rule import",
+  "cli.console.integrations.bootstrap.ok": "Imported and current — {path}",
+  "cli.console.integrations.bootstrap.missing": "{path} does not import Fabric's rules.",
+  "cli.console.integrations.bootstrap.modified":
+    "The rules {path} imports are not the current ones — the agent is reading stale text. Run fabric install to rewrite them.",
+  "cli.console.integrations.files.title": "Files on disk",
+  "cli.console.integrations.files.hooks": "Hook scripts",
+  "cli.console.integrations.files.skills": "Skills",
+  "cli.console.integrations.files.libs": "Shared libraries",
+  "cli.console.integrations.files.ok": "{count} files, all matching this version's templates",
+  "cli.console.integrations.files.count": "{count} files",
+  // Read-only is a decision, not an omission: fabric install owns these bytes,
+  // so an edit here would be overwritten by the next install.
+  "cli.console.integrations.files.readonly":
+    "These files are written by fabric install and are read-only here — an edit would be overwritten by the next install.",
+  "cli.console.integrations.state.missing": "missing",
+  "cli.console.integrations.state.modified": "differs from template",
+  "cli.console.integrations.state.orphan": "left over (no longer shipped)",
+  "cli.console.integrations.behaviors.title": "Runtime behaviour",
+  "cli.console.integrations.behaviors.intro":
+    "Each item is a hook installed in the project. It runs only when the file is present AND registered in the client's config; the settings below tune it.",
+  "cli.console.integrations.behaviors.active": "running",
+  "cli.console.integrations.behaviors.inactive": "not running",
+  "cli.console.integrations.behaviors.unregistered":
+    "The file is there but not registered in the client's config — it never fires.",
+  "cli.console.integrations.behaviors.file-missing": "The script is not installed.",
+  "cli.console.integrations.behaviors.tuned-by": "Settings",
+  "cli.console.integrations.behaviors.no-keys": "Nothing to tune.",
+  "cli.console.integrations.behaviors.shared": "Also affected by “{label}”, set under “{owner}” above.",
+  "cli.console.integrations.repair.title": "Repair",
+  "cli.console.integrations.repair.intro":
+    "Rewrite these files from this version's templates. Hand edits are overwritten; output appears below as it runs.",
+  "cli.console.integrations.repair.install": "Reinstall",
+  "cli.console.integrations.repair.install-hint":
+    "The same as running fabric install in that project. Rewrites every artifact and both client configs.",
+  "cli.console.integrations.repair.doctor": "Check and fix",
+  "cli.console.integrations.repair.doctor-hint":
+    "The same as fabric doctor --fix. Changes only what it can fix automatically; leaves intact files alone.",
+  "cli.console.integrations.repair.running": "Running “{action}” — leave this page open until it finishes.",
+  "cli.console.integrations.repair.done": "“{action}” finished; the file states above were re-read.",
+  "cli.console.integrations.manifest.title": "Install record",
+  "cli.console.integrations.manifest.ok": "{count} files match what install wrote.",
+  "cli.console.integrations.manifest.no-manifest":
+    "No install record for this project — either it was never installed, or the version that installed it predates the record.",
+  "cli.console.integrations.manifest.unreadable": "The install record exists but cannot be read.",
+  "cli.console.integrations.manifest.drifted": "{count} of {tracked} files changed since install.",
+  "cli.console.integrations.manifest.version": "Installed by version {version}",
+  "cli.console.integrations.problems.none": "Everything matches.",
+  "cli.console.integrations.problems.count": "{count} need attention",
+  "cli.console.integrations.loading": "Checking the install…",
+  "cli.console.integrations.load-failed": "Could not read integration state",
+
+  // The seven hooks, named by what they do and when — never by their filename.
+  "cli.console.behavior.fabric-hint.label": "Remind me to archive and review when I stop",
+  "cli.console.behavior.fabric-hint.description":
+    "At the end of a turn, checks whether enough changed to be worth archiving, whether pending entries are piling up, and whether the knowledge base is due for maintenance — and says so once when they are.",
+  "cli.console.behavior.knowledge-hint-broad.label": "Inject standing knowledge at session start",
+  "cli.console.behavior.knowledge-hint-broad.description":
+    "Writes the broad-scoped knowledge index into a new session's opening context, so the agent does not have to search for it first.",
+  "cli.console.behavior.knowledge-pretooluse.label": "Surface relevant knowledge before an edit",
+  "cli.console.behavior.knowledge-pretooluse.description":
+    "When the agent is about to change a file, shows the narrow-scoped entries that match that path — before the edit, not after.",
+  "cli.console.behavior.knowledge-hint-subagent.label": "Inject knowledge when a sub-agent starts",
+  "cli.console.behavior.knowledge-hint-subagent.description":
+    "A sub-agent inherits none of the dispatcher's context but edits the same repository, so it gets its own injection at start.",
+  "cli.console.behavior.cite-policy-evict.label": "Remind the agent to record what it used",
+  "cli.console.behavior.cite-policy-evict.description":
+    "Periodically reminds the agent, in a long session, to recall before editing — which is what citation accounting is computed from.",
+  "cli.console.behavior.post-tooluse-mutation.label": "Record edits and knowledge reads",
+  "cli.console.behavior.post-tooluse-mutation.description":
+    "Appends every edit and every knowledge-body read to the event ledger. The triggers for the behaviours above are all computed from it.",
+  "cli.console.behavior.session-end-marker.label": "Record when a session ends",
+  "cli.console.behavior.session-end-marker.description":
+    "Writes one marker at session end so the next archive pass knows that stretch of work is complete.",
+
   "cli.preview.port-fallback":
     "Port {requested} was busy — using {actual} instead.",
   "cli.preview.started": "Knowledge preview started: {url}",

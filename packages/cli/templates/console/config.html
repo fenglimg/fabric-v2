@@ -20,42 +20,14 @@
   .searchbar input{font:inherit;font-size:13px;width:100%;box-sizing:border-box;
     padding:8px 11px;color:var(--text);background:var(--surface);
     border:1px solid var(--border-strong);border-radius:var(--radius-sm)}
-  /* 已修改竖条:占位始终存在(3px + 间距),否则改一项会让整行横移。 */
-  .frow{display:grid;grid-template-columns:1fr auto;gap:10px 14px;align-items:start;
-    padding:12px 0 12px 11px;border-bottom:1px solid var(--border);
-    border-left:3px solid transparent}
-  .frow:last-child{border-bottom:none}
-  .frow.mod{border-left-color:var(--accent)}
-  .fkey{font-family:var(--mono);font-size:12px;color:var(--text-tertiary)}
-  .flabel{font-size:13px;color:var(--text);margin-bottom:2px}
-  .fdesc{font-size:12px;color:var(--text-tertiary);line-height:1.6}
-  .fctl{display:flex;align-items:center;gap:8px;justify-self:end}
-  .fctl input,.fctl select{font:inherit;font-size:12px;padding:4px 7px;min-width:132px;
-    color:var(--text);background:var(--surface-2);border:1px solid var(--border-strong);
-    border-radius:var(--radius-sm)}
-  .fctl button{font:inherit;font-size:12px;padding:4px 11px;cursor:pointer;color:#fff;
-    background:var(--accent);border:1px solid transparent;border-radius:var(--radius-sm)}
-  /* 恢复默认是次要动作,给它次要的样子 —— 与「保存」同等醒目会让人误点。 */
-  .fctl button.ghost{color:var(--text-secondary);background:transparent;
-    border-color:var(--border-strong)}
-  .fctl button:disabled,.fctl input:disabled,.fctl select:disabled{opacity:.5;cursor:not-allowed}
-  /* 多选项走勾选框而不是逗号分隔的文本框:这一项存在的理由就是不必再手打枚举值。
-     竖排是因为选项名本身要读得懂,横排挤在一行会先被截断的正是它。 */
-  .fctl.multi{display:grid;grid-template-columns:1fr;gap:6px;justify-self:end;min-width:200px}
-  .chk{display:flex;flex-direction:column;gap:3px}
-  .chk label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);
-    cursor:pointer}
-  .chk input[type=checkbox]{min-width:0;margin:0;accent-color:var(--accent)}
-  .fctl.multi .btns{display:flex;gap:8px;justify-content:flex-end}
+  /* .frow / .fctl / .chk / .note / .toast 已上提到 shell.css —— 集成页的行为行
+     用的是同一个渲染器(shell.js 的 FabricField.control),样式跟着渲染器走。 */
   .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
     border:1px solid var(--border-strong);color:var(--text-secondary);margin-left:6px}
   /* env 用警示色:它同时意味着"这是当前生效值"和"你在这里改不动"。 */
   .tag.env{color:#b45309;border-color:#b45309}
   .tag.cur{color:var(--accent);border-color:var(--accent)}
   [data-theme="dark"] .tag.env{color:#fbbf24;border-color:#fbbf24}
-  .note{font-size:11px;color:var(--text-tertiary);margin-top:4px;line-height:1.6}
-  .note.warn{color:#b45309}
-  [data-theme="dark"] .note.warn{color:#fbbf24}
   /* 预设卡:三档并排,每档标出它实际会写入的数值。 */
   .presets{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
   .preset{flex:1 1 180px;text-align:left;font:inherit;cursor:pointer;padding:11px 13px;
@@ -91,11 +63,6 @@
     background:var(--accent);border:1px solid transparent;border-radius:var(--radius-sm)}
   .empty{padding:18px 16px;text-align:center;color:var(--text-tertiary);font-size:13px;
     line-height:1.8}
-  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;z-index:9;
-    font-size:12px;padding:8px 14px;border-radius:var(--radius-sm);color:#fff;
-    background:#111827;box-shadow:var(--shadow);opacity:0;transition:opacity .18s}
-  .toast.show{opacity:.94}
-  .toast.bad{background:#b91c1c}
   .guide{padding:20px 18px;text-align:center;line-height:1.9;color:var(--text-tertiary);font-size:13px}
   .err{color:#ef4444}
   code{font-family:var(--mono);font-size:12px;background:var(--surface-2);
@@ -107,6 +74,7 @@
   <a class="seg" href="/graph">关联图</a>
   <a class="seg" href="/status">状态</a>
   <a class="seg" href="/config">配置</a>
+  <a class="seg" href="/integrations">集成</a>
   <span class="spacer"></span>
   <button class="seg" id="shellThemeBtn" title="切换主题">☀</button>
 </nav>
@@ -127,11 +95,7 @@
   var ADV=false;   // 高级区是否展开
   var Q='';        // 搜索词
 
-  function toast(msg,bad){
-    var el=document.getElementById('toast');
-    el.textContent=msg; el.className='toast show'+(bad?' bad':'');
-    setTimeout(function(){ el.className='toast'+(bad?' bad':''); },3600);
-  }
+  var toast=FabricField.toast;
 
   // 搜索命中标签、说明与 key 三处。只搜标签会让人搜不到自己在 JSON 里见过的
   // key 名,而 key 名往往正是他来这一页的原因。
@@ -141,46 +105,11 @@
     return (f.label+' '+f.description+' '+f.key).toLowerCase().indexOf(q)>=0;
   }
 
+  // 控件本体渲染在 shell.js 的 FabricField —— 集成页的行为行用的是同一个函数。
+  // 两页各渲染一份「可改的配置项」会在字段载荷长出新情况(新 widget、新的不可编辑
+  // 原因)的第一天分叉,而分叉的那一页会静默地少一种情况。
   function control(f,target){
-    if(!f.editable){
-      // env 顶着时不渲染禁用控件而是直接不给控件:一个点不动的输入框会让人反复
-      // 试,不如把原因说在它本来的位置上。
-      return '<span class="note warn">'+esc(fmt(DATA.strings['env-locked'],{name:f.envVar}))+'</span>';
-    }
-    var id='c'+Math.random().toString(36).slice(2,9);
-    var t=esc(JSON.stringify(target));
-    // 恢复默认只在这一层真的有值时出现 —— 对一个本就继承来的项提供"恢复默认",
-    // 点下去什么也不会发生,是一个骗人的控件。
-    var reset=f.modified
-      ? '<button class="ghost" data-reset="'+esc(f.key)+'" data-target="'+t+'">'+
-        esc(DATA.strings.reset)+'</button>' : '';
-    var save='<button data-ctl="'+id+'" data-key="'+esc(f.key)+
-      '" data-target="'+t+'">'+esc(DATA.strings.save)+'</button>';
-
-    if(f.widget==='multiselect'){
-      // 勾选框只更新这个隐藏 input,保存仍旧读 #id 的 .value —— 三个写动作共用
-      // 一条通道,多一个"这一类控件怎么取值"的分支就多一处会忘记同步的地方。
-      // 逗号串正是服务端 validate 接受的形式,所以传输层不需要认识哪些 key 是集合。
-      var on={}; String(f.effective||'').split(',').forEach(function(v){
-        if(v) on[v]=true; });
-      var boxes=(f.enumValues||[]).map(function(v){
-        return '<label><input type="checkbox" data-set="'+id+'" value="'+esc(v)+'"'+
-          (on[v]?' checked':'')+' />'+esc(v)+'</label>';
-      }).join('');
-      return '<div class="fctl multi"><div class="chk">'+boxes+'</div>'+
-        '<input type="hidden" id="'+id+'" value="'+esc(f.effective)+'" />'+
-        '<div class="btns">'+reset+save+'</div></div>';
-    }
-
-    var input;
-    if(f.widget==='select'){
-      input='<select id="'+id+'">'+(f.enumValues||[]).map(function(v){
-        return '<option value="'+esc(v)+'"'+(v===f.effective?' selected':'')+'>'+esc(v)+'</option>';
-      }).join('')+'</select>';
-    } else {
-      input='<input type="text" id="'+id+'" value="'+esc(f.effective)+'" />';
-    }
-    return '<div class="fctl">'+input+reset+save+'</div>';
+    return FabricField.control(f,target,DATA.strings);
   }
 
   // 语义检索开关下面那一行:开关是意图,能不能算是另一回事。只挂在机器视角这一行,
@@ -413,31 +342,12 @@
         var k=el.getAttribute('data-toggle'); OPEN[k]=!OPEN[k]; render();
       });
     });
-    document.querySelectorAll('[data-set]').forEach(function(box){
-      box.addEventListener('change',function(){
-        var target=box.getAttribute('data-set');
-        var picked=[];
-        document.querySelectorAll('[data-set="'+target+'"]').forEach(function(b){
-          if(b.checked) picked.push(b.value);
-        });
-        var hidden=document.getElementById(target);
-        if(hidden) hidden.value=picked.join(',');
-      });
-    });
-    document.querySelectorAll('[data-ctl]').forEach(function(btn){
-      btn.addEventListener('click',function(){
-        var ctl=document.getElementById(btn.getAttribute('data-ctl'));
-        if(ctl) post('/api/config/set',{key:btn.getAttribute('data-key'),value:ctl.value,
-          action:'set',target:JSON.parse(btn.getAttribute('data-target'))},btn,
-          function(b){ return fmt(DATA.strings.saved,{target:b.target}); });
-      });
-    });
-    document.querySelectorAll('[data-reset]').forEach(function(btn){
-      btn.addEventListener('click',function(){
-        post('/api/config/set',{key:btn.getAttribute('data-reset'),action:'reset',
-          target:JSON.parse(btn.getAttribute('data-target'))},btn,
-          function(b){ return fmt(DATA.strings['reset-done'],{target:b.target}); });
-      });
+    // 保存 / 恢复默认 / 多选勾选的 DOM 接线也在 FabricField —— 写入策略(toast 文案、
+    // 成功后重新拉数据、预设的部分失败分支)仍留在本页的 post 里。
+    FabricField.bind(document,{
+      post:post,
+      saved:function(target){ return fmt(DATA.strings.saved,{target:target}); },
+      reset:function(target){ return fmt(DATA.strings['reset-done'],{target:target}); },
     });
     document.querySelectorAll('[data-preset]').forEach(function(btn){
       btn.addEventListener('click',function(){

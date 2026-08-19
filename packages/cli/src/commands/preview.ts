@@ -21,6 +21,8 @@ import {
   type ConfigPresetRequest,
   type ConfigWriteRequest,
 } from "../console/global-config-write.js";
+import { collectIntegrations } from "../console/integrations-view.js";
+import { planRepair, runRepair, type RepairRequest } from "../console/integrations-repair.js";
 import { openKnowledgeEntry, type Opener } from "../console/open-entry.js";
 import { listScopes, resolveScope, type ResolvedScope } from "../console/scope.js";
 import { isSameOriginLoopback } from "../console/security.js";
@@ -72,7 +74,12 @@ const ALLOWED_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 // means "every method other than POST is refused", so a read and a write cannot
 // share one path without carving an exception into the guard — and an exception
 // is precisely what makes a table-driven guard stop being a guarantee.
-const WRITE_ROUTES = new Set(["/api/open", "/api/config/set", "/api/config/preset"]);
+const WRITE_ROUTES = new Set([
+  "/api/open",
+  "/api/config/set",
+  "/api/config/preset",
+  "/api/repair",
+]);
 
 const STATIC_ASSETS: Record<string, { file: string; type: string }> = {
   "/assets/shell.css": { file: "console/shell.css", type: "text/css; charset=utf-8" },
@@ -370,6 +377,18 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
             }
             return;
           }
+          if (pathname === "/api/repair") {
+            // Plan first, spawn second. Every refusal is ordinary JSON; the
+            // streaming response only begins once a child is certain to run,
+            // so the page never has to parse a 400 out of a text stream.
+            const plan = await planRepair(
+              (await readJsonBody(req)) as RepairRequest | null,
+              projectRoot,
+            );
+            if (!plan.ok) sendJson(res, plan.status, { error: plan.error });
+            else runRepair(plan, res);
+            return;
+          }
         }
 
         if (method !== "GET") {
@@ -413,6 +432,12 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
         }
         if (pathname === "/config") {
           const html = readFileSync(findTemplatePath("console/config.html"), "utf8");
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+          res.end(html);
+          return;
+        }
+        if (pathname === "/integrations") {
+          const html = readFileSync(findTemplatePath("console/integrations.html"), "utf8");
           res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
           res.end(html);
           return;
@@ -491,6 +516,15 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           // which is the "the value you see is not the value in effect" failure
           // KT-MOD-0004 exists to prevent.
           sendJson(res, 200, await collectGlobalConfigView(projectRoot));
+          return;
+        }
+
+        if (pathname === "/api/integrations") {
+          // Scoped like every other data endpoint. Machine scope is answered by
+          // the collector itself (with an empty payload and a reason), NOT by a
+          // 4xx here: "there is nothing to install machine-wide" is a state the
+          // page renders, not an error the page failed at.
+          sendJson(res, 200, await collectIntegrations(scope));
           return;
         }
 

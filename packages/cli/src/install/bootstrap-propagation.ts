@@ -60,7 +60,7 @@ import {
  * the snapshot being present, and missing snapshot indicates an install-order
  * regression that should fail loudly rather than emit an empty managed block.
  */
-function buildManagedBlockBody(targetRoot: string): string {
+export function buildManagedBlockBody(targetRoot: string): string {
   const snapshotPath = fabricAgentsSnapshotPath(targetRoot);
   const snapshot = readFileSync(snapshotPath, "utf8");
   const projectRules = readProjectRulesIfPresent(targetRoot);

@@ -54,7 +54,7 @@ import {
 } from "./config-presentation.js";
 import { mergeProjectList, type MergedProject } from "./project-list.js";
 
-interface FieldView {
+export interface FieldView {
   key: string;
   group: string;
   home: "global_root" | "preference" | "corpus";
@@ -280,7 +280,16 @@ function readSemanticSearch(
   };
 }
 
-function viewOf(field: PanelFieldMeta, ctx: PanelContext): FieldView {
+/**
+ * One panel field, resolved against one context.
+ *
+ * Exported because the integrations page renders a handful of the same keys as
+ * "behaviour" controls. It renders them through THIS function rather than
+ * shaping its own row: the two pages must agree about what a key's effective
+ * value, source, and editability are, and the cheapest way to guarantee that is
+ * to have only one function that decides.
+ */
+export function viewOf(field: PanelFieldMeta, ctx: PanelContext): FieldView {
   const key = String(field.key);
   const { value, source } = resolveEffective(field, ctx);
   return {

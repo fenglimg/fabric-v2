@@ -147,6 +147,62 @@ describe("write endpoints over HTTP", () => {
     expect(((await res.json()) as { error: string }).error).toContain("unknown preset");
   });
 
+  // The FOURTH route, and the only one that can start a child process — so the
+  // assertion that matters is not just "the guard covers it" but "an illegal
+  // action is refused BEFORE anything is spawned".
+  it("refuses GET and a foreign Origin on /api/repair", async () => {
+    const { base } = await start();
+    expect((await fetch(`${base}/api/repair`, { method: "GET" })).status).toBe(405);
+
+    const res = await fetch(`${base}/api/repair`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ action: "install" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses an unknown repair action from a legitimate Origin, spawning nothing", async () => {
+    const { base, port } = await start();
+    for (const action of ["doctor", "install; rm -rf /", "", null]) {
+      const res = await fetch(`${base}/api/repair`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: `http://127.0.0.1:${String(port)}`,
+        },
+        body: JSON.stringify({ action }),
+      });
+      // 400, not 403: the guard passed it and the closed ACTIONS table refused.
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toContain("unknown action");
+      // The content type is the "nothing was spawned" oracle. A child's output
+      // is streamed as text/plain, and that response is committed with its
+      // first chunk — so a JSON body proves the streaming branch was never
+      // entered. Status alone would still pass against a handler that ran the
+      // command and only then decided it was illegal.
+      expect(res.headers.get("content-type")).toContain("application/json");
+    }
+  });
+
+  it("refuses a repair aimed at machine scope, spawning nothing", async () => {
+    // There is no machine-wide install tree. Refusing beats the alternative the
+    // scope switcher already rules out: quietly repairing the launch directory
+    // while the page says you are looking at the machine.
+    const { base, port } = await start();
+    const res = await fetch(`${base}/api/repair`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: `http://127.0.0.1:${String(port)}`,
+      },
+      body: JSON.stringify({ action: "install", scope: "machine" }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("machine scope");
+    expect(res.headers.get("content-type")).toContain("application/json");
+  });
+
   it("refuses a config POST carrying a foreign Origin (403)", async () => {
     const { base } = await start();
     const res = await fetch(`${base}/api/config/set`, {

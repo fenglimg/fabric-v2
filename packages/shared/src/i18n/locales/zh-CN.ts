@@ -122,6 +122,91 @@ export const zhCNMessages: Messages = {
   // 密钥输入;只给状态而不说去哪儿改,等于把人留在原地。
   "cli.console.config.remote.how":
     "这三项要一起配齐才生效，其中 API key 是密钥 —— 网页不提供明文密钥输入框。改法：编辑 {path} 的 embed_endpoint / embed_model / embed_api_key，或设环境变量 FABRIC_EMBED_ENDPOINT / FABRIC_EMBED_MODEL / FABRIC_EMBED_API_KEY（环境变量优先）。",
+  // 集成页。这一页回答的是「Fabric 到底往这个项目里装了什么、哪些正在起作用」,
+  // 所有状态都由文件系统算出:模板目录的字节 vs 安装目录的字节。
+  "cli.console.integrations.title": "集成",
+  "cli.console.integrations.intro":
+    "Fabric 装进这个项目的物件，以及各客户端当前的接入状态。所有状态都是现读文件算出来的，不是安装时记下的。",
+  "cli.console.integrations.machine-only": "集成是项目级的",
+  "cli.console.integrations.machine-only-hint":
+    "hook、skill 与托管块都装在某个仓库里。在右上角切到一个具体项目查看。",
+  "cli.console.integrations.mcp.title": "MCP 接入",
+  "cli.console.integrations.mcp.on": "已接入 —— 配置在 {path}。",
+  "cli.console.integrations.mcp.off": "未接入 —— {path} 里没有 fabric 条目。",
+  "cli.console.integrations.mcp.off-hint": "这个客户端调不到 fab_recall / fab_propose。跑 fabric install 补上。",
+  "cli.console.integrations.mcp.location.project": "项目级",
+  "cli.console.integrations.mcp.location.user": "用户级",
+  "cli.console.integrations.bootstrap.title": "规则引用",
+  "cli.console.integrations.bootstrap.ok": "已引用且是当前版本 —— {path}",
+  "cli.console.integrations.bootstrap.missing": "{path} 没有引用 Fabric 的规则文档。",
+  "cli.console.integrations.bootstrap.modified":
+    "{path} 引用的规则不是当前版本 —— AI 读到的是旧规则。跑 fabric install 重写。",
+  "cli.console.integrations.files.title": "物理文件",
+  "cli.console.integrations.files.hooks": "hook 脚本",
+  "cli.console.integrations.files.skills": "skill",
+  "cli.console.integrations.files.libs": "共享库",
+  "cli.console.integrations.files.ok": "{count} 个文件，与本版模板一致",
+  "cli.console.integrations.files.count": "{count} 个文件",
+  // 只读不是遗漏:这些文件由 fabric install 生成,手改会在下次安装被覆盖。
+  "cli.console.integrations.files.readonly":
+    "这些文件由 fabric install 写入，此处只读 —— 手改会在下次安装时被覆盖。",
+  "cli.console.integrations.state.missing": "缺失",
+  "cli.console.integrations.state.modified": "与模板不一致",
+  "cli.console.integrations.state.orphan": "多余（本版不再分发）",
+  "cli.console.integrations.behaviors.title": "运行时行为",
+  "cli.console.integrations.behaviors.intro":
+    "每一项都是一个装在项目里的 hook。文件在、且已登记进客户端配置，它才会跑；下面的设置是它的调节项。",
+  "cli.console.integrations.behaviors.active": "运行中",
+  "cli.console.integrations.behaviors.inactive": "未运行",
+  "cli.console.integrations.behaviors.unregistered": "文件在，但没登记进客户端配置 —— 不会被触发。",
+  "cli.console.integrations.behaviors.file-missing": "脚本文件不在。",
+  "cli.console.integrations.behaviors.tuned-by": "调节项",
+  "cli.console.integrations.behaviors.no-keys": "没有可调项。",
+  "cli.console.integrations.behaviors.shared": "也受「{label}」影响，在上面的「{owner}」里调整。",
+  "cli.console.integrations.repair.title": "修复",
+  "cli.console.integrations.repair.intro":
+    "按当前版本的模板把这些文件重写一遍。手改过的内容会被覆盖，输出实时显示在下方。",
+  "cli.console.integrations.repair.install": "重新安装",
+  "cli.console.integrations.repair.install-hint": "等同于在该项目目录运行 fabric install。重写全部物件与客户端配置。",
+  "cli.console.integrations.repair.doctor": "体检并修复",
+  "cli.console.integrations.repair.doctor-hint": "等同于 fabric doctor --fix。只改能自动修好的问题，不重写没问题的文件。",
+  "cli.console.integrations.repair.running": "正在运行「{action}」，完成前不要关闭页面。",
+  "cli.console.integrations.repair.done": "「{action}」已结束，页面已重新读取文件状态。",
+  "cli.console.integrations.manifest.title": "安装记录",
+  "cli.console.integrations.manifest.ok": "{count} 个文件与安装时记录一致。",
+  "cli.console.integrations.manifest.no-manifest":
+    "这个项目没有安装记录 —— 要么从未装过，要么装它的版本还不写记录。",
+  "cli.console.integrations.manifest.unreadable": "安装记录存在但读不出来。",
+  "cli.console.integrations.manifest.drifted": "{count} / {tracked} 个文件在安装之后被改过。",
+  "cli.console.integrations.manifest.version": "安装时的版本：{version}",
+  "cli.console.integrations.problems.none": "全部一致。",
+  "cli.console.integrations.problems.count": "{count} 项需要处理",
+  "cli.console.integrations.loading": "正在检查安装状态…",
+  "cli.console.integrations.load-failed": "读取集成状态失败",
+
+  // 七个 hook 的用户可判断名称。命名口径:说它在什么时候做什么,不说它的文件名。
+  "cli.console.behavior.fabric-hint.label": "收工时提醒归档与复审",
+  "cli.console.behavior.fabric-hint.description":
+    "一轮对话结束时检查:改动量是否够归档、待审条目是否堆积、知识库是否该做维护，够条件就在回合末尾提示一次。",
+  "cli.console.behavior.knowledge-hint-broad.label": "会话开始时注入常驻知识",
+  "cli.console.behavior.knowledge-hint-broad.description":
+    "新会话启动时，把 broad 范围的知识索引写进 AI 的初始上下文，省掉每次重新检索。",
+  "cli.console.behavior.knowledge-pretooluse.label": "编辑文件前提示相关知识",
+  "cli.console.behavior.knowledge-pretooluse.description":
+    "AI 准备改某个文件时，如果有 narrow 范围命中该路径的知识，在动手前提示一次。",
+  "cli.console.behavior.knowledge-hint-subagent.label": "子代理启动时注入知识",
+  "cli.console.behavior.knowledge-hint-subagent.description":
+    "子代理不继承主会话的上下文，但同样会改代码，所以它启动时单独注入一次。",
+  "cli.console.behavior.cite-policy-evict.label": "提醒记录引用了哪条知识",
+  "cli.console.behavior.cite-policy-evict.description":
+    "长会话里定期提醒 AI 在改文件前先 recall，引用记账才有数据。",
+  "cli.console.behavior.post-tooluse-mutation.label": "记录编辑与知识读取",
+  "cli.console.behavior.post-tooluse-mutation.description":
+    "把每次编辑、每次读取知识正文记进事件账本。上面几项的触发条件都是从这本账算出来的。",
+  "cli.console.behavior.session-end-marker.label": "记录会话结束",
+  "cli.console.behavior.session-end-marker.description":
+    "会话结束时写一条标记，让下次归档知道这一段已经完整。",
+
   "cli.preview.port-fallback": "端口 {requested} 被占用,已自动改用 {actual}。",
   "cli.preview.started": "知识预览已启动:{url}",
   "cli.preview.opening": "正在打开浏览器…",
