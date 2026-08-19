@@ -29,7 +29,12 @@ import {
 
 import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
 import { listRegisteredProjects } from "../store/project-registry-io.js";
-import { asPlainObject, buildPanelContext, writeFieldValue } from "./config-resolve.js";
+import {
+  asPlainObject,
+  buildPanelContext,
+  loadPanelContext,
+  writeFieldValue,
+} from "./config-resolve.js";
 import { mergeProjectList } from "./project-list.js";
 
 export type ConfigWriteResult =
@@ -69,6 +74,7 @@ function targetMatchesHome(home: PanelFieldMeta["home"], scope: ResolvedTarget["
 async function resolveTarget(
   raw: unknown,
   global: Record<string, unknown>,
+  launchDir: string,
 ): Promise<ResolvedTarget | { ok: false; status: number; error: string }> {
   const target = asPlainObject(raw);
   const scope = target.scope;
@@ -83,10 +89,22 @@ async function resolveTarget(
     // Membership in the SERVER's list, not merely "looks like an id". Accepting
     // an unknown id would create a config segment for a project that does not
     // exist — invisible junk that no page lists and no reader consults.
+    //
+    // The list must be built from the SAME three inputs the read side uses —
+    // including `currentProjectId`. This argument was `null` at first, on the
+    // reasoning that a machine-scoped page must not let the launch directory
+    // decide anything. That confused two different roles the launch directory
+    // plays: it must not REORDER or FILTER the list (it does not — mergeProjectList
+    // only sets `isCurrent`), but it is the sole source of the synthesized row
+    // for a project that neither the registry nor the config knows about
+    // (project-list.ts:129). Dropping it here made the read and write sides
+    // disagree about membership, so the console rendered an editable row for the
+    // current project and every save against it answered 404 — and on any machine
+    // installed before the registry existed, that is the ONLY project row there is.
     const known = mergeProjectList({
       registry: await listRegisteredProjects(),
       configuredIds: Object.keys(asPlainObject(global.projects)),
-      currentProjectId: null,
+      currentProjectId: loadPanelContext(launchDir).projectId,
     });
     const match = known.find((p) => p.projectId === projectId);
     if (match === undefined) return bad(404, `unknown project: ${projectId}`);
@@ -121,8 +139,17 @@ async function resolveTarget(
   return bad(400, "target.scope must be one of: machine, project, store");
 }
 
+/**
+ * @param launchDir the directory the console was started in — the same value
+ * `collectGlobalConfigView` gets. It contributes exactly one thing: which
+ * project id counts as "the one you are standing in" when deciding whether a
+ * named project target is a member of the known set. Required rather than
+ * defaulted so a caller cannot silently resolve a different set than the page
+ * it is serving.
+ */
 export async function applyGlobalConfigEdit(
   body: ConfigWriteRequest | null | undefined,
+  launchDir: string,
 ): Promise<ConfigWriteResult> {
   const key = body?.key;
   if (typeof key !== "string" || key.length === 0) {
@@ -134,7 +161,7 @@ export async function applyGlobalConfigEdit(
   }
 
   const global = asPlainObject(loadGlobalConfig(resolveGlobalRoot()));
-  const target = await resolveTarget(body?.target, global);
+  const target = await resolveTarget(body?.target, global, launchDir);
   if ("ok" in target) return target;
 
   if (!targetMatchesHome(field.home, target.scope)) {

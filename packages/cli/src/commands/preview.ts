@@ -339,10 +339,13 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           }
           if (pathname === "/api/config/set") {
             const body = (await readJsonBody(req)) as ConfigWriteRequest | null;
-            // No projectRoot: the write target is named by the request and
-            // validated against the server's own enumerated sets. See
-            // global-config-write.ts — the launch directory decides nothing here.
-            const result = await applyGlobalConfigEdit(body);
+            // The write target is named by the request and validated against the
+            // server's own enumerated sets; `projectRoot` does NOT select the
+            // target. It is passed for one reason only — the set it is validated
+            // against must be the same set `/api/config` rendered, and that set
+            // includes the synthesized row for an unregistered current project.
+            // See global-config-write.ts.
+            const result = await applyGlobalConfigEdit(body, projectRoot);
             if (result.ok) sendJson(res, 200, { ok: true, target: result.target });
             else sendJson(res, result.status, { error: result.error });
             return;

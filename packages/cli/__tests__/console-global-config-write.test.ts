@@ -47,6 +47,30 @@ function globalPath(): string {
   return join(resolveGlobalRoot(), "fabric-global.json");
 }
 
+/**
+ * A launch directory that is not a Fabric project — no `project_id`, so it
+ * contributes no current project. Cases that are not about the current-project
+ * row use this so the launch directory cannot be what makes them pass.
+ */
+function elsewhereDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "fab-gcfgw-cwd-"));
+  dirs.push(dir);
+  return dir;
+}
+
+/** A launch directory whose repo config claims `projectId`. */
+function projectDir(projectId: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "fab-gcfgw-proj-"));
+  dirs.push(dir);
+  mkdirSync(join(dir, ".fabric"), { recursive: true });
+  writeFileSync(
+    join(dir, ".fabric", "fabric-config.json"),
+    JSON.stringify({ project_id: projectId }, null, 2),
+    "utf8",
+  );
+  return dir;
+}
+
 function writeGlobal(config: Record<string, unknown>): void {
   mkdirSync(resolveGlobalRoot(), { recursive: true });
   writeFileSync(
@@ -88,7 +112,7 @@ describe("writing to a project (AC3)", () => {
       key: "nudge_mode",
       value: "silent",
       target: { scope: "project", projectId: "proj-a" },
-    });
+    }, elsewhereDir());
     expect(result.ok).toBe(true);
 
     const after = readGlobal();
@@ -105,7 +129,7 @@ describe("writing to a project (AC3)", () => {
       key: "nudge_mode",
       value: "silent",
       target: { scope: "machine" },
-    });
+    }, elsewhereDir());
     expect(result.ok).toBe(true);
 
     const after = readGlobal();
@@ -121,7 +145,7 @@ describe("writing to a project (AC3)", () => {
       key: "archive_hint_hours",
       value: "48",
       target: { scope: "project", projectId: "proj-a" },
-    });
+    }, elsewhereDir());
     const stored = (readGlobal().projects as Record<string, Record<string, unknown>>)["proj-a"]
       ?.archive_hint_hours;
     // A number, not "48": readers of this key expect a number, so writing the
@@ -159,7 +183,7 @@ describe("writing to a store (AC6 write half)", () => {
       key: "underseed_node_threshold",
       value: "25",
       target: { scope: "store", storeUuid: STORE_Y },
-    });
+    }, elsewhereDir());
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.status).toBe(409);
     // And it says what to do about it, rather than surfacing a raw ENOENT
@@ -172,7 +196,7 @@ describe("writing to a store (AC6 write half)", () => {
       key: "underseed_node_threshold",
       value: "25",
       target: { scope: "store", storeUuid: STORE_X },
-    });
+    }, elsewhereDir());
     expect(result).toEqual({ ok: true, target: expect.any(String) });
 
     const configOf = (uuid: string) => {
@@ -280,7 +304,7 @@ describe("refusals leave the disk untouched (AC4)", () => {
   for (const { name, body, status } of REFUSALS) {
     it(`refuses ${name} (${String(status)}) and writes nothing`, async () => {
       const before = diskFingerprint();
-      const result = await applyGlobalConfigEdit(body);
+      const result = await applyGlobalConfigEdit(body, elsewhereDir());
 
       expect(result.ok).toBe(false);
       expect(result.ok === false && result.status).toBe(status);
@@ -298,9 +322,53 @@ describe("refusals leave the disk untouched (AC4)", () => {
       key: "nudge_mode",
       value: "silent",
       target: { scope: "machine" },
-    });
+    }, elsewhereDir());
     expect(result.ok).toBe(true);
     expect(diskFingerprint()).not.toBe(before);
+  });
+});
+
+describe("the current project, known to neither the registry nor the config", () => {
+  // The read side synthesizes a row for it (project-list.ts:129) so the one
+  // project the user is standing in is not invisible on their own machine. That
+  // row is `editable`, so the page renders controls for it — and every machine
+  // installed before the project registry existed has NO other project row at
+  // all. If the write side builds its membership set from different inputs, the
+  // only row on the page is also the only row that can never be saved.
+  it("accepts a write and creates its config segment", async () => {
+    writeGlobal({ defaults: { nudge_mode: "normal" }, projects: {} });
+
+    const result = await applyGlobalConfigEdit(
+      { key: "nudge_mode", value: "silent", target: { scope: "project", projectId: "proj-here" } },
+      projectDir("proj-here"),
+    );
+
+    expect(result).toEqual({ ok: true, target: expect.any(String) });
+    const after = readGlobal();
+    expect((after.projects as Record<string, Record<string, unknown>>)["proj-here"]?.nudge_mode).toBe(
+      "silent",
+    );
+    // "silent" is not the machine default, so the assertion above cannot be
+    // satisfied by a write that missed the segment and left a default showing.
+    expect((after.defaults as Record<string, unknown>).nudge_mode).toBe("normal");
+  });
+
+  it("is still refused when the console was launched somewhere else", async () => {
+    // The negative half. Without it the case above also passes an implementation
+    // that accepts ANY id — which is the membership check this endpoint exists
+    // for. `proj-here` is a real project id; what makes it writable is standing
+    // in it, and this launch directory is not it.
+    writeGlobal({ defaults: { nudge_mode: "normal" }, projects: {} });
+    const before = diskFingerprint();
+
+    const result = await applyGlobalConfigEdit(
+      { key: "nudge_mode", value: "silent", target: { scope: "project", projectId: "proj-here" } },
+      elsewhereDir(),
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.status).toBe(404);
+    expect(diskFingerprint()).toBe(before);
   });
 });
 
@@ -314,7 +382,7 @@ describe("a registry project with no id", () => {
       key: "nudge_mode",
       value: "silent",
       target: { scope: "project", projectId: "" },
-    });
+    }, elsewhereDir());
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.status).toBe(400);
   });
