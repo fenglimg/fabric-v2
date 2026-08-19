@@ -5,68 +5,71 @@
 <link rel="stylesheet" href="/assets/shell.css" />
 <script src="/assets/shell.js"></script>
 <style>
-  /* 页面专有规则。令牌 / body 基线 / .navbar / .seg 来自 /assets/shell.css。 */
-  main{max-width:980px;margin:0 auto;padding:22px 18px 60px}
-  .intro{color:var(--text-tertiary);font-size:13px;margin:0 0 18px;line-height:1.7}
-  .sec{margin-bottom:26px}
-  .sec>h2{margin:0 0 2px;font-size:14px;font-weight:600;color:var(--text)}
-  .sec>.sub{margin:0 0 10px;font-size:12px;color:var(--text-tertiary);line-height:1.6}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-    padding:16px 18px;box-shadow:var(--shadow);margin-bottom:12px}
-  .card h3{margin:0 0 4px;font-size:12px;font-weight:600;color:var(--text-secondary);
-    text-transform:uppercase;letter-spacing:.04em}
+  /* 页面专有规则。令牌 / body 基线 / .navbar / fx-* / .frow 全家来自
+     /assets/shell.css。这里只留本页独有的布局。 */
+  main{max-width:1000px;margin:0 auto;padding:24px 20px 64px}
   /* 搜索框跨两层过滤。放在最上面:它是「我知道要改哪一项」时的主路径。 */
-  .searchbar{margin:0 0 16px}
-  .searchbar input{font:inherit;font-size:13px;width:100%;box-sizing:border-box;
-    padding:8px 11px;color:var(--text);background:var(--surface);
-    border:1px solid var(--border-strong);border-radius:var(--radius-sm)}
-  /* .frow / .fctl / .chk / .note / .toast 已上提到 shell.css —— 集成页的行为行
-     用的是同一个渲染器(shell.js 的 FabricField.control),样式跟着渲染器走。 */
-  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
-    border:1px solid var(--border-strong);color:var(--text-secondary);margin-left:6px}
-  /* env 用警示色:它同时意味着"这是当前生效值"和"你在这里改不动"。 */
-  .tag.env{color:#b45309;border-color:#b45309}
-  .tag.cur{color:var(--accent);border-color:var(--accent)}
-  [data-theme="dark"] .tag.env{color:#fbbf24;border-color:#fbbf24}
-  /* 预设卡:三档并排,每档标出它实际会写入的数值。 */
-  .presets{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
-  .preset{flex:1 1 180px;text-align:left;font:inherit;cursor:pointer;padding:11px 13px;
-    color:var(--text);background:var(--surface-2);border:1px solid var(--border-strong);
-    border-radius:var(--radius-sm)}
-  .preset:disabled{cursor:default}
-  .preset.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
-  .preset .pn{font-size:13px;font-weight:500;display:block;margin-bottom:4px}
-  .preset .pv{font-size:11px;color:var(--text-tertiary);line-height:1.7;display:block}
+  .searchbar{position:relative;margin:0 0 20px}
+  .searchbar .fx-ico{position:absolute;left:11px;top:50%;margin-top:-8px;color:var(--muted-foreground)}
+  .searchbar input{font:inherit;font-size:var(--fs-3);width:100%;height:36px;
+    padding:0 12px 0 34px;color:var(--foreground);background:var(--card);
+    border:1px solid var(--border);border-radius:var(--radius-md);transition:var(--tx)}
+  .searchbar input:hover{border-color:var(--input)}
+  .searchbar input:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+  /* provenance 标签。env 用警示色:它同时意味着"这是当前生效值"和"你在这里改不动"。 */
+  .tag{display:inline-flex;align-items:center;height:18px;font-size:var(--fs-1);
+    font-weight:var(--fw-medium);padding:0 7px;border-radius:999px;
+    border:1px solid var(--border);color:var(--muted-foreground)}
+  .tag.env{color:var(--warning);border-color:currentColor}
+  .tag.cur{color:var(--primary);border-color:currentColor}
+  /* 预设卡:三档并排。收起时只有档名 + 这一档会改动多少项 —— 数值收进展开区。
+     三档共摊 24 个数字,等于让人为了选一个档位先读 24 个数。 */
+  .presets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+  @media (max-width:760px){.presets{grid-template-columns:minmax(0,1fr)}}
+  .preset{text-align:left;font:inherit;cursor:pointer;padding:11px 13px;
+    color:var(--foreground);background:var(--card);border:1px solid var(--border);
+    border-radius:var(--radius-md);transition:var(--tx)}
+  .preset:hover{background:var(--muted)}
+  .preset:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+  .preset.on{border-color:var(--primary);color:var(--primary)}
+  .preset .pn{font-size:var(--fs-3);font-weight:var(--fw-semibold);display:block;margin-bottom:3px}
+  .preset .pd{font-size:var(--fs-2);color:var(--muted-foreground);display:block}
+  .preset.on .pd{color:inherit;opacity:.8}
+  .pvals{font-size:var(--fs-2);color:var(--muted-foreground);line-height:var(--lh-loose);
+    padding-top:8px;margin-top:10px;border-top:1px solid var(--border)}
   /* 折叠区:标题整行可点。收起时不渲染内容,搜索命中时强制展开。 */
-  .disc{margin-bottom:12px}
-  .dhead{display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;
-    user-select:none;background:var(--surface);border:1px solid var(--border);
-    border-radius:var(--radius);box-shadow:var(--shadow)}
-  .dhead .caret{color:var(--text-tertiary);font-size:11px;width:10px}
-  .dhead .dt{font-size:13px;color:var(--text);font-weight:500}
-  .dhead .dc{margin-left:auto;font-size:12px;color:var(--text-tertiary)}
+  .dhead{display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;cursor:pointer;
+    user-select:none;font:inherit;text-align:left;color:var(--foreground);
+    background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+    transition:var(--tx)}
+  .dhead:hover{background:var(--muted)}
+  .dhead:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+  .dhead .fx-ico{color:var(--muted-foreground);transition:transform var(--dur-2) var(--ease)}
+  .dhead[aria-expanded="true"] .fx-ico{transform:rotate(90deg)}
+  .dhead .dt{font-size:var(--fs-3);font-weight:var(--fw-medium)}
+  .dhead .dc{margin-left:auto;font-size:var(--fs-2);color:var(--muted-foreground)}
   /* 项目行:整块可展开。收起时只给一行摘要,展开后才是覆盖列表 + 添加控件。 */
   .prow{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;
-    background:var(--surface);box-shadow:var(--shadow)}
-  .phead{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;
-    user-select:none}
-  .phead .pname{font-size:13px;color:var(--text);font-weight:500}
-  .phead .ppath{font-family:var(--mono);font-size:11px;color:var(--text-tertiary);
+    background:var(--card);overflow:hidden}
+  .phead{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;cursor:pointer;
+    user-select:none;font:inherit;text-align:left;color:var(--foreground);
+    background:transparent;border:none;transition:var(--tx)}
+  .phead:hover{background:var(--muted)}
+  .phead:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
+  .phead .fx-ico{color:var(--muted-foreground);transition:transform var(--dur-2) var(--ease)}
+  .phead[aria-expanded="true"]>.fx-ico:first-child{transform:rotate(90deg)}
+  .phead .pname{font-size:var(--fs-3);font-weight:var(--fw-medium)}
+  .phead .ppath{font-family:var(--mono);font-size:var(--fs-1);color:var(--muted-foreground);
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px}
-  .phead .pcount{margin-left:auto;font-size:12px;color:var(--text-tertiary);white-space:nowrap}
-  .phead .caret{color:var(--text-tertiary);font-size:11px;width:10px}
+  .phead .pcount{margin-left:auto;font-size:var(--fs-2);color:var(--muted-foreground);white-space:nowrap}
   .pbody{padding:0 14px 12px;border-top:1px solid var(--border)}
   .addbar{display:flex;align-items:center;gap:8px;padding:12px 0 2px;flex-wrap:wrap}
-  .addbar select,.addbar input{font:inherit;font-size:12px;padding:4px 7px;color:var(--text);
-    background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--radius-sm)}
-  .addbar button{font:inherit;font-size:12px;padding:4px 11px;cursor:pointer;color:#fff;
-    background:var(--accent);border:1px solid transparent;border-radius:var(--radius-sm)}
-  .empty{padding:18px 16px;text-align:center;color:var(--text-tertiary);font-size:13px;
-    line-height:1.8}
-  .guide{padding:20px 18px;text-align:center;line-height:1.9;color:var(--text-tertiary);font-size:13px}
-  .err{color:#ef4444}
-  code{font-family:var(--mono);font-size:12px;background:var(--surface-2);
-    border-radius:var(--radius-sm);padding:1px 5px}
+  .addbar select{font:inherit;font-size:var(--fs-2);height:28px;padding:0 8px;
+    color:var(--foreground);background:var(--card);border:1px solid var(--input);
+    border-radius:var(--radius-md)}
+  .addbar select:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+  code{font-family:var(--mono);font-size:var(--fs-2);background:var(--muted);
+    color:var(--foreground);border-radius:var(--radius-sm);padding:1px 5px}
 </style></head><body>
 <nav class="navbar">
   <h1 class="nav-title">Fabric 控制台</h1>
@@ -78,7 +81,7 @@
   <span class="spacer"></span>
   <button class="seg" id="shellThemeBtn" title="切换主题">☀</button>
 </nav>
-<main id="main"><div class="guide">…</div></main>
+<main id="main"></main>
 <div class="toast" id="toast"></div>
 <script>
 (function(){
@@ -127,19 +130,28 @@
     return '<div class="note'+(ss.blocker==='package-missing'?' warn':'')+'">'+esc(text)+'</div>';
   }
 
-  function row(f,target){
+  // 一行 = 标签 + key + 出处标签 + 一枚展开按钮;说明、env 提示、语义检索实况
+  // 都收进展开区。原来说明常驻在每行下面,九项设置就要 2709px —— 四屏才看得完
+  // 九个开关。说明没有被删,只是挪到了一次点击之后。
+  var descSeq=0;
+  function row(f,target,extraTag){
     var tag='<span class="tag'+(f.source==='env'?' env':'')+'">'+esc(f.sourceLabel)+'</span>';
     // 没生效但存在的 env 变量也要标出来 —— 用户排查"我改了怎么没用"时,这一行
     // 往往就是答案。
     var envNote=(f.envVar&&f.source!=='env')
       ? '<div class="note">'+esc(fmt(DATA.strings['env-available'],{name:f.envVar}))+'</div>' : '';
-    return '<div class="frow'+(f.modified?' mod':'')+'"'+
-      (f.modified?' title="'+esc(DATA.strings.modified)+'"':'')+'><div>'+
-      '<div class="flabel">'+esc(f.label)+tag+'</div>'+
-      '<div class="fkey">'+esc(f.key)+'</div>'+
+    var id='d'+(++descSeq);
+    var expand='<div class="fexp" id="'+id+'" data-open="false">'+
       '<div class="fdesc">'+esc(f.description)+'</div>'+envNote+
-      semanticNote(f,target,DATA.strings)+
-      '</div>'+control(f,target)+'</div>';
+      semanticNote(f,target,DATA.strings)+'</div>';
+    return '<div class="frow'+(f.modified?' mod':'')+'"'+
+      (f.modified?' title="'+esc(DATA.strings.modified)+'"':'')+'>'+
+      '<div class="fmain">'+
+      '<span class="flabel">'+esc(f.label)+'</span>'+
+      '<span class="fkey">'+esc(f.key)+'</span>'+tag+(extraTag||'')+
+      '<button class="fx-disclose" data-desc="'+id+'" aria-expanded="false" '+
+        'aria-controls="'+id+'" aria-label="说明">'+FabricIcon.svg('info','fx-ico-sm')+'</button>'+
+      '</div>'+control(f,target)+expand+'</div>';
   }
 
   // ---- 提醒频率预设 -------------------------------------------------------
@@ -149,25 +161,51 @@
     var ap=DATA.archivePreset;
     var byKey={}; DATA.machine.forEach(function(f){ byKey[f.key]=f; });
     var cards=ap.options.map(function(o){
-      var lines=ap.keys.map(function(k){
+      // 收起时给的是**后果**而不是数值:这一档会动几项。数值本身对"选哪一档"
+      // 没有帮助 —— 三档共 24 个数字,读完才能选,等于把决策成本推给用户。
+      var changes=ap.keys.filter(function(k){
         var f=byKey[k];
-        return esc((f?f.label:k)+'：'+o.values[k]);
-      }).join('<br>');
+        return f && String(f.effective)!==String(o.values[k]);
+      }).length;
+      var effect=ap.active===o.id
+        ? '当前生效'
+        : (changes ? '会改动 '+changes+' 项阈值' : '与当前生效值一致');
       return '<button class="preset'+(ap.active===o.id?' on':'')+'" data-preset="'+esc(o.id)+
-        '"><span class="pn">'+esc(s['preset.'+o.id])+'</span><span class="pv">'+lines+'</span></button>';
+        '" aria-pressed="'+(ap.active===o.id?'true':'false')+'">'+
+        '<span class="pn">'+esc(s['preset.'+o.id])+'</span>'+
+        '<span class="pd">'+esc(effect)+'</span></button>';
     }).join('');
+    // 具体数值仍然拿得到,收在一次点击之后 —— 需要核对的人一定会去点,选档位的
+    // 人不必先读 24 个数。
+    var vals=ap.options.map(function(o){
+      return '<b>'+esc(s['preset.'+o.id])+'</b>：'+ap.keys.map(function(k){
+        var f=byKey[k];
+        return esc((f?f.label:k)+' '+o.values[k]);
+      }).join('、');
+    }).join('<br>');
     var custom=ap.active===null
       ? '<div class="note">'+esc(s['preset.custom'])+' — '+esc(s['preset.custom-hint'])+'</div>' : '';
-    return '<div class="card"><h3>'+esc(s['preset.title'])+'</h3>'+
+    return '<div class="fx-card" style="margin-bottom:12px">'+
+      '<div class="fx-section-title" style="font-size:var(--fs-4);margin-bottom:2px">'+
+        esc(s['preset.title'])+'</div>'+
       '<div class="fdesc">'+esc(s['preset.intro'])+'</div>'+custom+
-      '<div class="presets">'+cards+'</div></div>';
+      '<div class="presets">'+cards+'</div>'+
+      '<div style="margin-top:12px"><button class="fx-disclose" data-desc="presetvals" '+
+        'aria-expanded="false" aria-controls="presetvals">'+
+        FabricIcon.svg('chevron','fx-ico-sm')+'查看具体数值</button>'+
+      '<div class="fexp" id="presetvals" data-open="false"><div class="pvals">'+vals+'</div></div></div>'+
+      '</div>';
   }
 
   // ---- 常用 / 高级 --------------------------------------------------------
+  function sectionHead(iconName,title,sub){
+    return '<h2 class="fx-section-title">'+FabricIcon.svg(iconName)+esc(title)+'</h2>'+
+      (sub?'<p class="fx-section-desc">'+esc(sub)+'</p>':'');
+  }
+
   function commonSection(s){
     var fields=DATA.machine.filter(function(f){ return f.tier==='common'&&hit(f); });
-    var html='<section class="sec"><h2>'+esc(s['machine.title'])+'</h2>'+
-      '<p class="sub">'+esc(s['machine.intro'])+'</p>';
+    var html='<section class="fx-section">'+sectionHead('sliders',s['machine.title'],s['machine.intro']);
     // 预设卡本身是一项设置,搜索时按它覆盖的 8 个键是否命中来决定去留。
     var presetHit=!Q||DATA.machine.some(function(f){
       return DATA.archivePreset.keys.indexOf(f.key)>=0&&hit(f); });
@@ -177,7 +215,7 @@
     if(Q&&!count) return {html:'',count:0};
     if(presetHit) html+=presetCard(s);
     if(fields.length){
-      html+='<div class="card">'+fields.map(function(f){
+      html+='<div class="fx-card">'+fields.map(function(f){
         return row(f,{scope:'machine'}); }).join('')+'</div>';
     }
     return {html:html+'</section>',count:count};
@@ -188,20 +226,23 @@
     if(Q&&!fields.length) return {html:'',count:0};
     // 搜索有词时强制展开:否则用户搜到东西却看见一个收起的盒子,等同于没搜到。
     var open=ADV||!!Q;
-    var head='<div class="dhead" data-adv="1"><span class="caret">'+(open?'▾':'▸')+
-      '</span><span class="dt">'+esc(s['advanced.title'])+'</span>'+
-      '<span class="dc">'+esc(fmt(s['advanced.count'],{count:fields.length}))+'</span></div>';
+    var head='<button class="dhead" data-adv="1" aria-expanded="'+(open?'true':'false')+'">'+
+      FabricIcon.svg('chevron')+
+      '<span class="dt">'+esc(s['advanced.title'])+'</span>'+
+      '<span class="dc">'+esc(fmt(s['advanced.count'],{count:fields.length}))+'</span></button>';
     var body='';
     if(open&&fields.length){
-      body='<p class="sub" style="margin:10px 0 8px">'+esc(s['advanced.intro'])+'</p>';
+      body='<p class="fx-section-desc" style="margin:10px 0 8px">'+esc(s['advanced.intro'])+'</p>';
       GROUP_ORDER.forEach(function(g){
         var inGroup=fields.filter(function(f){ return f.group===g; });
         if(!inGroup.length) return;
-        body+='<div class="card"><h3>'+esc(s['group.'+g])+'</h3>'+
+        body+='<div class="fx-card" style="margin-bottom:10px">'+
+          '<h3 class="fx-section-title" style="font-size:var(--fs-4);margin-bottom:6px">'+
+          esc(s['group.'+g])+'</h3>'+
           inGroup.map(function(f){ return row(f,{scope:'machine'}); }).join('')+'</div>';
       });
     }
-    return {html:'<section class="sec disc">'+head+body+'</section>',count:fields.length};
+    return {html:'<section class="fx-section">'+head+body+'</section>',count:fields.length};
   }
 
   function projectRow(p,s,open){
@@ -231,17 +272,28 @@
           esc(s['projects.add-placeholder'])+'</option>'+
           addable.map(function(f){
             return '<option value="'+esc(f.key)+'">'+esc(f.label)+'</option>'; }).join('')+
-          '</select><button data-add="'+selId+'" data-target="'+esc(JSON.stringify(target))+
-          '">'+esc(s['projects.add'])+'</button></div>';
+          '</select><button class="fx-btn sm" data-add="'+selId+'" data-target="'+
+          esc(JSON.stringify(target))+'">'+esc(s['projects.add'])+'</button></div>';
       }
     }
 
-    return '<div class="prow"><div class="phead" data-toggle="'+esc(p.projectId||p.path)+'">'+
-      '<span class="caret">'+(open?'▾':'▸')+'</span>'+
-      '<span class="pname">'+esc(p.name)+'</span>'+badges+
-      (p.path?'<span class="ppath">'+esc(p.path)+'</span>':'')+
-      '<span class="pcount">'+esc(count)+'</span></div>'+
+    return '<div class="prow"><button class="phead" data-toggle="'+esc(p.projectId||p.path)+
+      '" aria-expanded="'+(open?'true':'false')+'">'+
+      FabricIcon.svg('chevron')+
+      '<span class="pname" title="'+esc(p.name)+'">'+esc(mid(p.name))+'</span>'+badges+
+      (p.path?'<span class="ppath" title="'+esc(p.path)+'">'+esc(mid(p.path,34))+'</span>':'')+
+      '<span class="pcount">'+esc(count)+'</span></button>'+
       (open?'<div class="pbody">'+body+'</div>':'')+'</div>';
+  }
+
+  // 中间省略,不是末尾省略。未命名项目的名字就是它的 uuid,路径也常常只在最后
+  // 一段才互相区分 —— CSS 的 text-overflow 砍掉的正好是那一段,于是一列长得
+  // 一模一样的值。完整值留在 title 里。
+  function mid(v,max){
+    var s=String(v==null?'':v); max=max||26;
+    if(s.length<=max) return s;
+    var keep=Math.floor((max-1)/2);
+    return s.slice(0,keep)+'…'+s.slice(-keep);
   }
 
   // 搜索必须穿透下面两节。只过滤全机器那一节的话,搜一个词会得到「没有匹配」加
@@ -254,12 +306,13 @@
     var count=rows.reduce(function(n,r){ return n+r.overrides.length; },0);
     if(Q&&!count) return {html:'',count:0};
 
-    var html='<section class="sec"><h2>'+esc(s['projects.title'])+'</h2>'+
-      '<p class="sub">'+esc(s['projects.intro'])+'</p>';
+    var html='<section class="fx-section">'+sectionHead('folder',s['projects.title'],s['projects.intro']);
     if(!rows.length){
       // 空态是这台机器当前的真实状态,不是错误。给出可执行的下一步。
-      html+='<div class="card"><div class="empty">'+esc(s['projects.empty'])+'<br>'+
-        esc(s['projects.empty-hint'])+'</div></div>';
+      html+='<div class="fx-card"><div class="fx-empty">'+
+        '<div class="fx-empty-ico">'+FabricIcon.svg('folder','fx-ico-lg')+'</div>'+
+        '<div class="fx-empty-title">'+esc(s['projects.empty'])+'</div>'+
+        '<div class="fx-empty-body">'+esc(s['projects.empty-hint'])+'</div></div></div>';
     } else {
       html+=rows.map(function(r){
         // 搜索时把该项目当成只有命中的那几项,展开状态也强制打开 —— 否则搜到的
@@ -278,16 +331,22 @@
     var count=rows.reduce(function(n,r){ return n+r.fields.length; },0);
     if(Q&&!count) return {html:'',count:0};
 
-    var html='<section class="sec"><h2>'+esc(s['stores.title'])+'</h2>'+
-      '<p class="sub">'+esc(s['stores.intro'])+'</p>';
+    var html='<section class="fx-section">'+sectionHead('database',s['stores.title'],s['stores.intro']);
     if(!rows.length){
-      html+='<div class="card"><div class="empty">'+esc(s['stores.empty'])+'</div></div>';
+      html+='<div class="fx-card"><div class="fx-note" style="text-align:center;padding:14px 0">'+
+        esc(s['stores.empty'])+'</div></div>';
     } else {
       html+=rows.map(function(r){
-        return '<div class="card"><h3>'+esc(r.st.alias)+
+        // 每行都带上库名,而不是只靠卡片标题。两个库同时挂了同一个键时,两行的
+        // 标签、key、说明三者完全相同 —— 卡片标题在行外面,滚一屏就看不见了,
+        // 于是页面上出现两行一模一样的设置而无从分辨改的是哪一个。
+        var storeTag='<span class="tag">'+esc(r.st.alias)+'</span>';
+        return '<div class="fx-card" style="margin-bottom:10px">'+
+          '<h3 class="fx-section-title" style="font-size:var(--fs-4);margin-bottom:6px">'+
+          FabricIcon.svg('database')+esc(r.st.alias)+
           (r.st.personal?'<span class="tag">'+esc(s['stores.personal'])+'</span>':'')+'</h3>'+
           r.fields.map(function(f){
-            return row(f,{scope:'store',storeUuid:r.st.storeUuid}); }).join('')+'</div>';
+            return row(f,{scope:'store',storeUuid:r.st.storeUuid},storeTag); }).join('')+'</div>';
       }).join('');
     }
     return {html:html+'</section>',count:count};
@@ -304,8 +363,10 @@
     // 改法两种状态都给:没开的人要知道去哪儿开,开了的人要知道去哪儿改 —— 这一页
     // 对这三项只读是个决定(其中一项是密钥),那就欠读者一个去处。
     var how='<div class="note">'+esc(fmt(s['remote.how'],{path:r.configPath}))+'</div>';
-    return '<section class="sec"><div class="card"><h3>'+esc(s['remote.title'])+
-      '</h3><div class="fdesc">'+body+'</div>'+how+'</div></section>';
+    return '<section class="fx-section"><div class="fx-card">'+
+      '<h3 class="fx-section-title" style="font-size:var(--fs-4);margin-bottom:6px">'+
+      FabricIcon.svg('layers')+esc(s['remote.title'])+'</h3>'+
+      '<div class="fdesc">'+body+'</div>'+how+'</div></section>';
   }
 
   function render(){
@@ -315,14 +376,17 @@
     var total=common.count+adv.count+proj.count+stores.count;
     // 搜索无结果时说清楚是搜索的结果,而不是渲染一片空白让人以为页面坏了。
     var none=(Q&&total===0)
-      ? '<div class="card"><div class="empty">'+esc(fmt(s['search-empty'],{q:Q}))+'</div></div>' : '';
+      ? '<div class="fx-card"><div class="fx-note" style="text-align:center;padding:14px 0">'+
+        esc(fmt(s['search-empty'],{q:Q}))+'</div></div>' : '';
     // 远程嵌入卡是状态而非设置项,搜索时一并让位 —— 留着它会让「没有匹配」下面
     // 仍然挂着一张卡。
     var remote=Q?'':remoteCard(DATA.remoteEmbedding,s);
 
     document.getElementById('main').innerHTML=
-      '<p class="intro">'+esc(s.intro)+'</p>'+
-      '<div class="searchbar"><input id="q" type="search" placeholder="'+esc(s.search)+
+      '<div class="fx-page-head"><h1 class="fx-page-title"><b>配置</b></h1>'+
+      '<span class="fx-page-sub">'+esc(s.intro)+'</span></div>'+
+      '<div class="searchbar">'+FabricIcon.svg('search')+
+        '<input id="q" type="search" placeholder="'+esc(s.search)+
         '" value="'+esc(Q)+'" /></div>'+
       none+common.html+adv.html+proj.html+stores.html+remote;
 
@@ -332,6 +396,18 @@
       // 重渲染会换掉这个 input,焦点与光标要自己接回去,否则第二个字符打不进去。
       var n=document.getElementById('q');
       n.focus(); n.setSelectionRange(n.value.length,n.value.length);
+    });
+
+    // 说明的展开是纯本地状态,不重渲染 —— 重渲染会连带把用户正在编辑的输入框
+    // 换掉,而点一个 ⓘ 不该有那种代价。
+    document.querySelectorAll('[data-desc]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var box=document.getElementById(btn.getAttribute('data-desc'));
+        if(!box) return;
+        var open=box.getAttribute('data-open')==='true';
+        box.setAttribute('data-open',open?'false':'true');
+        btn.setAttribute('aria-expanded',open?'false':'true');
+      });
     });
 
     document.querySelectorAll('[data-adv]').forEach(function(el){
@@ -406,10 +482,14 @@
       .then(function(d){ DATA=d; render(); })
       .catch(function(e){
         document.getElementById('main').innerHTML=
-          '<div class="card"><div class="guide"><span class="err">'+
-          esc(DATA&&DATA.strings?DATA.strings['load-failed']:'读取配置失败')+'</span><br>'+
-          esc(e.message)+'<br>控制台只连本机,通常是服务已停止 —— 回终端看 '+
-          '<code>fabric preview</code> 还在不在跑。</div></div>';
+          '<div class="fx-page-head"><h1 class="fx-page-title"><b>配置</b></h1></div>'+
+          '<div class="fx-card"><div class="fx-empty">'+
+          '<div class="fx-empty-ico">'+FabricIcon.svg('alert','fx-ico-lg')+'</div>'+
+          '<div class="fx-empty-title">'+
+          esc(DATA&&DATA.strings?DATA.strings['load-failed']:'读取配置失败')+'</div>'+
+          '<div class="fx-empty-body">'+esc(e.message)+
+          '<br>控制台只连本机,通常是服务已停止 —— 回终端看 '+
+          '<code>fabric preview</code> 还在不在跑。</div></div></div>';
       });
   }
 

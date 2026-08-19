@@ -6,57 +6,54 @@
 <script src="/assets/shell.js"></script>
 <style>
   /* 页面专有规则。令牌 / body 基线 / .navbar / .seg / .frow / .fctl / .note /
-     .toast 来自 /assets/shell.css。.card / .tag / .empty / .guide 是每页各自一份 ——
-     lumen.html 也定义了同名类,上提会改到它。 */
+     .toast / fx-* 组件层来自 /assets/shell.css。.card / .tag 是每页各自一份 ——
+     lumen.html 也定义了同名类,上提会改到它。
+     颜色一律走令牌:警示色在深色模式要反过来变亮,写死十六进制就得为每处再写一条
+     [data-theme="dark"] 覆盖 —— 之前这个文件里有四条。 */
   main{max-width:1040px;margin:0 auto;padding:22px 18px 60px}
-  .intro{color:var(--text-tertiary);font-size:13px;margin:0 0 18px;line-height:1.7}
-  .sec{margin-bottom:26px}
-  .sec>h2{margin:0 0 2px;font-size:14px;font-weight:600;color:var(--text)}
-  .sec>.sub{margin:0 0 10px;font-size:12px;color:var(--text-tertiary);line-height:1.6}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-    padding:16px 18px;box-shadow:var(--shadow);margin-bottom:12px}
-  .card h3{margin:0 0 4px;font-size:12px;font-weight:600;color:var(--text-secondary);
-    text-transform:uppercase;letter-spacing:.04em}
-  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
-    border:1px solid var(--border-strong);color:var(--text-secondary);margin-left:6px}
-  .tag.on{color:var(--accent);border-color:var(--accent)}
-  .tag.off{color:#b45309;border-color:#b45309}
-  [data-theme="dark"] .tag.off{color:#fbbf24;border-color:#fbbf24}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+    padding:14px 16px;margin-bottom:10px}
+  .card h3{margin:0 0 6px;font-size:var(--fs-3);font-weight:var(--fw-semibold);color:var(--foreground)}
+  .tag{display:inline-block;font-size:var(--fs-1);padding:1px 7px;border-radius:999px;
+    border:1px solid currentColor;color:var(--muted-foreground);margin-left:6px}
+  .tag.on{color:var(--primary)}
+  .tag.off{color:var(--warning)}
   /* 左客户端列表 / 右详情。窄屏塌成单列 —— 两栏在 720px 以下会把路径挤成一列字。 */
   .split{display:grid;grid-template-columns:190px 1fr;gap:14px;align-items:start}
   @media (max-width:720px){ .split{grid-template-columns:1fr} }
   .clist{display:flex;flex-direction:column;gap:6px}
-  .cbtn{font:inherit;text-align:left;cursor:pointer;padding:11px 13px;color:var(--text);
-    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-    box-shadow:var(--shadow)}
-  .cbtn.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
-  .cbtn .cn{font-size:13px;font-weight:500;display:block}
-  .cbtn .cs{font-size:11px;color:var(--text-tertiary);display:block;margin-top:3px}
-  .cbtn .cs.bad{color:#b45309}
-  [data-theme="dark"] .cbtn .cs.bad{color:#fbbf24}
+  .cbtn{font:inherit;text-align:left;cursor:pointer;padding:10px 12px;color:var(--foreground);
+    background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+    transition:var(--tx)}
+  .cbtn:hover{background:var(--accent)}
+  .cbtn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+  .cbtn.on{border-color:var(--primary);color:var(--primary)}
+  .cbtn .cn{font-size:var(--fs-4);font-weight:var(--fw-medium);display:block}
+  .cbtn .cs{font-size:var(--fs-1);color:var(--muted-foreground);display:block;margin-top:3px}
+  .cbtn .cs.bad{color:var(--warning)}
   /* 文件清单:一致的按组折行,不一致的逐条列出。全列出来是一百多行,而其中
      一百多行说的是同一句「没问题」。 */
   .fg{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
-  .chip{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:var(--radius-sm);
-    background:var(--surface-2);color:var(--text-secondary);border:1px solid transparent}
-  .chip.bad{border-color:#b45309;color:#b45309}
-  [data-theme="dark"] .chip.bad{border-color:#fbbf24;color:#fbbf24}
+  .chip{font-family:var(--mono);font-size:var(--fs-1);padding:2px 7px;border-radius:var(--radius-sm);
+    background:var(--muted);color:var(--muted-foreground);border:1px solid transparent}
+  .chip.bad{border-color:var(--warning);color:var(--warning)}
   .plist{margin:6px 0 0;padding:0;list-style:none}
-  .plist li{font-family:var(--mono);font-size:11px;color:var(--text-tertiary);
+  .plist li{font-family:var(--mono);font-size:var(--fs-1);color:var(--muted-foreground);
     padding:3px 0;word-break:break-all}
-  .plist li b{font-family:var(--sans,inherit);font-weight:500;color:#b45309;margin-right:6px}
-  [data-theme="dark"] .plist li b{color:#fbbf24}
-  .guide{padding:20px 18px;text-align:center;line-height:1.9;color:var(--text-tertiary);font-size:13px}
-  .guide .what{display:block;color:var(--text);font-size:14px;margin-bottom:6px}
-  .err{color:#ef4444}
+  .plist li b{font-family:inherit;font-weight:var(--fw-medium);color:var(--warning);margin-right:6px}
+  .err{color:var(--destructive)}
+  /* 行为标题行:名字 + 状态徽标 + 一枚展开按钮。描述和触发事件收进展开区 ——
+     七个行为常驻两行说明就是十四行永远不变的字。 */
+  .bhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+  .bname{font-size:var(--fs-4);font-weight:var(--fw-medium);color:var(--foreground)}
   /* 命令输出:定高可滚,不让一次 install 的几百行把整页推到看不见。 */
   .rout{margin:12px 0 0;padding:10px 12px;max-height:260px;overflow:auto;
-    font-family:var(--mono);font-size:11px;line-height:1.7;white-space:pre-wrap;
-    color:var(--text-secondary);background:var(--surface-2);
+    font-family:var(--mono);font-size:var(--fs-1);line-height:1.7;white-space:pre-wrap;
+    color:var(--muted-foreground);background:var(--muted);
     border:1px solid var(--border);border-radius:var(--radius-sm)}
-  code{font-family:var(--mono);font-size:12px;background:var(--surface-2);
+  code{font-family:var(--mono);font-size:var(--fs-2);background:var(--muted);
     border-radius:var(--radius-sm);padding:1px 5px}
-  .mono{font-family:var(--mono);font-size:12px}
+  .mono{font-family:var(--mono);font-size:var(--fs-2)}
 </style></head><body>
 <nav class="navbar">
   <h1 class="nav-title">Fabric 控制台</h1>
@@ -68,7 +65,7 @@
   <span class="spacer"></span>
   <button class="seg" id="shellThemeBtn" title="切换主题">☀</button>
 </nav>
-<main id="main"><div class="guide">…</div></main>
+<main id="main"><div class="fx-empty"><div class="fx-empty-body">…</div></div></main>
 <div class="toast" id="toast"></div>
 <script>
 (function(){
@@ -95,11 +92,25 @@
     return '<div class="note warn">'+esc(anyFile?S('behaviors.unregistered'):S('behaviors.file-missing'))+'</div>';
   }
 
+  // 展开区共用一个自增 id。折叠不是删内容 —— 描述和触发事件仍在 DOM 里,
+  // 只是从「七个行为常驻十四行说明」变成「想看哪个点哪个」。
+  var discSeq=0;
+  function disclosure(inner,label){
+    var id='x'+(++discSeq);
+    return {
+      btn:'<button class="fx-disclose" data-desc="'+id+'" aria-expanded="false" '+
+        'aria-controls="'+id+'" aria-label="'+esc(label)+'">'+
+        FabricIcon.svg('info','fx-ico-sm')+'</button>',
+      box:'<div class="fexp" id="'+id+'" data-open="false">'+inner+'</div>',
+    };
+  }
+
   function behaviorRow(b){
     var badge='<span class="tag '+(b.active?'on':'off')+'">'+
       esc(b.active?S('behaviors.active'):S('behaviors.inactive'))+'</span>';
     var events=b.events.length
       ? '<div class="fkey">'+esc(b.events.join(' · '))+'</div>' : '';
+    var d=disclosure('<div class="fdesc">'+esc(b.description)+'</div>'+events,'说明');
     // 调节项走 shell.js 的同一个控件渲染器,写入走的也是配置页那条
     // POST /api/config/set —— 这一页没有第二条写通道。
     // 写到哪一层由服务端指定 —— 值是按项目层解析出来的,存到机器层就是悄悄把
@@ -107,11 +118,12 @@
     var target=DATA.writeTarget;
     var keys=b.keys.length
       ? b.keys.map(function(f){
-          return '<div class="frow'+(f.modified?' mod':'')+'"><div>'+
-            '<div class="flabel">'+esc(f.label)+'</div>'+
-            '<div class="fkey">'+esc(f.key)+'</div>'+
-            '<div class="fdesc">'+esc(f.description)+'</div></div>'+
-            FabricField.control(f,target,DATA.strings)+'</div>';
+          var fd=disclosure('<div class="fdesc">'+esc(f.description)+'</div>','说明');
+          return '<div class="frow'+(f.modified?' mod':'')+'">'+
+            '<div class="fmain">'+
+            '<span class="flabel">'+esc(f.label)+'</span>'+
+            '<span class="fkey">'+esc(f.key)+'</span>'+fd.btn+'</div>'+
+            FabricField.control(f,target,DATA.strings)+fd.box+'</div>';
         }).join('')
       : '';
     // 被多个 hook 读的 key 只画一次控件(在第一个读它的行为下),这里出一条指回去的
@@ -121,9 +133,12 @@
         {label:esc(s.label),owner:esc(s.owner)})+'</div>';
     }).join('');
     if(!keys&&!shared) keys='<div class="note">'+esc(S('behaviors.no-keys'))+'</div>';
-    return '<div class="card"><div class="flabel">'+esc(b.label)+badge+'</div>'+
-      events+'<div class="fdesc">'+esc(b.description)+'</div>'+presenceNote(b)+
-      '<h3 style="margin-top:12px">'+esc(S('behaviors.tuned-by'))+'</h3>'+keys+shared+'</div>';
+    // 标题就是行为名。原本每张卡的标题都是同一句「调节项」—— 七个一模一样的
+    // 小标题,搜索、目录、屏幕阅读器都没法用它定位,而卡片正上方已经写着这是
+    // 哪个行为。让标题去命名它所统领的东西,重复的那一句就不必存在。
+    return '<div class="card">'+
+      '<h3 class="bhead"><span class="bname">'+esc(b.label)+'</span>'+badge+d.btn+'</h3>'+
+      d.box+presenceNote(b)+keys+shared+'</div>';
   }
 
   // ---- 客户端详情 ---------------------------------------------------------
@@ -192,11 +207,13 @@
   // 服务端从作用域推出来,请求体里没有任何路径。
   function repairBlock(){
     function btn(action,label,hint){
-      return '<div class="frow"><div><div class="flabel">'+esc(label)+'</div>'+
+      return '<div class="frow"><div class="fmain" style="display:block">'+
+        '<span class="flabel">'+esc(label)+'</span>'+
         '<div class="fdesc">'+esc(hint)+'</div></div>'+
-        '<div class="fctl"><button data-repair="'+action+'">'+esc(label)+'</button></div></div>';
+        '<div class="fctl"><button class="fx-btn sm" data-repair="'+action+'">'+
+        FabricIcon.svg('wrench','fx-ico-sm')+esc(label)+'</button></div></div>';
     }
-    return '<section class="sec"><h2>'+esc(S('repair.title'))+'</h2>'+
+    return sectionHead('wrench',S('repair.title'))+
       '<div class="card"><div class="fdesc">'+esc(S('repair.intro'))+'</div>'+
       btn('install',S('repair.install'),S('repair.install-hint'))+
       btn('doctor-fix',S('repair.doctor'),S('repair.doctor-hint'))+
@@ -214,29 +231,39 @@
       : S('manifest.no-manifest');
     var version=m.fabricVersion
       ? '<div class="note">'+esc(fmt(S('manifest.version'),{version:m.fabricVersion}))+'</div>' : '';
-    return '<section class="sec"><h2>'+esc(S('manifest.title'))+'</h2>'+
+    return sectionHead('file',S('manifest.title'))+
       '<div class="card"><div class="fdesc">'+esc(text)+'</div>'+version+'</div></section>';
+  }
+
+  // 段标题:图标 + 名字 + 可选副标题。开标签在这里出,闭标签由调用方补 ——
+  // 段落内容各不相同,包成一个函数反而要传五种拼好的字符串进来。
+  function sectionHead(icon,title,sub){
+    return '<section class="fx-section"><h2 class="fx-section-title">'+
+      FabricIcon.svg(icon)+esc(title)+'</h2>'+
+      (sub?'<p class="fx-section-desc">'+esc(sub)+'</p>':'');
+  }
+
+  function pageHead(){
+    return '<div class="fx-page-head"><h1 class="fx-page-title"><b>'+esc(S('title'))+'</b></h1>'+
+      '<p class="fx-page-sub">'+esc(S('intro'))+'</p></div>';
   }
 
   function render(){
     if(DATA.scope.kind==='machine'){
-      document.getElementById('main').innerHTML=
-        '<h1 style="font-size:18px;margin:0 0 4px">'+esc(S('title'))+'</h1>'+
-        '<div class="card"><div class="guide"><span class="what">'+esc(S('machine-only'))+
-        '</span>'+esc(S('machine-only-hint'))+'</div></div>';
+      document.getElementById('main').innerHTML=pageHead()+
+        '<div class="fx-empty"><div class="fx-empty-ico">'+FabricIcon.svg('plug','fx-ico-xl')+'</div>'+
+        '<div class="fx-empty-title">'+esc(S('machine-only'))+'</div>'+
+        '<div class="fx-empty-body">'+esc(S('machine-only-hint'))+'</div></div>';
       return;
     }
     if(SEL===null||!DATA.clients.some(function(c){ return c.id===SEL; }))
       SEL=DATA.clients.length?DATA.clients[0].id:null;
     var current=DATA.clients.filter(function(c){ return c.id===SEL; })[0];
 
-    document.getElementById('main').innerHTML=
-      '<h1 style="font-size:18px;margin:0 0 4px">'+esc(S('title'))+'</h1>'+
-      '<p class="intro">'+esc(S('intro'))+'</p>'+
-      '<section class="sec"><h2>'+esc(S('behaviors.title'))+'</h2>'+
-      '<p class="sub">'+esc(S('behaviors.intro'))+'</p>'+
+    document.getElementById('main').innerHTML=pageHead()+
+      sectionHead('activity',S('behaviors.title'),S('behaviors.intro'))+
       DATA.behaviors.map(behaviorRow).join('')+'</section>'+
-      '<section class="sec"><h2>'+esc(S('files.title'))+'</h2>'+
+      sectionHead('folder',S('files.title'))+
       '<div class="split">'+clientList()+
       '<div>'+(current?clientDetail(current):'')+'</div></div></section>'+
       repairBlock()+manifestBlock();
@@ -246,6 +273,16 @@
   function wire(){
     document.querySelectorAll('[data-client]').forEach(function(btn){
       btn.addEventListener('click',function(){ SEL=btn.getAttribute('data-client'); render(); });
+    });
+    // 展开/收起就地改属性,不重绘 —— 重绘会把用户刚展开的另一项也合上。
+    document.querySelectorAll('[data-desc]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var box=document.getElementById(btn.getAttribute('data-desc'));
+        if(!box) return;
+        var open=box.getAttribute('data-open')!=='true';
+        box.setAttribute('data-open',open?'true':'false');
+        btn.setAttribute('aria-expanded',open?'true':'false');
+      });
     });
     document.querySelectorAll('[data-repair]').forEach(function(btn){
       btn.addEventListener('click',function(){ repair(btn); });
@@ -315,7 +352,9 @@
 
   function fail(title,body){
     document.getElementById('main').innerHTML=
-      '<div class="card"><div class="guide"><span class="what err">'+title+'</span>'+body+'</div></div>';
+      '<div class="fx-empty"><div class="fx-empty-ico">'+FabricIcon.svg('alert','fx-ico-xl')+'</div>'+
+      '<div class="fx-empty-title err">'+title+'</div>'+
+      '<div class="fx-empty-body">'+body+'</div></div>';
   }
 
   function load(){

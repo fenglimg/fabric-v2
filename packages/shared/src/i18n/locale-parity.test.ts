@@ -212,8 +212,15 @@ describe("i18n locale parity census", () => {
   // 另外两个选项都在撒谎:填运行中的 CLI 版本会把五个老安装报成最新,填字面量
   // "unknown" 又会被拿去和运行版本比对然后报成「过期」。留空即"我们知道自己不知道"。
   // 纯增量,按上面的豁免不重跑 dead-key scan。
+  // 2026-08-19 (控制台界面质感): 1011 → 1010。净 −1,是一次**删除**而非增量:
+  // `cli.console.integrations.behaviors.tuned-by`(值「调节项」)。它原本是七张行为卡
+  // 共用的小标题,于是一页里出现七个一模一样的 `<h3>` —— 文档大纲、页内查找、
+  // 屏幕阅读器的标题列表都没法拿它定位。改成让标题去命名它所统领的行为本身
+  // (卡片正上方已经写着是哪个行为),这个键就没有落点了。
+  // 删除路径按注释 ① 的口径处理:先 grep 全仓确认唯一引用点(integrations-view.ts
+  // 的 ship list)已随模板一起移除,再两端 locale 同步删,parity 不破。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(1011);
+    expect(enKeys.length).toBe(1010);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

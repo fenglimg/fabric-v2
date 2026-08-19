@@ -564,7 +564,6 @@ function chromeStrings(): Record<string, string> {
     "behaviors.inactive",
     "behaviors.unregistered",
     "behaviors.file-missing",
-    "behaviors.tuned-by",
     "behaviors.no-keys",
     "behaviors.shared",
     "repair.title",

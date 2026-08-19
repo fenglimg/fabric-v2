@@ -186,7 +186,6 @@ export const enMessages: Messages = {
   "cli.console.integrations.behaviors.unregistered":
     "The file is there but not registered in the client's config — it never fires.",
   "cli.console.integrations.behaviors.file-missing": "The script is not installed.",
-  "cli.console.integrations.behaviors.tuned-by": "Settings",
   "cli.console.integrations.behaviors.no-keys": "Nothing to tune.",
   "cli.console.integrations.behaviors.shared": "Also affected by “{label}”, set under “{owner}” above.",
   "cli.console.integrations.repair.title": "Repair",

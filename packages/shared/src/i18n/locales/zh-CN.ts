@@ -160,7 +160,6 @@ export const zhCNMessages: Messages = {
   "cli.console.integrations.behaviors.inactive": "未运行",
   "cli.console.integrations.behaviors.unregistered": "文件在，但没登记进客户端配置 —— 不会被触发。",
   "cli.console.integrations.behaviors.file-missing": "脚本文件不在。",
-  "cli.console.integrations.behaviors.tuned-by": "调节项",
   "cli.console.integrations.behaviors.no-keys": "没有可调项。",
   "cli.console.integrations.behaviors.shared": "也受「{label}」影响，在上面的「{owner}」里调整。",
   "cli.console.integrations.repair.title": "修复",

@@ -79,11 +79,37 @@ describe("shared shell assets", () => {
     // Structural form of AC6: one file on disk backs the route all pages link,
     // so there is no second copy to forget. Asserted on the file rather than by
     // mutating it, so the test does not write into the source tree.
+    //
+    // The check is that every legacy token name lumen/graph still spell is
+    // defined as `var(...)` — an alias onto the current palette — rather than as
+    // a frozen literal. That is what makes a re-skin reach the old pages without
+    // editing them. Pinning one exact alias pair (this used to assert
+    // `--text2: var(--text-tertiary)`) tested the palette of the day instead:
+    // re-pointing the alias one hop closer to its source broke the test while
+    // the property it was meant to protect held.
     const css = readFileSync(
       new URL("../templates/console/shell.css", import.meta.url),
       "utf8",
     );
-    expect(css).toContain("--text2: var(--text-tertiary)");
+    const legacyNames = [
+      "--bg",
+      "--surface",
+      "--surface-2",
+      "--surface-hover",
+      "--border-strong",
+      "--text",
+      "--text-secondary",
+      "--text-tertiary",
+      "--text2",
+      "--shadow",
+    ];
+    for (const name of legacyNames) {
+      const decl = new RegExp(`\\${name}:\\s*([^;]+);`).exec(css);
+      expect(decl, `${name} must still be declared for lumen/graph`).not.toBeNull();
+      expect(decl![1].trim(), `${name} must alias a token, not hardcode a value`).toMatch(
+        /^var\(--[\w-]+\)$/,
+      );
+    }
   });
 });
 
