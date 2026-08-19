@@ -48,7 +48,18 @@ const REGISTRY_SCHEMA_VERSION = 1;
  */
 type StoredProject = {
   project_id?: string;
-  fabric_version: string;
+  /**
+   * Absent when the entry was backfilled by a scan rather than written by an
+   * install.
+   *
+   * Optional rather than a `"unknown"` sentinel because every consumer already
+   * had to handle "no version" — `versionByPath.get(path) ?? null` predates
+   * this — and a sentinel string would instead be COMPARED against the running
+   * version and reported as out of date. Five installs that predate the install
+   * manifest have no version to read; saying so is honest, calling them stale
+   * is a guess wearing a fact's clothes.
+   */
+  fabric_version?: string;
   registered_at: string;
 };
 
@@ -62,7 +73,8 @@ export type RegisteredProject = {
   /** Absent when the project has no store binding yet. */
   projectId: string | undefined;
   path: string;
-  fabricVersion: string;
+  /** null for a scan-backfilled entry — see {@link StoredProject.fabric_version}. */
+  fabricVersion: string | null;
   registeredAt: string;
 };
 
@@ -173,7 +185,8 @@ export async function registerProject(
     path: string;
     /** Absent for a project with no store binding — see {@link StoredProject}. */
     projectId?: string;
-    fabricVersion: string;
+    /** Absent when there is none to read — see {@link StoredProject.fabric_version}. */
+    fabricVersion?: string;
     /** Injectable for deterministic tests; defaults to now. */
     registeredAt?: string;
   },
@@ -195,7 +208,7 @@ export async function registerProject(
     }
     registry.projects[input.path] = {
       ...(input.projectId === undefined ? {} : { project_id: input.projectId }),
-      fabric_version: input.fabricVersion,
+      ...(input.fabricVersion === undefined ? {} : { fabric_version: input.fabricVersion }),
       registered_at: registeredAt,
     };
     return true;
@@ -244,7 +257,7 @@ export async function listRegisteredProjects(
   return Object.entries(registry.projects).map(([path, entry]) => ({
     projectId: entry.project_id,
     path,
-    fabricVersion: entry.fabric_version,
+    fabricVersion: entry.fabric_version ?? null,
     registeredAt: entry.registered_at,
     stale: !existsSync(path),
   }));

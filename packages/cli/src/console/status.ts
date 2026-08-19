@@ -15,7 +15,7 @@ import { loadProjectConfig } from "../store/project-config-io.js";
 import { listRegisteredProjects } from "../store/project-registry-io.js";
 import { asPlainObject, currentProjectIdOf } from "./config-resolve.js";
 import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
-import { mergeProjectList } from "./project-list.js";
+import { collectKnownProjects } from "./project-list.js";
 
 declare const __CLI_VERSION__: string | undefined;
 
@@ -142,6 +142,16 @@ export interface MachineStatus {
   revision: string;
   /** Projects whose recorded install version differs from the running CLI. */
   outdatedCount: number;
+  /**
+   * Projects this machine can name but not locate — an id from a config
+   * segment or a store binding, with no directory to go with it.
+   *
+   * Reported as its own number because it is the one thing the scan fixes, and
+   * because folding it into the project list made it invisible: those rows
+   * render as bare uuids among named ones and read as noise rather than as
+   * "there are N more of your projects here".
+   */
+  unlocatedCount: number;
   emptyReason: "no-projects" | "no-stores" | "no-entries" | null;
 }
 
@@ -165,12 +175,7 @@ export async function collectMachineStatus(launchDir: string): Promise<MachineSt
   const registry = await listRegisteredProjects();
   const versionByPath = new Map(registry.map((r) => [r.path, r.fabricVersion]));
 
-  const merged = mergeProjectList({
-    registry,
-    configuredIds: Object.keys(asPlainObject(global.projects)),
-    currentProjectId: currentProjectIdOf(launchDir),
-    currentProjectPath: launchDir,
-  });
+  const merged = await collectKnownProjects(launchDir);
   const running = runningVersion();
   const projects: MachineProjectView[] = merged.map((p) => ({
     projectId: p.projectId,
@@ -198,6 +203,7 @@ export async function collectMachineStatus(launchDir: string): Promise<MachineSt
     outdatedCount: projects.filter(
       (p) => p.installedVersion !== null && p.installedVersion !== running,
     ).length,
+    unlocatedCount: projects.filter((p) => p.path === null).length,
     emptyReason:
       projects.length === 0
         ? "no-projects"

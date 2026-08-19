@@ -1,3 +1,6 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
 import {
   resolveWorkspaceBindingId,
   writeBindingsSnapshot,
@@ -58,4 +61,48 @@ export function regenerateBindingsSnapshot(
     writeScope: options.writeScope ?? DEFAULT_WRITE_SCOPE,
     now: options.now,
   });
+}
+
+/**
+ * Every project_id this machine has ever written a bindings snapshot for.
+ *
+ * The third source of project identity, and on a real machine the FULLEST one:
+ * a snapshot is written by `fabric store bind` and `fabric sync`, which run
+ * throughout a project's life, whereas the registry is written by `fabric
+ * install` and only started existing recently. Measured here: 8 snapshots, 1
+ * registry row.
+ *
+ * It carries no path — the paths inside a snapshot are STORE checkouts under
+ * `~/.fabric/stores`, not the project's own directory. So an id known only from
+ * here is a project this machine can name but not locate, which is exactly the
+ * state the console must report rather than hide. Locating it is
+ * project-discovery's job.
+ */
+export function listBoundProjectIds(globalRootInput?: string): string[] {
+  const globalRoot = globalRootInput ?? resolveGlobalRoot();
+  let files: string[];
+  try {
+    files = readdirSync(join(globalRoot, "state", "bindings"));
+  } catch {
+    return []; // no bindings yet, or an unreadable global root
+  }
+
+  const ids = new Set<string>();
+  for (const file of files) {
+    if (!file.endsWith("_resolved.json")) continue;
+    try {
+      const parsed: unknown = JSON.parse(
+        readFileSync(join(globalRoot, "state", "bindings", file), "utf8"),
+      );
+      // The id inside the file wins over the filename. They agree today, but
+      // the filename is the WORKSPACE BINDING id, which is only incidentally
+      // equal to the project id — reading the field means this keeps working if
+      // that ever stops being true.
+      const id = (parsed as { project_id?: unknown } | null)?.project_id;
+      if (typeof id === "string" && id.length > 0) ids.add(id);
+    } catch {
+      continue; // a corrupt snapshot is not a reason to lose the other seven
+    }
+  }
+  return [...ids];
 }

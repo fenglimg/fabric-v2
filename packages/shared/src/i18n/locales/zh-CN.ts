@@ -290,6 +290,7 @@ export const zhCNMessages: Messages = {
     "还没有已登记的项目。在某个项目里跑一次 `fabric install` 即可登记。",
   "cli.info.projects.title": "已登记的项目",
   "cli.info.projects.stale": "路径已失效",
+  "cli.info.projects.version-unknown": "安装版本未知",
   "cli.info.projects.stale-note":
     "标记为「路径已失效」的项目,其目录已被移动或删除;在新位置重跑 `fabric install` 可更新登记。",
 

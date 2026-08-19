@@ -242,7 +242,7 @@ describe("GET /api/scopes", () => {
 
     const payload = (await (await fetch(`${await serve(a)}/api/scopes`)).json()) as {
       defaultScope: string;
-      blockedCount: number;
+      blockedByReason: Record<string, number>;
       options: { id: string; openable: boolean; blockedReason: string | null }[];
     };
 
@@ -250,10 +250,40 @@ describe("GET /api/scopes", () => {
     const openable = payload.options.filter((o) => o.openable).map((o) => o.id);
     expect(openable.sort()).toEqual(["machine", "proj-a"]);
     // The two that cannot be opened are still REPORTED — a switcher that simply
-    // omitted them would read as "you only have one project".
-    expect(payload.blockedCount).toBe(2);
+    // omitted them would read as "you only have one project" — and reported BY
+    // REASON, because "the directory is gone" and "we never looked the directory
+    // up" need different things from the user.
+    expect(payload.blockedByReason).toEqual({ "no-path": 1, stale: 1 });
     expect(
       payload.options.filter((o) => !o.openable).map((o) => o.blockedReason).sort(),
     ).toEqual(["no-path", "stale"]);
+  });
+
+  it("does not claim a project has no directory when it has one but no id", async () => {
+    // Seen on a real machine right after the scan landed: a project whose
+    // directory the page was DISPLAYING was listed in the switcher under "no
+    // registered directory — run `fabric install` there". Both halves were
+    // wrong. The directory was registered, and re-installing would not have
+    // given it an id: an id comes from binding a store.
+    //
+    // The cause was an override — a reason computed from the path, then
+    // replaced by "no-path" whenever the id was missing, regardless of the path.
+    const withPath = mkdtempSync(join(tmpdir(), "scope-noid-"));
+    dirs.push(withPath);
+    mkdirSync(join(withPath, ".fabric"), { recursive: true });
+    writeFileSync(join(withPath, ".fabric", "fabric-config.json"), "{}", "utf8");
+    registerAll([{ path: withPath }]);
+
+    const payload = (await (await fetch(`${await serve(withPath)}/api/scopes`)).json()) as {
+      blockedByReason: Record<string, number>;
+      options: { path: string | null; openable: boolean; blockedReason: string | null }[];
+    };
+
+    const row = payload.options.find((o) => o.path === withPath);
+    expect(row?.blockedReason).toBe("no-id");
+    // Still unopenable — `?scope=` addresses a project by id, and there is none.
+    // The fix is to the EXPLANATION, not to the capability.
+    expect(row?.openable).toBe(false);
+    expect(payload.blockedByReason["no-path"]).toBeUndefined();
   });
 });

@@ -544,14 +544,20 @@ async function runProjectsList(json: boolean): Promise<void> {
     return;
   }
 
+  // A scan-backfilled entry has no version to print: it was found on disk, not
+  // recorded by an install. Printing the RUNNING version there would claim
+  // these are up to date, which is the one thing we know we do not know.
+  const versionOf = (p: (typeof projects)[number]): string =>
+    p.fabricVersion ?? paint.muted(t("cli.info.projects.version-unknown"));
+
   kvGrid(
     projects.map((p) => [
       p.path,
       p.stale
         ? // Soft amber ○, not red ✗: a moved directory is "not ready", not an
           // error the user did wrong (colour convention documented at §0.4).
-          `${paint.muted(p.fabricVersion)}  ${softGlyph()} ${paint.muted(t("cli.info.projects.stale"))}`
-        : p.fabricVersion,
+          `${paint.muted(versionOf(p))}  ${softGlyph()} ${paint.muted(t("cli.info.projects.stale"))}`
+        : versionOf(p),
     ]),
   );
   if (projects.some((p) => p.stale)) {

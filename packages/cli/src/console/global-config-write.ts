@@ -37,7 +37,7 @@ import {
   writeFieldValue,
 } from "./config-resolve.js";
 import { ARCHIVE_PRESET_KEYS, getArchivePreset } from "./config-presentation.js";
-import { mergeProjectList } from "./project-list.js";
+import { collectKnownProjects } from "./project-list.js";
 
 export type ConfigWriteResult =
   | { ok: true; target: string }
@@ -105,12 +105,7 @@ async function resolveTarget(
     // disagree about membership, so the console rendered an editable row for the
     // current project and every save against it answered 404 — and on any machine
     // installed before the registry existed, that is the ONLY project row there is.
-    const known = mergeProjectList({
-      registry: await listRegisteredProjects(),
-      configuredIds: Object.keys(asPlainObject(global.projects)),
-      currentProjectId: currentProjectIdOf(launchDir),
-      currentProjectPath: launchDir,
-    });
+    const known = await collectKnownProjects(launchDir);
     const match = known.find((p) => p.projectId === projectId);
     if (match === undefined) return bad(404, `unknown project: ${projectId}`);
     if (!match.editable) return bad(409, `project has no id to store settings under: ${projectId}`);

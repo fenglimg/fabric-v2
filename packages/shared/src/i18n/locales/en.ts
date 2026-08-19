@@ -329,6 +329,7 @@ export const enMessages: Messages = {
     "No projects registered yet. Run `fabric install` inside a project to register it.",
   "cli.info.projects.title": "Registered projects",
   "cli.info.projects.stale": "path missing",
+  "cli.info.projects.version-unknown": "install version unknown",
   "cli.info.projects.stale-note":
     "Projects marked as having a missing path were moved or deleted; re-run `fabric install` at the new location to update the entry.",
 

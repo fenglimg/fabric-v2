@@ -23,6 +23,7 @@ import {
 } from "../console/global-config-write.js";
 import { collectIntegrations } from "../console/integrations-view.js";
 import { planRepair, runRepair, type RepairRequest } from "../console/integrations-repair.js";
+import { backfillProjectRegistry } from "../store/project-discovery.js";
 import { openKnowledgeEntry, type Opener } from "../console/open-entry.js";
 import { listScopes, resolveScope, type ResolvedScope } from "../console/scope.js";
 import { isSameOriginLoopback } from "../console/security.js";
@@ -79,6 +80,7 @@ const WRITE_ROUTES = new Set([
   "/api/config/set",
   "/api/config/preset",
   "/api/repair",
+  "/api/scan",
 ]);
 
 const STATIC_ASSETS: Record<string, { file: string; type: string }> = {
@@ -375,6 +377,23 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
                 ...(result.failed === undefined ? {} : { failed: result.failed }),
               });
             }
+            return;
+          }
+          if (pathname === "/api/scan") {
+            // No request body at all. The roots are the user's home directory,
+            // decided here — a browser-supplied root would be an arbitrary
+            // filesystem walk triggered by a page, and the one thing this
+            // console never accepts from a request is a path.
+            const result = await backfillProjectRegistry();
+            sendJson(res, 200, {
+              ok: true,
+              added: result.added.length,
+              found: result.projects.length,
+              alreadyKnown: result.alreadyKnown,
+              visitedDirs: result.visitedDirs,
+              stoppedBy: result.stoppedBy,
+              stuckDirs: result.stuckDirs,
+            });
             return;
           }
           if (pathname === "/api/repair") {

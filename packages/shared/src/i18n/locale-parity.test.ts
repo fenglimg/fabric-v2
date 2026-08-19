@@ -206,8 +206,14 @@ describe("i18n locale parity census", () => {
   // 14 条 `cli.console.behavior.<hook>.{label,description}`(七个 hook 各一对 ——
   // 界面上的单位是「它在什么时候做什么」,不是它的文件名)。
   // 同样是纯增量,按上面的豁免不重跑 dead-key scan。
+  // 2026-08-19 (控制台产品化 W4 全局项目发现): 1010 → 1011。净 +1:
+  // 1 条 `cli.info.projects.version-unknown`。扫描回填进注册表的项目**没有版本可填**
+  // —— 它是在磁盘上被找到的,不是被某次 install 记下来的。这里必须有一个键,是因为
+  // 另外两个选项都在撒谎:填运行中的 CLI 版本会把五个老安装报成最新,填字面量
+  // "unknown" 又会被拿去和运行版本比对然后报成「过期」。留空即"我们知道自己不知道"。
+  // 纯增量,按上面的豁免不重跑 dead-key scan。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(1010);
+    expect(enKeys.length).toBe(1011);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

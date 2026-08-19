@@ -52,7 +52,7 @@ import {
   tierOf,
   type FieldTier,
 } from "./config-presentation.js";
-import { mergeProjectList, type MergedProject } from "./project-list.js";
+import { collectKnownProjects, type MergedProject } from "./project-list.js";
 
 export interface FieldView {
   key: string;
@@ -484,12 +484,7 @@ export async function collectGlobalConfigView(launchDir: string): Promise<Global
   const currentCtx = loadPanelContext(launchDir);
   const currentProjectId = currentCtx.projectId;
 
-  const projects = mergeProjectList({
-    registry: await listRegisteredProjects(),
-    configuredIds: Object.keys(asPlainObject(global.projects)),
-    currentProjectId,
-    currentProjectPath: launchDir,
-  });
+  const projects = await collectKnownProjects(launchDir);
 
   const machine = machineFields(global);
   const remoteEmbedding = readRemoteEmbedding(global);

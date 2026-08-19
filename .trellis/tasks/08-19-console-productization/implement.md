@@ -54,6 +54,26 @@
 - [x] 变异验证 5 个全被杀：M1 `compareFile` 装了就报 ok；M2 `active` 去掉 registered 合取；M3 MCP 以文件存在即视为已接入；M4 `NON_HOOK_KEYS` 少一个键；M5 Claude 托管块见 import 行即 ok。
 - [ ] 未做实机执行验证：`install` / `doctor --fix` 会改用户真实 store 与安装树，未在未经确认的情况下点。服务端流式（spawn → 边跑边写 → 退出码尾行）已用真实子进程测；浏览器侧 reader pump 未实跑。
 
+## W4 全局项目发现（切换器只看得见一个项目）
+
+起因：用户指出「切换理论上应该支持从全局内去寻找，当前查找范围不够」。先量再动 —— 这台机器上 bindings 有 8 个项目、注册表只有 1 个、切换器只列 1 个，而 `blockedCount` 报 0，即页面连「我藏了东西」都没承认。
+
+根因不是「命令不回填」（`fabric install` 一直在写注册表），而是**注册表比那些安装晚**，且从来没人补过历史。所以方案收敛成两件事：把第三个来源（store bindings）接进列表，再加一次显式扫描把 id→目录补回去。
+
+- [x] W4-1 挑战 KT-PIT-0050。「project_id 无法反查目录」对**数据**成立（没有文件存这张表），对**机器**不成立 —— 每个项目的 id 就写在自己的 `.fabric/fabric-config.json` 里。反查表不是不存在，是没人算过。
+- [x] W4-2 `project-discovery.ts`：BFS 走 `$HOME`，判据是 `<dir>/.fabric/fabric-config.json` 能解析（不是「有 .fabric 目录」—— 后者命中 15 条，含全局根自己、它的备份、以及五个只剩空 `.fabric/.cache` 的仓库）。全局根按**身份**排除而非按名字，`FABRIC_HOME` 可以搬家。
+- [x] W4-3 `bindings-io.listBoundProjectIds()`：接上第三个来源。`mergeProjectList` 的 `boundIds` 设成**必填**而不是可选 —— 可选来源正是四个调用点各自算出四个答案的原因，改必填后 14 个调用点全部编译失败，一个都漏不掉。
+- [x] W4-4 `collectKnownProjects(launchDir)`：把四处重复的 `mergeProjectList` 收成一个入口。配置页的读与写此前已经漂移过一次，渲染出页面拒绝保存的行。
+- [x] W4-5 回填拒绝猜版本：扫描进来的行 `fabric_version` **不写**（`registerProject` 改为可选），因为另外两个选项都在撒谎 —— 写运行版本会把五个老安装报成最新，写 `"unknown"` 会被拿去比对然后报成过期。`fabric info` 那列显示为「未知」。
+- [x] W4-6 `POST /api/scan`（写通道表第五条）：**不接受请求体里的任何路径**，扫描根在服务端定死。页面能指定扫描根 = 网页能让本机遍历任意目录。
+
+### 实机跑出来的两个真 bug（测试全绿时它们都还在）
+
+- [x] **扫描请求永不返回**。测试里 1 秒跑完，实机点下去 150 秒无响应、进程 0% CPU。根因：走 19 个目录后卡死在第 20 个 —— 一个 `readdir` 永远不回来（网络盘 / 云同步占位目录 / 权限拒绝不返回）。而整体时间预算是在**目录之间**检查的，卡在调用里面时它根本没机会跑。修法是给单次 `readdir` 也加上限（超时即跳过并计入 `stuckDirs`），并保证单次上限不会越过整体预算。实机复测：7 秒返回 200，补回 5 个项目，如实报告 `stuckDirs: 3`。
+- [x] **有目录的项目被说成「没有目录」**。`toOption` 先按 path 算原因、再在 id 缺失时无条件覆写成 `no-path`，于是一个页面正在显示其目录的项目，在切换器里被标成「未登记目录 —— 在其仓库跑 fabric install」。两半都是错的：目录登记了，而重装也给不了它 id（id 来自绑定 store）。新增 `no-id` 原因，`blockedCount` 改成按原因分组的 `blockedByReason` —— 一个总数配一句建议，对三种情况里的两种都是错的建议。
+- [x] 变异验证共 15 个全被杀（含「去掉单次读超时」直接复现原始 hang、「去掉 min() 让单次上限越过整体预算」、「no-id 报成 no-path」）。另外两次抓到**假绿测试**：符号链接用例因为 `Dirent.isDirectory()` 对软链为 false 而从未进入被测分支；FIFO 用例同理（`stuckDirs` 实测为 0），改用 `readdir` mock 才真正打到。
+- [x] 验证：`pnpm -r exec tsc --noEmit`、`pnpm lint`、CLI 1724 绿、shared 668 绿。CLI 侧唯一红是 `forensic-shadow-mirroring` 的 inline snapshot，与本段无关（本段改动 stash 掉后同样红，涉及文件本段一行未动）。
+
 ## 收口（每段做完各跑一次）
 
 ```bash

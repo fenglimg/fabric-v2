@@ -203,6 +203,27 @@ describe("write endpoints over HTTP", () => {
     expect(res.headers.get("content-type")).toContain("application/json");
   });
 
+  // The FIFTH route. It is the only one that walks the filesystem, so the
+  // guard is what stands between "the user clicked 扫描" and "a page in another
+  // tab made the console enumerate the home directory".
+  it("refuses GET and a foreign Origin on /api/scan", async () => {
+    const { base } = await start();
+    expect((await fetch(`${base}/api/scan`, { method: "GET" })).status).toBe(405);
+
+    const res = await fetch(`${base}/api/scan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ root: "/" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  // No happy-path HTTP test for /api/scan on purpose: a legitimate-Origin POST
+  // walks the REAL home directory and writes the REAL project registry. The
+  // scan's behaviour is covered against a temp tree in project-discovery.test.ts;
+  // reaching it through the server here would make the suite mutate the machine
+  // running it.
+
   it("refuses a config POST carrying a foreign Origin (403)", async () => {
     const { base } = await start();
     const res = await fetch(`${base}/api/config/set`, {

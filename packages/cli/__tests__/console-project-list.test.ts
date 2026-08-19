@@ -31,6 +31,7 @@ describe("mergeProjectList", () => {
     const [only] = mergeProjectList({
       registry: [reg("/repos/alpha", "p-alpha")],
       configuredIds: ["p-alpha"],
+      boundIds: [],
       currentProjectId: null,
       currentProjectPath: null,
     });
@@ -52,6 +53,7 @@ describe("mergeProjectList", () => {
     const [only] = mergeProjectList({
       registry: [reg("/repos/unbound")],
       configuredIds: [],
+      boundIds: [],
       currentProjectId: null,
       currentProjectPath: null,
     });
@@ -70,6 +72,7 @@ describe("mergeProjectList", () => {
     const [only] = mergeProjectList({
       registry: [],
       configuredIds: ["p-ghost"],
+      boundIds: [],
       currentProjectId: null,
       currentProjectPath: null,
     });
@@ -91,6 +94,7 @@ describe("mergeProjectList", () => {
     const [only] = mergeProjectList({
       registry: [reg("/repos/moved", "p-moved", true)],
       configuredIds: [],
+      boundIds: [],
       currentProjectId: null,
       currentProjectPath: null,
     });
@@ -104,6 +108,7 @@ describe("mergeProjectList", () => {
     const rows = mergeProjectList({
       registry: [reg("/repos/other", "p-other")],
       configuredIds: ["p-other"],
+      boundIds: [],
       currentProjectId: "p-here",
       currentProjectPath: null,
     });
@@ -130,6 +135,7 @@ describe("mergeProjectList", () => {
     const rows = mergeProjectList({
       registry: [],
       configuredIds: [],
+      boundIds: [],
       currentProjectId: "p-here",
       currentProjectPath: "/repos/my-app",
     });
@@ -162,6 +168,7 @@ describe("mergeProjectList", () => {
     const rows = mergeProjectList({
       registry: [],
       configuredIds: ["p-here"],
+      boundIds: [],
       currentProjectId: "p-here",
       currentProjectPath: "/repos/my-app",
     });
@@ -185,6 +192,7 @@ describe("mergeProjectList", () => {
     const rows = mergeProjectList({
       registry: [],
       configuredIds: ["p-here", "p-elsewhere"],
+      boundIds: [],
       currentProjectId: "p-here",
       currentProjectPath: "/repos/my-app",
     });
@@ -199,6 +207,7 @@ describe("mergeProjectList", () => {
     const withCurrent = mergeProjectList({
       registry: [reg("/repos/a", "p-a"), reg("/repos/b", "p-b")],
       configuredIds: ["p-a", "p-b"],
+      boundIds: [],
       currentProjectId: "p-b",
       currentProjectPath: null,
     });
@@ -207,6 +216,7 @@ describe("mergeProjectList", () => {
     const noCurrent = mergeProjectList({
       registry: [reg("/repos/a", "p-a"), reg("/repos/b", "p-b")],
       configuredIds: ["p-a", "p-b"],
+      boundIds: [],
       currentProjectId: null,
       currentProjectPath: null,
     });
@@ -222,6 +232,7 @@ describe("mergeProjectList", () => {
     const rows = mergeProjectList({
       registry: [reg("/repos/zeta", "p-z"), reg("/repos/alpha", "p-a"), reg("/repos/mid", "p-m")],
       configuredIds: [],
+      boundIds: [],
       currentProjectId: "p-z",
       currentProjectPath: null,
     });
@@ -232,6 +243,7 @@ describe("mergeProjectList", () => {
     const elsewhere = mergeProjectList({
       registry: [reg("/repos/zeta", "p-z"), reg("/repos/alpha", "p-a"), reg("/repos/mid", "p-m")],
       configuredIds: [],
+      boundIds: [],
       currentProjectId: null,
       currentProjectPath: null,
     });
@@ -246,6 +258,7 @@ describe("mergeProjectList", () => {
       mergeProjectList({
         registry: [],
         configuredIds: [],
+        boundIds: [],
         currentProjectId: null,
         currentProjectPath: null,
       }),
@@ -258,6 +271,7 @@ describe("mergeProjectList", () => {
     const rows = mergeProjectList({
       registry: [reg("/repos/one"), reg("/repos/two")],
       configuredIds: [],
+      boundIds: [],
       currentProjectId: null,
       currentProjectPath: null,
     });

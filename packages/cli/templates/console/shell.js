@@ -427,12 +427,24 @@
         // Say why the list is short instead of letting the user conclude those
         // projects do not exist. A disabled option is the least intrusive place
         // for it — visible in the menu, unselectable, and it needs no layout.
-        if (d.blockedCount > 0) {
+        // 一条理由一行,因为三种「打不开」的解法不一样。以前合成一个总数配一句
+        // 「在其仓库跑 fabric install」,对另外两种都是错的建议 —— 目录还在、只是
+        // 没绑 store 的项目,重装并不会给它 id。
+        var blocked = d.blockedByReason || {};
+        var advice = {
+          "no-path": "只知道 id、不知道目录 —— 用状态页的「扫描本机」找回",
+          stale: "登记的目录已经不在了 —— 移回原处,或在新位置跑 fabric install",
+          "no-id": "还没绑定 store,所以没有 id —— 在其目录跑 fabric store bind",
+        };
+        ["no-path", "stale", "no-id"].forEach(function (reason) {
+          if (!blocked[reason]) return;
           html +=
             '<option value="" disabled>另有 ' +
-            d.blockedCount +
-            " 个项目未登记目录 —— 在其仓库跑 fabric install</option>";
-        }
+            blocked[reason] +
+            " 个" +
+            advice[reason] +
+            "</option>";
+        });
         sel.innerHTML = html;
         sel.addEventListener("change", function () {
           if (sel.value) FabricScope.select(sel.value);

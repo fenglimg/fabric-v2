@@ -18,10 +18,8 @@
 //      channel does it.
 // ---------------------------------------------------------------------------
 
-import { listRegisteredProjects } from "../store/project-registry-io.js";
-import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
-import { asPlainObject, currentProjectIdOf } from "./config-resolve.js";
-import { mergeProjectList, type MergedProject } from "./project-list.js";
+import { currentProjectIdOf } from "./config-resolve.js";
+import { collectKnownProjects, type MergedProject } from "./project-list.js";
 
 /** The machine-wide scope's reserved id. No project_id can collide: ids are uuids. */
 export const MACHINE_SCOPE = "machine";
@@ -31,11 +29,28 @@ export type ScopeBlockedReason =
   /** Registered at a path that no longer exists. */
   | "stale"
   /**
-   * Known only by id — a config segment, or a registry row with no id. Nothing
-   * on this machine maps a project_id back to a directory (KT-PIT-0050), so this
-   * is permanent until the repo is re-registered by `fabric install`.
+   * Known only by id — from a config segment, a store binding, or a registry row
+   * with no id. No FILE maps a project_id back to a directory (KT-PIT-0050), but
+   * that does not make the mapping unknowable: the id is sitting in the project's
+   * own `.fabric/fabric-config.json`. `POST /api/scan` computes it. So this state
+   * is "not looked up yet", not "permanently unknowable", and the page must offer
+   * the scan rather than only telling the user to re-install.
+   *
+   * It stays permanent for one case the scan cannot fix: a directory that was
+   * deleted or moved off the searched roots.
    */
-  | "no-path";
+  | "no-path"
+  /**
+   * The directory is known, but the project has no `project_id` — an install
+   * that never bound a store leaves `.fabric/fabric-config.json` as `{}`.
+   *
+   * Separate from `no-path` because it used to be reported AS `no-path`, and
+   * that was a lie the user could see: the switcher offered "run `fabric
+   * install` there" for a project whose directory it was already displaying.
+   * Re-installing would not help either — an id comes from binding a store —
+   * so the wrong reason produced the wrong instruction.
+   */
+  | "no-id";
 
 export interface ScopeOption {
   /** `"machine"` or the project's id. */
@@ -54,11 +69,16 @@ export interface ScopeList {
   defaultScope: string;
   options: ScopeOption[];
   /**
-   * How many known projects could not be listed as openable, so the page can
-   * say why the switcher is shorter than the user's project count instead of
-   * letting them conclude those projects do not exist.
+   * How many known projects could not be listed as openable, BY REASON — so the
+   * page can say why the switcher is shorter than the user's project count
+   * instead of letting them conclude those projects do not exist.
+   *
+   * Broken down rather than totalled because each reason has a different
+   * remedy, and the single total was being rendered with one instruction that
+   * was wrong for two of the three cases. Absent keys mean zero; the total is
+   * the caller's to sum, so there is no second field to drift out of step.
    */
-  blockedCount: number;
+  blockedByReason: Partial<Record<ScopeBlockedReason, number>>;
 }
 
 export type ResolvedScope =
@@ -74,35 +94,37 @@ export type ScopeResolution =
   | { ok: true; scope: ResolvedScope }
   | { ok: false; status: number; error: string; reason: ScopeBlockedReason | "unknown" };
 
-async function knownProjects(launchDir: string): Promise<MergedProject[]> {
-  const global = asPlainObject(loadGlobalConfig(resolveGlobalRoot()));
-  return mergeProjectList({
-    registry: await listRegisteredProjects(),
-    configuredIds: Object.keys(asPlainObject(global.projects)),
-    currentProjectId: currentProjectIdOf(launchDir),
-    currentProjectPath: launchDir,
-  });
-}
-
 function toOption(project: MergedProject): ScopeOption {
+  // Ordered most-specific first, and evaluated ONCE. The previous version
+  // computed a reason here and then overrode it below for the id-less case,
+  // which is how a project with a perfectly good directory came to be reported
+  // as having no directory.
+  //
+  // A project with no id cannot be a scope even though it has a path: `?scope=`
+  // names a project BY id, and the pages keyed to it (config overrides) have
+  // nowhere to write.
   const blockedReason: ScopeBlockedReason | null =
-    project.path === null ? "no-path" : project.stale ? "stale" : null;
+    project.path === null
+      ? "no-path"
+      : project.stale
+        ? "stale"
+        : project.projectId === null
+          ? "no-id"
+          : null;
   return {
     id: project.projectId ?? project.path ?? project.name,
     kind: "project",
     name: project.name,
     path: project.path,
     isCurrent: project.isCurrent,
-    // A project with no id cannot be a scope either: `?scope=` names a project
-    // BY id, and the pages keyed to it (config overrides) have nowhere to write.
-    openable: blockedReason === null && project.projectId !== null,
-    blockedReason: project.projectId === null ? "no-path" : blockedReason,
+    openable: blockedReason === null,
+    blockedReason,
   };
 }
 
 /** Everything the switcher needs to render, including what it cannot offer. */
 export async function listScopes(launchDir: string): Promise<ScopeList> {
-  const options = (await knownProjects(launchDir)).map(toOption);
+  const options = (await collectKnownProjects(launchDir)).map(toOption);
   const currentId = currentProjectIdOf(launchDir);
   return {
     // The launch directory stays the default so an unparameterised request keeps
@@ -112,7 +134,11 @@ export async function listScopes(launchDir: string): Promise<ScopeList> {
       { id: MACHINE_SCOPE, kind: "machine", name: MACHINE_SCOPE, path: null, isCurrent: false, openable: true, blockedReason: null },
       ...options,
     ],
-    blockedCount: options.filter((o) => !o.openable).length,
+    blockedByReason: options.reduce<Partial<Record<ScopeBlockedReason, number>>>((acc, o) => {
+      if (o.blockedReason === null) return acc;
+      acc[o.blockedReason] = (acc[o.blockedReason] ?? 0) + 1;
+      return acc;
+    }, {}),
   };
 }
 
@@ -145,7 +171,7 @@ export async function resolveScope(
     return { ok: true, scope: { kind: "project", projectId: raw, projectRoot: launchDir } };
   }
 
-  const match = (await knownProjects(launchDir)).find((p) => p.projectId === raw);
+  const match = (await collectKnownProjects(launchDir)).find((p) => p.projectId === raw);
   if (match === undefined) {
     return { ok: false, status: 404, reason: "unknown", error: `unknown scope: ${raw}` };
   }

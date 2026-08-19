@@ -1,24 +1,41 @@
 // ---------------------------------------------------------------------------
-// The machine's project list — merged from two half-complete sources.
+// The machine's project list — merged from THREE half-complete sources.
 //
-// Neither source alone can answer "which projects are on this machine, and
-// which of them can I configure":
+// No source alone can answer "which projects are on this machine, and which of
+// them can I open":
 //
 //   ~/.fabric/state/projects.json   has the PATH, may lack a project_id
 //                                   (an install with no store binding never
-//                                   gets one)
+//                                   gets one). Young: written only by `fabric
+//                                   install`, and added long after people
+//                                   started installing.
 //   fabric-global.json `projects`   has the project_id and the actual
 //                                   overrides, and can NEVER supply a path —
 //                                   the segment is keyed by id and nothing
 //                                   maps an id back to a directory
+//   ~/.fabric/state/bindings/       has a project_id per project that ever
+//                                   bound a store. The FULLEST source on a
+//                                   real machine, and also pathless.
 //
-// Merging on `project_id` is therefore not a nicety; taking either source alone
-// hides a real category of project from the page. Kept as a pure function
-// because this is the one place in the feature with genuine branching, and
-// branching is far cheaper to pin here than through an assembled view.
+// The third source was missing until it was measured: registry 1, config 1,
+// bindings 8. The page rendered one project and — because a project that never
+// entered the list cannot be counted as blocked — reported nothing hidden. A
+// switcher that silently claims your machine has one project is worse than one
+// that says "8, and I can only open 1".
+//
+// Merging on `project_id` is therefore not a nicety; taking any source alone
+// hides a real category of project. Kept as a pure function because this is the
+// one place in the feature with genuine branching, and branching is far cheaper
+// to pin here than through an assembled view.
 // ---------------------------------------------------------------------------
 
-import type { RegisteredProjectView } from "../store/project-registry-io.js";
+import { asPlainObject, currentProjectIdOf } from "./config-resolve.js";
+import { listBoundProjectIds } from "../store/bindings-io.js";
+import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
+import {
+  listRegisteredProjects,
+  type RegisteredProjectView,
+} from "../store/project-registry-io.js";
 
 /**
  * Where the knowledge of this project came from — which determines what the
@@ -34,10 +51,16 @@ export type ProjectOrigin =
    */
   | "registry-only"
   /**
-   * Not registered, and its directory is unknown. Every project is this today
-   * (the registry postdates these installs) and it stays possible afterwards
-   * for a repo that was moved or deleted. Configurable — the id is in hand —
-   * but its path must not be guessed.
+   * Known by id only — from a config segment, a store binding, or both — with
+   * no directory to go with it. Most projects are this until someone runs the
+   * scan (the registry postdates these installs), and it stays possible
+   * afterwards for a repo that was moved or deleted. Configurable — the id is
+   * in hand — but its path must not be guessed.
+   *
+   * Named for the config source it originally came from; a binding-only id
+   * lands here too because nothing a caller does differs between the two. What
+   * callers need is "not registered" and "we do not know where it is", and
+   * those are the same either way.
    */
   | "config-only"
   /**
@@ -95,6 +118,14 @@ export function mergeProjectList(input: {
   registry: readonly RegisteredProjectView[];
   /** Keys of the global config's `projects` segment. */
   configuredIds: readonly string[];
+  /**
+   * project_ids with a resolved-bindings snapshot under `~/.fabric/state/`.
+   *
+   * Required rather than optional for the same reason `currentProjectPath` is:
+   * an optional source is how four call sites came to build four different
+   * answers to one question. It is now unrepresentable to forget it.
+   */
+  boundIds: readonly string[];
   /** `project_id` of the launch directory, when it has one. */
   currentProjectId: string | null;
   /**
@@ -108,8 +139,8 @@ export function mergeProjectList(input: {
    */
   currentProjectPath: string | null;
 }): MergedProject[] {
-  const { registry, configuredIds, currentProjectId, currentProjectPath } = input;
-  const configured = new Set(configuredIds);
+  const { registry, configuredIds, boundIds, currentProjectId, currentProjectPath } = input;
+  const configured = new Set([...configuredIds, ...boundIds]);
   const merged: MergedProject[] = [];
   const claimedIds = new Set<string>();
 
@@ -166,4 +197,27 @@ export function mergeProjectList(input: {
   }
 
   return merged.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Gather all three sources and merge them. THE entry point — nothing else
+ * should assemble `mergeProjectList`'s input.
+ *
+ * It was assembled inline in four places (the scope switcher, the machine
+ * status page, the config page's read side, and its write side) with the same
+ * three lines copied each time. That is fine right up until a source is added:
+ * this function exists because adding the bindings source meant editing four
+ * call sites that each had to stay identical, and the config read/write pair
+ * MUST stay identical or the page renders rows it then refuses to save — a
+ * failure this codebase has already had once.
+ */
+export async function collectKnownProjects(launchDir: string): Promise<MergedProject[]> {
+  const global = asPlainObject(loadGlobalConfig(resolveGlobalRoot()));
+  return mergeProjectList({
+    registry: await listRegisteredProjects(),
+    configuredIds: Object.keys(asPlainObject(global.projects)),
+    boundIds: listBoundProjectIds(),
+    currentProjectId: currentProjectIdOf(launchDir),
+    currentProjectPath: launchDir,
+  });
 }

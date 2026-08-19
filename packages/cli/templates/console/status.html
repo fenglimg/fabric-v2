@@ -108,7 +108,9 @@
   var MACHINE_GUIDE={
     'no-projects':{
       what:'本机还没有登记任何项目',
-      body:'项目是在 <code>fabric install</code> 时登记的。装在注册表出现之前的项目不会自动补登 —— 在每个仓库里再跑一次 <code>fabric install</code> 即可。'
+      // 原来这里写的是「不会自动补登,去每个仓库重跑 install」。那是当时的实情,
+      // 不是必然:项目自己的 .fabric/fabric-config.json 里就有 id,扫一遍就能补。
+      body:'项目是在 <code>fabric install</code> 时登记的,而注册表比大多数安装都年轻。点下面的「扫描本机」把装过 Fabric 的目录找回来,或在每个仓库里重跑一次 <code>fabric install</code>。'
     },
     'no-stores':{
       what:'本机没有挂载任何知识库',
@@ -149,7 +151,15 @@
       });
       if(d.outdatedCount)
         html+='<div class="guide">其中 '+d.outdatedCount+' 个项目的安装版本低于当前 CLI —— 在那些仓库里重跑 <code>fabric install</code> 升级。</div>';
+      // 「知道 id 但不知道在哪」以前根本进不了这个列表,于是页面安静地少报了几个
+      // 项目。现在它进来了,就必须把它是什么、以及怎么解决说清楚。
+      if(d.unlocatedCount)
+        html+='<div class="guide">其中 '+d.unlocatedCount+' 个只知道 id、不知道目录 —— 它们在这台机器上留过配置或 store 绑定,但注册表里没有路径,所以打不开。扫描能找回还在磁盘上的那些。</div>';
     }
+    // 扫描入口跟项目列表放在一起:它回答的正是这张卡上「怎么只有这么几个」。
+    html+='<div class="row" style="border-bottom:none"><span class="k">'+
+      '<button id="scan" class="seg" style="border:1px solid var(--border-strong)">扫描本机</button></span>'+
+      '<span class="v"><span id="scan-out" class="muted">在你的主目录下找装过 Fabric 的项目并补登路径。只读你的目录名，不改任何项目里的文件。</span></span></div>';
     html+='</div>';
 
     html+='<div class="card"><h2>本机挂载的 store</h2>';
@@ -163,28 +173,65 @@
       '<div class="card"><div class="guide"><span class="what err">'+title+'</span>'+body+'</div></div>';
   }
 
-  fetch('/api/status'+FabricScope.param(),{cache:'no-store'})
-    .then(function(r){
-      if(!r.ok){
-        // 作用域打不开时,原因和下一步来自服务端的 reason —— 不静默退回启动目录,
-        // 否则用户会以为自己在看 A 项目而其实在看 B。
-        return r.json().catch(function(){ return null; }).then(function(p){
-          var d=FabricScope.describeError(r.status,p);
-          throw Object.assign(new Error(d.body),{ shown:d });
-        });
-      }
-      return r.json();
-    })
-    .then(function(d){
-      document.getElementById('main').innerHTML=
-        d.scope==='machine' ? renderMachine(d) : renderProject(d);
-    })
-    .catch(function(e){
-      // 失败也要说清是什么失败了。一片空白读起来是「坏了」,不是「读不到」。
-      if(e.shown) fail(e.shown.title, e.shown.body);
-      else fail('读取状态失败', esc(e.message)+
-        '<br>控制台只连本机,通常是服务已停止 —— 回终端看 <code>fabric preview</code> 还在不在跑。');
+  // 扫描完要重新拉一次数据,所以取数得是个能再调的函数 —— 原来它是一条裸的
+  // fetch 链,只能在页面加载时跑一次。
+  function load(){
+    return fetch('/api/status'+FabricScope.param(),{cache:'no-store'})
+      .then(function(r){
+        if(!r.ok){
+          // 作用域打不开时,原因和下一步来自服务端的 reason —— 不静默退回启动目录,
+          // 否则用户会以为自己在看 A 项目而其实在看 B。
+          return r.json().catch(function(){ return null; }).then(function(p){
+            var d=FabricScope.describeError(r.status,p);
+            throw Object.assign(new Error(d.body),{ shown:d });
+          });
+        }
+        return r.json();
+      })
+      .then(function(d){
+        document.getElementById('main').innerHTML=
+          d.scope==='machine' ? renderMachine(d) : renderProject(d);
+        wire();
+      })
+      .catch(function(e){
+        // 失败也要说清是什么失败了。一片空白读起来是「坏了」,不是「读不到」。
+        if(e.shown) fail(e.shown.title, e.shown.body);
+        else fail('读取状态失败', esc(e.message)+
+          '<br>控制台只连本机,通常是服务已停止 —— 回终端看 <code>fabric preview</code> 还在不在跑。');
+      });
+  }
+
+  function wire(){
+    var btn=document.getElementById('scan');
+    if(!btn) return;
+    btn.addEventListener('click',function(){
+      btn.disabled=true;
+      var out=document.getElementById('scan-out');
+      out.textContent='正在扫描…';
+      // 请求体是空的:扫哪儿由服务端决定。页面能指定扫描根 = 网页能让本机遍历任意
+      // 目录,这是整个控制台唯一不接受请求给路径的那条线。
+      fetch('/api/scan',{method:'POST',cache:'no-store',
+        headers:{'content-type':'application/json'},body:'{}'})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+      .then(function(res){
+        if(!res.ok) throw new Error(res.body&&res.body.error?res.body.error:'HTTP error');
+        var b=res.body;
+        out.textContent=b.added
+          ? '找到 '+b.found+' 个项目,新登记 '+b.added+' 个。'
+          : '找到 '+b.found+' 个项目,都已经登记过了。';
+        // 两种「没扫完」给的是两种建议,所以分开说:目录太多 → 结果不全但再点也一样;
+        // 时间到了 → 这台机器读目录慢,再点一次能往前走一段。
+        if(b.stoppedBy==='dirs') out.textContent+=' （目录太多,扫到 '+b.visitedDirs+' 个就停了 —— 结果可能不全。）';
+        else if(b.stoppedBy==='time') out.textContent+=' （超时停在 '+b.visitedDirs+' 个目录 —— 这台机器读目录较慢,再点一次可以继续往下找。）';
+        // 卡住的目录和「没扫完」是两件事:扫完了也可能有目录读不动。
+        if(b.stuckDirs) out.textContent+=' 有 '+b.stuckDirs+' 个目录读不动已跳过（网络盘或云同步目录常见）。';
+        return load();
+      })
+      .catch(function(e){ out.textContent='扫描失败：'+e.message; btn.disabled=false; });
     });
+  }
+
+  load();
 })();
 </script>
 </body></html>
