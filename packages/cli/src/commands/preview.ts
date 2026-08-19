@@ -17,6 +17,8 @@ import { paint } from "../colors.js";
 import { collectGlobalConfigView } from "../console/global-config-view.js";
 import {
   applyGlobalConfigEdit,
+  applyGlobalConfigPreset,
+  type ConfigPresetRequest,
   type ConfigWriteRequest,
 } from "../console/global-config-write.js";
 import { openKnowledgeEntry, type Opener } from "../console/open-entry.js";
@@ -70,7 +72,7 @@ const ALLOWED_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 // means "every method other than POST is refused", so a read and a write cannot
 // share one path without carving an exception into the guard — and an exception
 // is precisely what makes a table-driven guard stop being a guarantee.
-const WRITE_ROUTES = new Set(["/api/open", "/api/config/set"]);
+const WRITE_ROUTES = new Set(["/api/open", "/api/config/set", "/api/config/preset"]);
 
 const STATIC_ASSETS: Record<string, { file: string; type: string }> = {
   "/assets/shell.css": { file: "console/shell.css", type: "text/css; charset=utf-8" },
@@ -349,6 +351,23 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
             const result = await applyGlobalConfigEdit(body, projectRoot);
             if (result.ok) sendJson(res, 200, { ok: true, target: result.target });
             else sendJson(res, result.status, { error: result.error });
+            return;
+          }
+          if (pathname === "/api/config/preset") {
+            const body = (await readJsonBody(req)) as ConfigPresetRequest | null;
+            const result = await applyGlobalConfigPreset(body, projectRoot);
+            if (result.ok) {
+              sendJson(res, 200, { ok: true, target: result.target, applied: result.applied });
+            } else {
+              // `applied` / `failed` ride along on a partial failure. Reporting
+              // only the error would tell the user nothing changed while some of
+              // the eight keys already did.
+              sendJson(res, result.status, {
+                error: result.error,
+                ...(result.applied === undefined ? {} : { applied: result.applied }),
+                ...(result.failed === undefined ? {} : { failed: result.failed }),
+              });
+            }
             return;
           }
         }

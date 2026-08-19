@@ -40,6 +40,13 @@ import {
   type PanelContext,
   type ValueSource,
 } from "./config-resolve.js";
+import {
+  ARCHIVE_PRESETS,
+  ARCHIVE_PRESET_KEYS,
+  matchArchivePreset,
+  tierOf,
+  type FieldTier,
+} from "./config-presentation.js";
 import { mergeProjectList, type MergedProject } from "./project-list.js";
 
 interface FieldView {
@@ -55,6 +62,19 @@ interface FieldView {
   effective: string;
   source: ValueSource;
   sourceLabel: string;
+  /** Front page or behind "advanced". Unknown keys land in advanced, never nowhere. */
+  tier: FieldTier;
+  /**
+   * Someone put a value here — as opposed to the code default deciding.
+   *
+   * This is what the page's change bar keys off, and it is derived from the
+   * resolved SOURCE rather than by comparing the value to the default. The two
+   * differ exactly where it matters: a key explicitly set to the same value the
+   * default would have produced is still a pinned decision that outranks every
+   * layer below it, and hiding that would make "why does my machine-wide setting
+   * not reach this project" unanswerable from the page.
+   */
+  modified: boolean;
   /** The variable that can override this key, or null when none reads one. */
   envVar: string | null;
   /**
@@ -95,10 +115,31 @@ interface RemoteEmbeddingView {
   model: string | null;
 }
 
+/**
+ * The eight reminder thresholds, presented as one choice.
+ *
+ * `active` is DERIVED from the current values on every read, never stored. A
+ * persisted preset name would be a second source of truth: edit one of the eight
+ * keys individually and the name would go on claiming a preset the configuration
+ * no longer matches.
+ */
+interface ArchivePresetView {
+  /** The preset the machine-wide values amount to, or null for "custom". */
+  active: string | null;
+  /** The keys this choice writes, so the page can mark them where they also appear. */
+  keys: readonly string[];
+  /**
+   * Each option WITH its actual numbers. A three-way choice labelled only
+   * "低频 / 标准 / 高频" hides what it does; the numbers are the content.
+   */
+  options: readonly { id: string; values: Readonly<Record<string, number>> }[];
+}
+
 export interface GlobalConfigView {
   /** Present only when the console was launched from a Fabric project. */
   currentProjectId: string | null;
   machine: FieldView[];
+  archivePreset: ArchivePresetView;
   projects: ProjectView[];
   stores: StoreView[];
   remoteEmbedding: RemoteEmbeddingView;
@@ -169,6 +210,8 @@ function viewOf(field: PanelFieldMeta, ctx: PanelContext): FieldView {
     effective: field.format_for_display(value),
     source,
     sourceLabel: t(`cli.config.source.${source}`),
+    tier: tierOf(key),
+    modified: source !== "default",
     envVar: envOverrideFor(key),
     editable: source !== "env",
   };
@@ -183,6 +226,32 @@ function machineFields(global: Record<string, unknown>): FieldView[] {
   return getPanelFields()
     .filter((f) => f.home !== "corpus")
     .map((f) => viewOf(f, ctx));
+}
+
+/**
+ * Which preset the machine-wide values currently amount to.
+ *
+ * `applyEnv:false` for the same reason `machineFields` uses it: this describes
+ * what a clean process resolves, not what this console's shell happens to hold.
+ * Reading through `resolveEffective` (rather than off the `defaults` segment)
+ * is what makes an unset key count as its code default — which is how a machine
+ * where nothing was ever configured reads back as "standard" instead of the
+ * meaningless "custom".
+ */
+function archivePresetView(global: Record<string, unknown>): ArchivePresetView {
+  const ctx = buildPanelContext({ projectId: null, storeRoot: null, applyEnv: false, global });
+  const effective: Record<string, unknown> = {};
+  for (const field of getPanelFields()) {
+    const key = String(field.key);
+    if (!ARCHIVE_PRESET_KEYS.includes(key)) continue;
+    const { value } = resolveEffective(field, ctx);
+    effective[key] = value ?? field.default;
+  }
+  return {
+    active: matchArchivePreset(effective),
+    keys: ARCHIVE_PRESET_KEYS,
+    options: ARCHIVE_PRESETS.map((p) => ({ id: p.id, values: p.values })),
+  };
 }
 
 /**
@@ -270,6 +339,23 @@ function chromeStrings(): Record<string, string> {
     "group.B_hint_threshold",
     "group.C_audit",
     "group.D_behavior",
+    "search",
+    "search-empty",
+    "advanced.title",
+    "advanced.intro",
+    "advanced.count",
+    "modified",
+    "reset",
+    "reset-done",
+    "preset.title",
+    "preset.intro",
+    "preset.custom",
+    "preset.custom-hint",
+    "preset.relaxed",
+    "preset.standard",
+    "preset.attentive",
+    "preset.applied",
+    "preset.partial",
     "save",
     "saved",
     "save-failed",
@@ -308,6 +394,7 @@ export async function collectGlobalConfigView(launchDir: string): Promise<Global
   return {
     currentProjectId,
     machine: machineFields(global),
+    archivePreset: archivePresetView(global),
     projects: projects.map((project) => ({
       ...project,
       overrides: projectOverrides(project, global, currentCtx),

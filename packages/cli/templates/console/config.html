@@ -15,9 +15,17 @@
     padding:16px 18px;box-shadow:var(--shadow);margin-bottom:12px}
   .card h3{margin:0 0 4px;font-size:12px;font-weight:600;color:var(--text-secondary);
     text-transform:uppercase;letter-spacing:.04em}
+  /* 搜索框跨两层过滤。放在最上面:它是「我知道要改哪一项」时的主路径。 */
+  .searchbar{margin:0 0 16px}
+  .searchbar input{font:inherit;font-size:13px;width:100%;box-sizing:border-box;
+    padding:8px 11px;color:var(--text);background:var(--surface);
+    border:1px solid var(--border-strong);border-radius:var(--radius-sm)}
+  /* 已修改竖条:占位始终存在(3px + 间距),否则改一项会让整行横移。 */
   .frow{display:grid;grid-template-columns:1fr auto;gap:10px 14px;align-items:start;
-    padding:12px 0;border-bottom:1px solid var(--border)}
+    padding:12px 0 12px 11px;border-bottom:1px solid var(--border);
+    border-left:3px solid transparent}
   .frow:last-child{border-bottom:none}
+  .frow.mod{border-left-color:var(--accent)}
   .fkey{font-family:var(--mono);font-size:12px;color:var(--text-tertiary)}
   .flabel{font-size:13px;color:var(--text);margin-bottom:2px}
   .fdesc{font-size:12px;color:var(--text-tertiary);line-height:1.6}
@@ -27,6 +35,9 @@
     border-radius:var(--radius-sm)}
   .fctl button{font:inherit;font-size:12px;padding:4px 11px;cursor:pointer;color:#fff;
     background:var(--accent);border:1px solid transparent;border-radius:var(--radius-sm)}
+  /* 恢复默认是次要动作,给它次要的样子 —— 与「保存」同等醒目会让人误点。 */
+  .fctl button.ghost{color:var(--text-secondary);background:transparent;
+    border-color:var(--border-strong)}
   .fctl button:disabled,.fctl input:disabled,.fctl select:disabled{opacity:.5;cursor:not-allowed}
   .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
     border:1px solid var(--border-strong);color:var(--text-secondary);margin-left:6px}
@@ -37,6 +48,23 @@
   .note{font-size:11px;color:var(--text-tertiary);margin-top:4px;line-height:1.6}
   .note.warn{color:#b45309}
   [data-theme="dark"] .note.warn{color:#fbbf24}
+  /* 预设卡:三档并排,每档标出它实际会写入的数值。 */
+  .presets{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .preset{flex:1 1 180px;text-align:left;font:inherit;cursor:pointer;padding:11px 13px;
+    color:var(--text);background:var(--surface-2);border:1px solid var(--border-strong);
+    border-radius:var(--radius-sm)}
+  .preset:disabled{cursor:default}
+  .preset.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+  .preset .pn{font-size:13px;font-weight:500;display:block;margin-bottom:4px}
+  .preset .pv{font-size:11px;color:var(--text-tertiary);line-height:1.7;display:block}
+  /* 折叠区:标题整行可点。收起时不渲染内容,搜索命中时强制展开。 */
+  .disc{margin-bottom:12px}
+  .dhead{display:flex;align-items:center;gap:8px;padding:11px 14px;cursor:pointer;
+    user-select:none;background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius);box-shadow:var(--shadow)}
+  .dhead .caret{color:var(--text-tertiary);font-size:11px;width:10px}
+  .dhead .dt{font-size:13px;color:var(--text);font-weight:500}
+  .dhead .dc{margin-left:auto;font-size:12px;color:var(--text-tertiary)}
   /* 项目行:整块可展开。收起时只给一行摘要,展开后才是覆盖列表 + 添加控件。 */
   .prow{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;
     background:var(--surface);box-shadow:var(--shadow)}
@@ -88,11 +116,21 @@
   // 展开状态按 project id 记住:保存后要重新拉数据重渲染,不记的话每次保存都会
   // 把用户正在编辑的那一行收起来。
   var OPEN={};
+  var ADV=false;   // 高级区是否展开
+  var Q='';        // 搜索词
 
   function toast(msg,bad){
     var el=document.getElementById('toast');
     el.textContent=msg; el.className='toast show'+(bad?' bad':'');
     setTimeout(function(){ el.className='toast'+(bad?' bad':''); },3600);
+  }
+
+  // 搜索命中标签、说明与 key 三处。只搜标签会让人搜不到自己在 JSON 里见过的
+  // key 名,而 key 名往往正是他来这一页的原因。
+  function hit(f){
+    if(!Q) return true;
+    var q=Q.toLowerCase();
+    return (f.label+' '+f.description+' '+f.key).toLowerCase().indexOf(q)>=0;
   }
 
   function control(f,target){
@@ -110,8 +148,14 @@
     } else {
       input='<input type="text" id="'+id+'" value="'+esc(f.effective)+'" />';
     }
-    return '<div class="fctl">'+input+'<button data-ctl="'+id+'" data-key="'+esc(f.key)+
-      '" data-target="'+esc(JSON.stringify(target))+'">'+esc(DATA.strings.save)+'</button></div>';
+    var t=esc(JSON.stringify(target));
+    // 恢复默认只在这一层真的有值时出现 —— 对一个本就继承来的项提供"恢复默认",
+    // 点下去什么也不会发生,是一个骗人的控件。
+    var reset=f.modified
+      ? '<button class="ghost" data-reset="'+esc(f.key)+'" data-target="'+t+'">'+
+        esc(DATA.strings.reset)+'</button>' : '';
+    return '<div class="fctl">'+input+reset+'<button data-ctl="'+id+'" data-key="'+esc(f.key)+
+      '" data-target="'+t+'">'+esc(DATA.strings.save)+'</button></div>';
   }
 
   function row(f,target){
@@ -120,28 +164,78 @@
     // 往往就是答案。
     var envNote=(f.envVar&&f.source!=='env')
       ? '<div class="note">'+esc(fmt(DATA.strings['env-available'],{name:f.envVar}))+'</div>' : '';
-    return '<div class="frow"><div>'+
+    return '<div class="frow'+(f.modified?' mod':'')+'"'+
+      (f.modified?' title="'+esc(DATA.strings.modified)+'"':'')+'><div>'+
       '<div class="flabel">'+esc(f.label)+tag+'</div>'+
       '<div class="fkey">'+esc(f.key)+'</div>'+
       '<div class="fdesc">'+esc(f.description)+'</div>'+envNote+
       '</div>'+control(f,target)+'</div>';
   }
 
-  function machineSection(s){
-    var html='<section class="sec"><h2>'+esc(s['machine.title'])+'</h2>'+
-      '<p class="sub">'+esc(s['machine.intro'])+'</p>';
-    GROUP_ORDER.forEach(function(g){
-      var fields=DATA.machine.filter(function(f){ return f.group===g; });
-      if(!fields.length) return;
-      html+='<div class="card"><h3>'+esc(s['group.'+g])+'</h3>'+
-        fields.map(function(f){ return row(f,{scope:'machine'}); }).join('')+'</div>';
-    });
-    return html+'</section>';
+  // ---- 提醒频率预设 -------------------------------------------------------
+  // 三档并排,每档展开它实际会写入的 8 个数值。只给档位名而不给数值,等于让用户
+  // 在三个不知道含义的词里选一个。
+  function presetCard(s){
+    var ap=DATA.archivePreset;
+    var byKey={}; DATA.machine.forEach(function(f){ byKey[f.key]=f; });
+    var cards=ap.options.map(function(o){
+      var lines=ap.keys.map(function(k){
+        var f=byKey[k];
+        return esc((f?f.label:k)+'：'+o.values[k]);
+      }).join('<br>');
+      return '<button class="preset'+(ap.active===o.id?' on':'')+'" data-preset="'+esc(o.id)+
+        '"><span class="pn">'+esc(s['preset.'+o.id])+'</span><span class="pv">'+lines+'</span></button>';
+    }).join('');
+    var custom=ap.active===null
+      ? '<div class="note">'+esc(s['preset.custom'])+' — '+esc(s['preset.custom-hint'])+'</div>' : '';
+    return '<div class="card"><h3>'+esc(s['preset.title'])+'</h3>'+
+      '<div class="fdesc">'+esc(s['preset.intro'])+'</div>'+custom+
+      '<div class="presets">'+cards+'</div></div>';
   }
 
-  function projectRow(p,s){
+  // ---- 常用 / 高级 --------------------------------------------------------
+  function commonSection(s){
+    var fields=DATA.machine.filter(function(f){ return f.tier==='common'&&hit(f); });
+    var html='<section class="sec"><h2>'+esc(s['machine.title'])+'</h2>'+
+      '<p class="sub">'+esc(s['machine.intro'])+'</p>';
+    // 预设卡本身是一项设置,搜索时按它覆盖的 8 个键是否命中来决定去留。
+    var presetHit=!Q||DATA.machine.some(function(f){
+      return DATA.archivePreset.keys.indexOf(f.key)>=0&&hit(f); });
+    var count=fields.length+(presetHit?1:0);
+    // 搜索时一节都没命中就整节不出现 —— 一个下面什么也没有的小标题读起来像
+    // 「这里本该有东西但坏了」。
+    if(Q&&!count) return {html:'',count:0};
+    if(presetHit) html+=presetCard(s);
+    if(fields.length){
+      html+='<div class="card">'+fields.map(function(f){
+        return row(f,{scope:'machine'}); }).join('')+'</div>';
+    }
+    return {html:html+'</section>',count:count};
+  }
+
+  function advancedSection(s){
+    var fields=DATA.machine.filter(function(f){ return f.tier==='advanced'&&hit(f); });
+    if(Q&&!fields.length) return {html:'',count:0};
+    // 搜索有词时强制展开:否则用户搜到东西却看见一个收起的盒子,等同于没搜到。
+    var open=ADV||!!Q;
+    var head='<div class="dhead" data-adv="1"><span class="caret">'+(open?'▾':'▸')+
+      '</span><span class="dt">'+esc(s['advanced.title'])+'</span>'+
+      '<span class="dc">'+esc(fmt(s['advanced.count'],{count:fields.length}))+'</span></div>';
+    var body='';
+    if(open&&fields.length){
+      body='<p class="sub" style="margin:10px 0 8px">'+esc(s['advanced.intro'])+'</p>';
+      GROUP_ORDER.forEach(function(g){
+        var inGroup=fields.filter(function(f){ return f.group===g; });
+        if(!inGroup.length) return;
+        body+='<div class="card"><h3>'+esc(s['group.'+g])+'</h3>'+
+          inGroup.map(function(f){ return row(f,{scope:'machine'}); }).join('')+'</div>';
+      });
+    }
+    return {html:'<section class="sec disc">'+head+body+'</section>',count:fields.length};
+  }
+
+  function projectRow(p,s,open){
     var target={scope:'project',projectId:p.projectId};
-    var open=!!OPEN[p.projectId||p.path];
     var badges=(p.isCurrent?'<span class="tag cur">'+esc(s['projects.current'])+'</span>':'')+
       // 两种 origin 都是"不在机器登记表里",补救动作相同(回该仓库跑 fabric install)。
       (p.origin==='config-only'||p.origin==='current-only'
@@ -157,7 +251,7 @@
       body='<div class="note warn" style="padding:10px 0">'+esc(s['projects.unbound'])+'</div>';
     } else {
       body=p.overrides.map(function(f){ return row(f,target); }).join('');
-      // 可加的项 = 全机器那 18 个里,这个项目还没单独设过的 preference 键。
+      // 可加的项 = 全机器那些 preference 键里,这个项目还没单独设过的。
       var taken={}; p.overrides.forEach(function(f){ taken[f.key]=1; });
       var addable=DATA.machine.filter(function(f){
         return f.home==='preference' && !taken[f.key]; });
@@ -180,33 +274,53 @@
       (open?'<div class="pbody">'+body+'</div>':'')+'</div>';
   }
 
+  // 搜索必须穿透下面两节。只过滤全机器那一节的话,搜一个词会得到「没有匹配」加
+  // 三行仍然摆在那里的无关设置 —— 页面同时给出两个互相矛盾的答案。
   function projectsSection(s){
+    // 搜索时项目节只保留命中的覆盖项;搜到零项的项目整行不出现。
+    var rows=DATA.projects.map(function(p){
+      return {p:p,overrides:p.overrides.filter(hit)};
+    }).filter(function(r){ return !Q||r.overrides.length; });
+    var count=rows.reduce(function(n,r){ return n+r.overrides.length; },0);
+    if(Q&&!count) return {html:'',count:0};
+
     var html='<section class="sec"><h2>'+esc(s['projects.title'])+'</h2>'+
       '<p class="sub">'+esc(s['projects.intro'])+'</p>';
-    if(!DATA.projects.length){
+    if(!rows.length){
       // 空态是这台机器当前的真实状态,不是错误。给出可执行的下一步。
       html+='<div class="card"><div class="empty">'+esc(s['projects.empty'])+'<br>'+
         esc(s['projects.empty-hint'])+'</div></div>';
     } else {
-      html+=DATA.projects.map(function(p){ return projectRow(p,s); }).join('');
+      html+=rows.map(function(r){
+        // 搜索时把该项目当成只有命中的那几项,展开状态也强制打开 —— 否则搜到的
+        // 东西藏在一行收起的摘要后面,等同于没搜到。
+        var p=Q?Object.assign({},r.p,{overrides:r.overrides}):r.p;
+        return projectRow(p,s,Q?true:!!OPEN[p.projectId||p.path]);
+      }).join('');
     }
-    return html+'</section>';
+    return {html:html+'</section>',count:count};
   }
 
   function storesSection(s){
+    var rows=DATA.stores.map(function(st){
+      return {st:st,fields:st.fields.filter(hit)};
+    }).filter(function(r){ return !Q||r.fields.length; });
+    var count=rows.reduce(function(n,r){ return n+r.fields.length; },0);
+    if(Q&&!count) return {html:'',count:0};
+
     var html='<section class="sec"><h2>'+esc(s['stores.title'])+'</h2>'+
       '<p class="sub">'+esc(s['stores.intro'])+'</p>';
-    if(!DATA.stores.length){
+    if(!rows.length){
       html+='<div class="card"><div class="empty">'+esc(s['stores.empty'])+'</div></div>';
     } else {
-      html+=DATA.stores.map(function(st){
-        return '<div class="card"><h3>'+esc(st.alias)+
-          (st.personal?'<span class="tag">'+esc(s['stores.personal'])+'</span>':'')+'</h3>'+
-          st.fields.map(function(f){
-            return row(f,{scope:'store',storeUuid:st.storeUuid}); }).join('')+'</div>';
+      html+=rows.map(function(r){
+        return '<div class="card"><h3>'+esc(r.st.alias)+
+          (r.st.personal?'<span class="tag">'+esc(s['stores.personal'])+'</span>':'')+'</h3>'+
+          r.fields.map(function(f){
+            return row(f,{scope:'store',storeUuid:r.st.storeUuid}); }).join('')+'</div>';
       }).join('');
     }
-    return html+'</section>';
+    return {html:html+'</section>',count:count};
   }
 
   function remoteCard(r,s){
@@ -223,47 +337,96 @@
 
   function render(){
     var s=DATA.strings;
+    var common=commonSection(s), adv=advancedSection(s);
+    var proj=projectsSection(s), stores=storesSection(s);
+    var total=common.count+adv.count+proj.count+stores.count;
+    // 搜索无结果时说清楚是搜索的结果,而不是渲染一片空白让人以为页面坏了。
+    var none=(Q&&total===0)
+      ? '<div class="card"><div class="empty">'+esc(fmt(s['search-empty'],{q:Q}))+'</div></div>' : '';
+    // 远程嵌入卡是状态而非设置项,搜索时一并让位 —— 留着它会让「没有匹配」下面
+    // 仍然挂着一张卡。
+    var remote=Q?'':remoteCard(DATA.remoteEmbedding,s);
+
     document.getElementById('main').innerHTML=
       '<p class="intro">'+esc(s.intro)+'</p>'+
-      machineSection(s)+projectsSection(s)+storesSection(s)+
-      remoteCard(DATA.remoteEmbedding,s);
+      '<div class="searchbar"><input id="q" type="search" placeholder="'+esc(s.search)+
+        '" value="'+esc(Q)+'" /></div>'+
+      none+common.html+adv.html+proj.html+stores.html+remote;
 
-    Array.prototype.forEach.call(document.querySelectorAll('[data-toggle]'),function(el){
+    var q=document.getElementById('q');
+    q.addEventListener('input',function(){
+      Q=q.value.trim(); render();
+      // 重渲染会换掉这个 input,焦点与光标要自己接回去,否则第二个字符打不进去。
+      var n=document.getElementById('q');
+      n.focus(); n.setSelectionRange(n.value.length,n.value.length);
+    });
+
+    document.querySelectorAll('[data-adv]').forEach(function(el){
+      el.addEventListener('click',function(){ ADV=!ADV; render(); });
+    });
+    document.querySelectorAll('[data-toggle]').forEach(function(el){
       el.addEventListener('click',function(){
         var k=el.getAttribute('data-toggle'); OPEN[k]=!OPEN[k]; render();
       });
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-ctl]'),function(btn){
+    document.querySelectorAll('[data-ctl]').forEach(function(btn){
       btn.addEventListener('click',function(){
         var ctl=document.getElementById(btn.getAttribute('data-ctl'));
-        if(ctl) save(btn.getAttribute('data-key'),ctl.value,
-          JSON.parse(btn.getAttribute('data-target')),btn);
+        if(ctl) post('/api/config/set',{key:btn.getAttribute('data-key'),value:ctl.value,
+          action:'set',target:JSON.parse(btn.getAttribute('data-target'))},btn,
+          function(b){ return fmt(DATA.strings.saved,{target:b.target}); });
       });
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-add]'),function(btn){
+    document.querySelectorAll('[data-reset]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        post('/api/config/set',{key:btn.getAttribute('data-reset'),action:'reset',
+          target:JSON.parse(btn.getAttribute('data-target'))},btn,
+          function(b){ return fmt(DATA.strings['reset-done'],{target:b.target}); });
+      });
+    });
+    document.querySelectorAll('[data-preset]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var id=btn.getAttribute('data-preset');
+        post('/api/config/preset',{preset:id,target:{scope:'machine'}},btn,function(b){
+          return fmt(DATA.strings['preset.applied'],
+            {name:DATA.strings['preset.'+id],count:(b.applied||[]).length});
+        });
+      });
+    });
+    document.querySelectorAll('[data-add]').forEach(function(btn){
       btn.addEventListener('click',function(){
         var sel=document.getElementById(btn.getAttribute('data-add'));
         if(!sel||!sel.value) return;
         // 新覆盖先落成当前生效值:用户点"添加"是要把这一项固定下来,不是要改它。
         var f=DATA.machine.filter(function(m){ return m.key===sel.value; })[0];
-        save(sel.value,f?f.effective:'',JSON.parse(btn.getAttribute('data-target')),btn);
+        post('/api/config/set',{key:sel.value,value:f?f.effective:'',action:'set',
+          target:JSON.parse(btn.getAttribute('data-target'))},btn,
+          function(b){ return fmt(DATA.strings.saved,{target:b.target}); });
       });
     });
   }
 
-  function save(key,value,target,btn){
+  // 三个写动作共用一条通道:成功都要重新拉数据(见下),失败都要说清原因。
+  function post(url,body,btn,ok){
     btn.disabled=true;
-    fetch('/api/config/set',{
-      method:'POST', cache:'no-store',
-      headers:{'content-type':'application/json'},
-      body:JSON.stringify({key:key,value:value,target:target})
-    })
+    fetch(url,{method:'POST',cache:'no-store',
+      headers:{'content-type':'application/json'},body:JSON.stringify(body)})
     .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
     .then(function(res){
-      if(!res.ok){ throw new Error(res.body&&res.body.error?res.body.error:'HTTP error'); }
-      toast(fmt(DATA.strings.saved,{target:res.body.target}));
-      // 重新拉一次而不是乐观更新:写进哪一层、有没有被 env 顶掉,只有重新 resolve
-      // 才知道。乐观更新会显示一个我们并未验证过的状态。
+      if(!res.ok){
+        // 预设是逐键写的,部分失败时已经改了一部分。把两边都说出来,否则用户会
+        // 以为什么都没变而去找错方向。
+        if(res.body&&res.body.failed){
+          toast(fmt(DATA.strings['preset.partial'],{count:res.body.failed.length,
+            keys:res.body.failed.map(function(f){ return f.key; }).join(', ')}),true);
+          return load();
+        }
+        throw new Error(res.body&&res.body.error?res.body.error:'HTTP error');
+      }
+      toast(ok(res.body));
+      // 重新拉一次而不是乐观更新:写进哪一层、有没有被 env 顶掉、这一改让预设变
+      // 成了哪一档,只有重新 resolve 才知道。乐观更新会显示一个我们并未验证过的
+      // 状态。
       return load();
     })
     .catch(function(e){

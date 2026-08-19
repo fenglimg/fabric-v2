@@ -114,6 +114,39 @@ describe("write endpoints over HTTP", () => {
     expect((await fetch(`${base}/api/config/set`, { method: "GET" })).status).toBe(405);
   });
 
+  // The THIRD route. Each new write endpoint is a fresh chance to add a handler
+  // and forget the guard, and the guard being table-driven is only a safety net
+  // if membership in the table is what gets asserted — not the handler's own
+  // first line.
+  it("refuses GET and a foreign Origin on /api/config/preset", async () => {
+    const { base } = await start();
+    expect((await fetch(`${base}/api/config/preset`, { method: "GET" })).status).toBe(405);
+
+    const res = await fetch(`${base}/api/config/preset`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ preset: "relaxed", target: { scope: "machine" } }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses an illegal preset id from a legitimate Origin (400, nothing applied)", async () => {
+    const { base, port } = await start();
+    const res = await fetch(`${base}/api/config/preset`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: `http://127.0.0.1:${String(port)}`,
+      },
+      body: JSON.stringify({ preset: "../../etc/passwd", target: { scope: "machine" } }),
+    });
+    // 400, not 403: the guard let it through and the HANDLER refused the id.
+    // The distinction is the point — a 403 here would leave the closed enum
+    // untested.
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("unknown preset");
+  });
+
   it("refuses a config POST carrying a foreign Origin (403)", async () => {
     const { base } = await start();
     const res = await fetch(`${base}/api/config/set`, {

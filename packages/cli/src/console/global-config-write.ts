@@ -36,6 +36,7 @@ import {
   resetFieldValue,
   writeFieldValue,
 } from "./config-resolve.js";
+import { ARCHIVE_PRESET_KEYS, getArchivePreset } from "./config-presentation.js";
 import { mergeProjectList } from "./project-list.js";
 
 export type ConfigWriteResult =
@@ -219,4 +220,94 @@ export async function applyGlobalConfigEdit(
   } catch (error) {
     return bad(400, error instanceof Error ? error.message : String(error));
   }
+}
+
+export interface ConfigPresetRequest {
+  preset?: unknown;
+  target?: unknown;
+}
+
+export type ConfigPresetResult =
+  | { ok: true; target: string; applied: readonly string[] }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      /** Present only on a PARTIAL failure — see {@link applyGlobalConfigPreset}. */
+      applied?: readonly string[];
+      failed?: readonly { key: string; error: string }[];
+    };
+
+/**
+ * `POST /api/config/preset` — apply one reminder-frequency preset.
+ *
+ * Eight keys, written one at a time through the SAME `writeFieldValue` a single
+ * edit uses. Deliberately not a bulk write path: a second way to reach the
+ * config file would be a second place for the home routing and validation to be
+ * got wrong, and this endpoint's whole content is "do the thing the user could
+ * have done eight times by hand".
+ *
+ * There is no rollback, and none is pretended. Each key lands in its own atomic
+ * write, so a failure partway through leaves some applied — reporting "failed"
+ * flat would tell the user their configuration is unchanged when half of it
+ * changed, and they would go looking for the wrong problem. The partial result
+ * names both sides so the page can say exactly what happened.
+ */
+export async function applyGlobalConfigPreset(
+  body: ConfigPresetRequest | null | undefined,
+  launchDir: string,
+): Promise<ConfigPresetResult> {
+  const presetId = body?.preset;
+  if (typeof presetId !== "string" || presetId.length === 0) {
+    return bad(400, "preset is required");
+  }
+  const preset = getArchivePreset(presetId);
+  if (preset === undefined) {
+    return bad(400, `unknown preset: ${presetId}`);
+  }
+
+  const global = asPlainObject(loadGlobalConfig(resolveGlobalRoot()));
+  const target = await resolveTarget(body?.target, global, launchDir);
+  if ("ok" in target) return target;
+  // Every preset key is a `preference` field, so a store target could only ever
+  // write into a file nothing reads it from.
+  if (target.scope === "store") {
+    return bad(400, 'reminder frequency cannot be set at scope "store"');
+  }
+
+  const ctx = buildPanelContext({
+    projectId: target.scope === "project" ? target.projectId : null,
+    storeRoot: null,
+    applyEnv: false,
+    global,
+  });
+
+  const applied: string[] = [];
+  const failed: { key: string; error: string }[] = [];
+  let written = "";
+  for (const key of ARCHIVE_PRESET_KEYS) {
+    const field = getPanelFieldByKey(key);
+    // A preset key that is no longer a panel field means the schema moved and
+    // this table did not. Skipping it loudly is better than writing it blind:
+    // `writeFieldValue` needs the field's home to know where it even goes.
+    if (field === undefined) {
+      failed.push({ key, error: "not a configurable key" });
+      continue;
+    }
+    try {
+      written = await writeFieldValue(field, preset.values[key], ctx, target.scope === "project");
+      applied.push(key);
+    } catch (error) {
+      failed.push({ key, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  if (failed.length > 0) {
+    return {
+      ...bad(409, `applied ${applied.length}/${ARCHIVE_PRESET_KEYS.length} settings`),
+      applied,
+      failed,
+    };
+  }
+  return { ok: true, target: written, applied };
 }

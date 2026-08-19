@@ -75,6 +75,24 @@ export const zhCNMessages: Messages = {
   "cli.console.config.group.B_hint_threshold": "提醒阈值",
   "cli.console.config.group.C_audit": "审计",
   "cli.console.config.group.D_behavior": "行为",
+  "cli.console.config.search": "搜索设置",
+  "cli.console.config.search-empty": "没有匹配「{q}」的设置项。",
+  "cli.console.config.advanced.title": "高级",
+  "cli.console.config.advanced.intro": "改动前需要知道后果的项。默认值适用于大多数情况。",
+  "cli.console.config.advanced.count": "{count} 项",
+  "cli.console.config.modified": "已在此处设置,不再跟随下层",
+  "cli.console.config.reset": "恢复默认",
+  "cli.console.config.reset-done": "已从 {target} 移除,改由下层决定。",
+  "cli.console.config.preset.title": "提醒频率",
+  "cli.console.config.preset.intro":
+    "8 项提醒阈值一起设定。当前档位由这 8 项的实际取值反推,不单独存档位名。",
+  "cli.console.config.preset.custom": "自定义",
+  "cli.console.config.preset.custom-hint": "这 8 项的取值不完全等于任何一档。逐项取值见下方高级区。",
+  "cli.console.config.preset.relaxed": "低频",
+  "cli.console.config.preset.standard": "标准",
+  "cli.console.config.preset.attentive": "高频",
+  "cli.console.config.preset.applied": "已按「{name}」设置 {count} 项。",
+  "cli.console.config.preset.partial": "{count} 项未能写入:{keys}。其余已生效。",
   "cli.console.config.save": "保存",
   "cli.console.config.saved": "已保存到 {target}。",
   "cli.console.config.save-failed": "保存失败:{reason}",
@@ -242,70 +260,72 @@ export const zhCNMessages: Messages = {
   "cli.config.errors.no-project-id":
     "本仓库还没有 project_id — 先跑 `fabric install`，或改用 --scope defaults 写到全机器默认。",
   "cli.config.errors.no-enum-options": "该字段没有可选枚举值 — 已跳过。",
-  // 11 个面板字段标签（A 组 2 个 + B 组 8 个 + C 组 1 个）。
+  // 19 个面板字段的标签与说明。语域对齐 VS Code 设置文档 / Raycast 手册：陈述句、
+  // 说清后果、给出实际取值，不用口语化修辞——这里的每一句都是用户判断「这一项要不
+  // 要动」的唯一依据。
   "cli.config.fields.fabric_language.label": "语言",
   "cli.config.fields.fabric_language.description":
-    "Fabric 的全局语言基调（界面与知识统一），保存到 ~/.fabric/fabric-global.json。",
+    "界面文案与知识渲染使用的语言。保存在 ~/.fabric/fabric-global.json，对这台机器上的所有项目生效。",
   "cli.config.fields.default_layer_filter.label": "默认检索范围",
   "cli.config.fields.default_layer_filter.description":
-    "AI 找知识时默认翻哪一层：team 只翻团队库 / personal 只翻个人库 / both 两个都翻（默认）。",
-  "cli.config.fields.archive_hint_hours.label": "归档提醒：隔多久提一次",
+    "AI 检索知识时默认覆盖的层：team 仅团队库，personal 仅个人库，both 两者都覆盖。仅改变默认值，单次检索仍可另行指定。",
+  "cli.config.fields.archive_hint_hours.label": "归档提醒间隔",
   "cli.config.fields.archive_hint_hours.description":
-    "距离上次归档超过这么多小时，就提醒你「有东西该记下来了」。调大＝更少打扰，调小＝催得更勤。",
+    "距上次归档超过该小时数后，会话结束时提示有内容待归档。数值越大，提醒越少。",
   "cli.config.fields.archive_hint_cooldown_hours.label":
-    "归档提醒：被忽略后静默多久",
+    "归档提醒冷却",
   "cli.config.fields.archive_hint_cooldown_hours.description":
-    "你没理会归档提醒后，它闭嘴这么多小时再说第二次。防止同一件事反复念。",
+    "一次归档提醒未被采纳后，该小时数内不再就同一件事重复提醒。",
   "cli.config.fields.archive_edit_threshold.label":
-    "归档提醒：改多少次文件后触发",
+    "归档提醒的编辑次数阈值",
   "cli.config.fields.archive_edit_threshold.description":
-    "累计改了这么多次文件就提醒归档（和上面的小时数是「或」的关系，谁先到算谁）。调小＝更早提醒。",
-  "cli.config.fields.underseed_node_threshold.label": "知识库「太空」的门槛",
+    "累计编辑达到该次数即提示归档，与「归档提醒间隔」取先到者。数值越小，提醒越早。",
+  "cli.config.fields.underseed_node_threshold.label": "知识库未成型阈值",
   "cli.config.fields.underseed_node_threshold.description":
-    "知识条目少于这个数，Fabric 认为知识库还没建起来，会建议你先补一批。属于知识库自身属性，写在团队 store 里、全团队共享。",
+    "条目数少于该值时，Fabric 判定知识库尚未成型并建议先补充一批。该值属于知识库本身，写入团队 store，对使用该库的所有人生效。",
   "cli.config.fields.review_hint_pending_count.label":
-    "待审提醒：积压多少条时提",
+    "待审提醒的条数阈值",
   "cli.config.fields.review_hint_pending_count.description":
-    "AI 归档的草稿要你过目才进库。攒到这么多条就提醒你去审一批。",
+    "待审草稿累计达到该条数时提示审核。AI 归档的条目须经审核才进入知识库。",
   "cli.config.fields.review_hint_pending_age_days.label":
-    "待审提醒：放多少天时提",
+    "待审提醒的天数阈值",
   "cli.config.fields.review_hint_pending_age_days.description":
-    "有草稿放了这么多天还没审，就提醒你。防止少量草稿一直被遗忘。",
+    "最早一条待审草稿存在超过该天数时提示审核，与条数阈值取先到者。",
   "cli.config.fields.review_stale_pending_days.label":
-    "待审草稿「放太久」的天数",
+    "待审草稿的过期天数",
   "cli.config.fields.review_stale_pending_days.description":
-    "审核时，超过这个天数的草稿会被单独拎出来让你「要么处理、要么丢掉」，不让长尾堆积。",
-  "cli.config.fields.maintenance_hint_days.label": "体检提醒：隔多少天提一次",
+    "审核时，存在超过该天数的草稿会被单独列出，要求处理或丢弃。",
+  "cli.config.fields.maintenance_hint_days.label": "体检提醒间隔",
   "cli.config.fields.maintenance_hint_days.description":
-    "距离上次跑 `fabric doctor` 超过这么多天，提醒你做一次知识库体检。",
+    "距上次运行 fabric doctor 超过该天数后提示做一次知识库体检。",
   "cli.config.fields.maintenance_hint_cooldown_days.label":
-    "体检提醒：被忽略后静默多少天",
+    "体检提醒冷却",
   "cli.config.fields.maintenance_hint_cooldown_days.description":
-    "你没理会体检提醒后，它闭嘴这么多天再说第二次。",
-  "cli.config.fields.audit_mode.label": "改动审计严格度",
+    "一次体检提醒未被采纳后，该天数内不再重复提醒。",
+  "cli.config.fields.audit_mode.label": "人工锁定内容的审计强度",
   "cli.config.fields.audit_mode.description":
-    "检查「人工锁定的内容被改动」时有多严：strict 严格拦 / warn 只警告（推荐）/ off 不检查。",
-  "cli.config.fields.nudge_mode.label": "提示音量",
+    "检测到人工锁定的知识被改动时：strict 阻断操作，warn 记录警告并继续，off 不检测。",
+  "cli.config.fields.nudge_mode.label": "提示详细程度",
   "cli.config.fields.nudge_mode.description":
-    "你能看到多少提示：silent 全静音 / minimal 只留关键 / normal 正常 / verbose 什么都说。只影响你看到的，不影响 AI 拿到的知识——静音也不会让 AI 变笨。",
-  "cli.config.fields.cite_policy_enabled.label": "改文件前先查知识库",
+    "命令行中显示多少 Fabric 提示：silent 不显示，minimal 仅关键提示，normal 常规，verbose 全部。只影响显示，不改变 AI 检索到的知识。",
+  "cli.config.fields.cite_policy_enabled.label": "编辑前检索提示",
   "cli.config.fields.cite_policy_enabled.description":
-    "开启后，AI 改文件前会被提醒先查一下相关知识（不阻塞，只提醒）。关掉＝完全不提。",
-  "cli.config.fields.self_archive_policy_enabled.label": "AI 自动提议归档",
+    "开启后，AI 修改文件前会收到「先检索相关知识」的提示。是提示，不阻断编辑。",
+  "cli.config.fields.self_archive_policy_enabled.label": "AI 主动提议归档",
   "cli.config.fields.self_archive_policy_enabled.description":
-    "开启后，AI 察觉到「这个决定值得记下来」时会自己发起归档（仍需你审核才进库）。关掉＝只有你主动叫它才归档。",
-  "cli.config.fields.cite_recall_nudge.label": "未查知识库时提醒",
+    "开启后，AI 判断某个决定值得留存时会自行发起归档。结果进入待审，经你审核后才入库。",
+  "cli.config.fields.cite_recall_nudge.label": "未检索即编辑的提醒",
   "cli.config.fields.cite_recall_nudge.description":
-    "AI 没查知识库就动手改文件时，给一句软提醒。嫌啰嗦可以关掉，不影响归档和检索。",
-  "cli.config.fields.fabric_event_retention_days.label": "活动日志保留天数",
+    "AI 未检索知识库就修改文件时追加一条提醒。关闭不影响检索与归档本身。",
+  "cli.config.fields.fabric_event_retention_days.label": "活动日志保留期",
   "cli.config.fields.fabric_event_retention_days.description":
-    "本机活动流水保留多久（7 精简 / 30 均衡 / 90 便于回溯）。超期的会归档到旁边的文件，不会直接删掉。",
-  "cli.config.fields.embed_enabled.label": "语义检索（按意思找，不只按词）",
+    "本机活动记录保留的天数：7 最精简，30 均衡，90 便于回溯。超期记录转存到相邻的归档文件，不删除。",
+  "cli.config.fields.embed_enabled.label": "语义检索",
   "cli.config.fields.embed_enabled.description":
-    "开启后，问法和原文用词不一样也能找到（中文尤其明显）。注意这只是意图开关：真正生效还要 server 能加载 fastembed、模型已下载（首次检索时自动下到 ~/.fabric/cache/embed）。用 `fabric info recall` 看实际状态。",
-  "cli.config.fields.fusion.label": "检索排序方式",
+    "开启后，用词与原文不同的提问也能命中（中文差异尤其明显）。这是意图开关：实际生效还需 server 能加载 fastembed 且模型已下载（首次检索时下载到 ~/.fabric/cache/embed）。用 fabric info recall 查看实际状态。",
+  "cli.config.fields.fusion.label": "检索结果排序策略",
   "cli.config.fields.fusion.description":
-    "关键词命中和语义相似怎么合成排名：auto 自动挑（默认，推荐）/ rrf 两者平权（语义更管用）/ additive 关键词主导。没把握就留 auto——它会在语义通道真的出分时才启用 rrf。",
+    "关键词命中与语义相似度的合成方式：auto 按语义通道是否出分自动选择，rrf 两者等权，additive 关键词主导。",
 
   "cli.doctor.description":
     "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）",
