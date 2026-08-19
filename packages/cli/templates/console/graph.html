@@ -80,10 +80,24 @@
   function clientToUser(cx,cy){ var pt=svg.createSVGPoint(); pt.x=cx; pt.y=cy; var m=svg.getScreenCTM(); return m?pt.matrixTransform(m.inverse()):{x:cx,y:cy}; }
   function truncate14(s){ s=String(s||''); return s.length>14?s.slice(0,14)+'…':s; }
 
-  fetch('/api/knowledge?all='+(all?'1':'0'),{cache:'no-store'})
-    .then(function(r){return r.json()})
+  fetch('/api/knowledge?all='+(all?'1':'0')+FabricScope.param('&'),{cache:'no-store'})
+    .then(function(r){
+      if(!r.ok){
+        // 作用域打不开时说明原因与下一步,而不是渲染一张空图 —— 空图读起来是
+        // 「这个项目没有知识」,而真相是「这个作用域根本没打开」。
+        return r.json().catch(function(){return null;}).then(function(p){
+          var d=FabricScope.describeError(r.status,p);
+          throw Object.assign(new Error(d.title+' — '+d.body.replace(/<[^>]+>/g,'')),{shown:d});
+        });
+      }
+      return r.json();
+    })
     .then(function(d){ build(d.entries||[]); })
-    .catch(function(e){ document.body.insertAdjacentHTML('beforeend','<div class="gempty">加载失败: '+e.message+'</div>'); });
+    .catch(function(e){
+      var shown=e.shown||{title:'加载失败',body:e.message};
+      document.body.insertAdjacentHTML('beforeend',
+        '<div class="gempty"><strong>'+shown.title+'</strong><br>'+shown.body+'</div>');
+    });
 
   var nodes=[], edges=[], conn=[], orphans=[];
   function build(entries){

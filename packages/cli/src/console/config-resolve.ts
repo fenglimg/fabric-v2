@@ -149,6 +149,24 @@ export function buildPanelContext(input: {
 }
 
 /**
+ * The `project_id` of a directory, or null when it has none (an install that
+ * bound no store leaves the repo config `{}`).
+ *
+ * ONE producer, deliberately. This value decides three separate things — which
+ * row the config page marks `isCurrent`, which project ids the write channel
+ * accepts as members, and which scope the switcher opens by default — and the
+ * read and write sides once computed it differently: the read side passed the
+ * real id while the write side hard-coded `null`. The page then rendered an
+ * editable row for the current project whose every save answered 404, and the
+ * unit tests stayed green because they only exercised the write side. A shared
+ * helper makes that class of disagreement impossible rather than merely fixed.
+ */
+export function currentProjectIdOf(workspaceRoot: string): string | null {
+  const raw = readJsonObject(join(workspaceRoot, ...PANEL_CONFIG_RELATIVE_PATH)).project_id;
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+/**
  * Derive a context from a workspace: `project_id` out of the repo's identity
  * config, store root out of that repo's write target.
  *
@@ -156,13 +174,10 @@ export function buildPanelContext(input: {
  * console's current-project row — run in the user's own shell.
  */
 export function loadPanelContext(workspaceRoot: string): PanelContext {
-  const repo = readJsonObject(join(workspaceRoot, ...PANEL_CONFIG_RELATIVE_PATH));
-  const projectIdRaw = repo.project_id;
   const storeRoot = resolveWriteTargetStoreRoot(workspaceRoot);
   return {
     ...buildPanelContext({
-      projectId:
-        typeof projectIdRaw === "string" && projectIdRaw.length > 0 ? projectIdRaw : null,
+      projectId: currentProjectIdOf(workspaceRoot),
       storeRoot,
       applyEnv: true,
     }),

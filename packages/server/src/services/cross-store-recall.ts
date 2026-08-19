@@ -614,8 +614,20 @@ export interface StoreKnowledgeSummary {
 // by re-deriving + comparing the revision — so the empty-string fallback
 // (sha256("") when no store is in the read-set) is a safe degrade, identical to
 // the pre-cutover empty-meta behavior.
-export async function computeReadSetRevision(projectRoot: string): Promise<string> {
-  const revisionSource = (await walkReadSetStores(projectRoot))
+//
+// `allStores` mirrors collectStoreCanonicalEntries' option of the same name: the
+// console's machine-wide scope shows every mounted store, so its change-detection
+// poll must fingerprint the same set it renders. Fingerprinting the read-set
+// while displaying all stores would leave the page silently stale for every
+// store the current project does not read.
+export async function computeReadSetRevision(
+  projectRoot: string,
+  opts: { allStores?: boolean } = {},
+): Promise<string> {
+  const walked = opts.allStores
+    ? await walkAllMountedStores(projectRoot)
+    : await walkReadSetStores(projectRoot);
+  const revisionSource = walked
     .filter((entry) => !entry.file.includes("/knowledge/pending/"))
     .map((entry) => `${entry.qualifiedId}|${entry.contentHash}`)
     .sort()

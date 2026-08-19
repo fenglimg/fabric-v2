@@ -149,6 +149,35 @@ body {
   background: var(--accent-light);
 }
 
+/* --- scope switcher ------------------------------------------------------ */
+/* Injected into the navbar by shell.js, so it is chrome on every page and
+ * belongs here by this file's own rule. A native <select> rather than a custom
+ * menu: it is keyboard-accessible, closes correctly on every platform, and
+ * needs no open/close state — none of which a hand-rolled dropdown gets for
+ * free, and the control is one line of the UI, not a feature. */
+
+.scope-select {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  margin-left: 10px;
+  max-width: 260px;
+  cursor: pointer;
+}
+
+.scope-select:hover {
+  background: var(--surface-hover);
+}
+
+.scope-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* Atoms (.card / .row / .pill / .empty …) deliberately are NOT here yet.
  * Only one page uses them, and this file's rule is "shared means more than one
  * page". Parking them here early would also put generic class names in front of

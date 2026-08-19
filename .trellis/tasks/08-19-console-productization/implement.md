@@ -13,14 +13,14 @@
 
 ## W1 作用域参数化
 
-- [ ] W1-1 新增 `GET /api/scopes`（machine + 已登记项目 + stale 标记）。
-- [ ] W1-2 请求级作用域解析器：`scope` → `projectRoot`；stale / config-only 显式 409，**不回退**。
-- [ ] W1-3 `/api/status` 参数化 + machine 作用域返回跨项目总览（版本三处、项目列表、挂载库）。
-- [ ] W1-4 `/api/knowledge` 参数化；machine 作用域复用既有 `--all` 的按库浏览语义（不造第三种聚合）。
-- [ ] W1-5 `shell.css` + `shell.js` 加作用域切换器（跨页原子）；四个模板挂上；`lumen.html` 只改 navbar 与取数参数。
-- [ ] 验证：`cd packages/cli && pnpm exec vitest run __tests__/console-*.test.ts __tests__/preview-*.test.ts`
-- [ ] 测试要点：① 同一台机器上从两个不同目录启动，`?scope=X` 返回**相同**载荷（作用域来自参数而非启动目录）；② stale 项目返回 409 且不泄露回退数据。
-- [ ] 手工：`node packages/cli/dist/index.js preview` → 切换器切到另一个项目，四页作用域一致。
+- [x] W1-1 新增 `GET /api/scopes`（machine + 已登记项目 + stale 标记）。
+- [x] W1-2 请求级作用域解析器：`scope` → `projectRoot`；stale / config-only 显式 409，**不回退**。
+- [x] W1-3 `/api/status` 参数化 + machine 作用域返回跨项目总览（版本三处、项目列表、挂载库）。
+- [x] W1-4 `/api/knowledge` 参数化；machine 作用域复用既有 `--all` 的按库浏览语义（不造第三种聚合）。
+- [x] W1-5 `shell.css` + `shell.js` 加作用域切换器（跨页原子）；四个模板挂上；`lumen.html` 只改 navbar 与取数参数。
+- [x] 验证：`cd packages/cli && pnpm exec vitest run __tests__/console-*.test.ts __tests__/preview-*.test.ts`
+- [x] 测试要点：① 同一台机器上从两个不同目录启动，`?scope=X` 返回**相同**载荷（作用域来自参数而非启动目录）；② stale 项目返回 409 且不泄露回退数据。
+- [x] 手工：`node packages/cli/dist/index.js preview` → 切换器切到另一个项目，四页作用域一致。
 
 ## W2 设置页重构
 

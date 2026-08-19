@@ -34,12 +34,24 @@ export type ProjectOrigin =
    */
   | "registry-only"
   /**
-   * Has a config segment but no registry entry. Every project is this today
+   * Not registered, and its directory is unknown. Every project is this today
    * (the registry postdates these installs) and it stays possible afterwards
    * for a repo that was moved or deleted. Configurable — the id is in hand —
-   * but its path is unknown and must not be guessed.
+   * but its path must not be guessed.
    */
-  | "config-only";
+  | "config-only"
+  /**
+   * Not registered either, but the console is running INSIDE it, so its path is
+   * known first-hand rather than guessed. That is the whole difference from
+   * `config-only`, and it is the difference between a row labelled by directory
+   * and openable as a scope, and a bare uuid that cannot be opened at all.
+   *
+   * Whether it also has a config segment is deliberately not encoded here: it
+   * changes nothing a caller does. What every caller needs from origin is "is it
+   * registered" (no — same `fabric install` remedy as `config-only`) and "do we
+   * know where it is" (yes — unlike `config-only`).
+   */
+  | "current-only";
 
 export interface MergedProject {
   /** null only for `registry-only`. */
@@ -85,8 +97,18 @@ export function mergeProjectList(input: {
   configuredIds: readonly string[];
   /** `project_id` of the launch directory, when it has one. */
   currentProjectId: string | null;
+  /**
+   * Absolute path of the launch directory. Used ONLY to fill in the synthesized
+   * current-project row, which otherwise has no path and would be labelled with
+   * a bare uuid — and would be unopenable as a scope on exactly the machines
+   * where it is the only project there is.
+   *
+   * Required rather than optional: an optional path is how the read side and the
+   * write side came to build different lists from the same function.
+   */
+  currentProjectPath: string | null;
 }): MergedProject[] {
-  const { registry, configuredIds, currentProjectId } = input;
+  const { registry, configuredIds, currentProjectId, currentProjectPath } = input;
   const configured = new Set(configuredIds);
   const merged: MergedProject[] = [];
   const claimedIds = new Set<string>();
@@ -107,33 +129,38 @@ export function mergeProjectList(input: {
     });
   }
 
-  for (const id of configured) {
+  // Everything the registry did not account for, from BOTH remaining sources at
+  // once: ids that carry config overrides, and the launch directory's own id
+  // when it carries none.
+  //
+  // These were two separate loops, and the split was the bug: the launch
+  // directory's path was only filled in by the second one, which never ran when
+  // the first had already claimed the id. On the machine this was written for —
+  // where every project has a config segment and none is registered — that meant
+  // the ONE project whose directory we know first-hand was the one rendered as a
+  // bare uuid, and it was unopenable as a scope for want of a path we were
+  // standing in.
+  const unregistered = new Set(configured);
+  if (currentProjectId !== null) unregistered.add(currentProjectId);
+
+  for (const id of unregistered) {
     if (claimedIds.has(id)) continue;
+    // The path is used ONLY for the current row, where it is observed rather
+    // than looked up. No other id can be given one: nothing maps an id back to
+    // a directory (KT-PIT-0050), and guessing would put a wrong path on a row
+    // the user can click.
+    const isCurrent = id === currentProjectId;
+    const path = isCurrent ? currentProjectPath : null;
     merged.push({
       projectId: id,
-      path: null,
-      name: id,
-      origin: "config-only",
+      path,
+      name: path === null ? id : basename(path),
+      origin: path === null ? "config-only" : "current-only",
       // Staleness is a claim about a path. With no path, we do not know and
-      // must not imply that we do.
+      // must not imply that we do; with the path we are standing in, it is by
+      // construction not stale.
       stale: false,
-      isCurrent: id === currentProjectId,
-      editable: true,
-    });
-  }
-
-  // A project the console is sitting in but which neither source knows about
-  // (installed before the registry AND never configured) would otherwise be
-  // invisible on its own machine — the one project the user is most likely
-  // looking for.
-  if (currentProjectId !== null && !merged.some((p) => p.projectId === currentProjectId)) {
-    merged.push({
-      projectId: currentProjectId,
-      path: null,
-      name: currentProjectId,
-      origin: "config-only",
-      stale: false,
-      isCurrent: true,
+      isCurrent,
       editable: true,
     });
   }

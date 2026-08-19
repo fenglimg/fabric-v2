@@ -68,7 +68,16 @@
     return '<div class="card"><div class="guide"><span class="what">'+g.what+'</span>'+g.body+'</div></div>';
   }
 
-  function render(d){
+  function storeRows(stores, emptyLine){
+    if(!stores.length) return '<div class="guide">'+emptyLine+'</div>';
+    return stores.map(function(s){
+      return '<div class="row"><span class="k mono">'+esc(s.alias)+
+        (s.write?'<span class="pill write">写入</span>':'')+'</span>'+
+        '<span class="v">'+s.entryCount+' 条<span class="pill">'+esc(s.layer)+'</span></span></div>';
+    }).join('');
+  }
+
+  function renderProject(d){
     var html='';
     if(d.emptyReason){ html+=renderGuide(d.emptyReason); }
 
@@ -88,27 +97,92 @@
     html+='</div>';
 
     html+='<div class="card"><h2>read-set 内的 store</h2>';
-    if(!d.stores.length){
-      html+='<div class="guide">本项目 read-set 为空 —— 上方已说明原因与下一步。</div>';
-    } else {
-      d.stores.forEach(function(s){
-        html+='<div class="row"><span class="k mono">'+esc(s.alias)+
-          (s.write?'<span class="pill write">写入</span>':'')+'</span>'+
-          '<span class="v">'+s.entryCount+' 条<span class="pill">'+esc(s.layer)+'</span></span></div>';
-      });
-    }
+    html+=storeRows(d.stores,'本项目 read-set 为空 —— 上方已说明原因与下一步。');
     html+='</div>';
-    document.getElementById('main').innerHTML=html;
+    return html;
   }
 
-  fetch('/api/status',{cache:'no-store'})
-    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-    .then(render)
+  // 「本机」作用域回答的是另一个问题：这台机器上装了哪些项目、挂了哪些知识库、
+  // 哪些项目的安装版本落后于当前 CLI。不是把某个项目的状态改个标题。
+  var MACHINE_GUIDE={
+    'no-projects':{
+      what:'本机还没有登记任何项目',
+      body:'项目是在 <code>fabric install</code> 时登记的。装在注册表出现之前的项目不会自动补登 —— 在每个仓库里再跑一次 <code>fabric install</code> 即可。'
+    },
+    'no-stores':{
+      what:'本机没有挂载任何知识库',
+      body:'没有 store 就没有知识可浮现。用 <code>fabric store bind &lt;alias&gt;</code> 挂载一个。'
+    },
+    'no-entries':{
+      what:'挂载的知识库都是空的',
+      body:'store 在，但里面没有条目。用 <code>fabric-archive</code> 归档第一条，或 <code>fabric first-hit --seed</code> 灌入样例。'
+    }
+  };
+
+  function renderMachine(d){
+    var html='';
+    var g=MACHINE_GUIDE[d.emptyReason];
+    if(g){ html+='<div class="card"><div class="guide"><span class="what">'+g.what+'</span>'+g.body+'</div></div>'; }
+
+    html+='<div class="grid">';
+    html+='<div class="card"><h2>已知项目</h2><div class="big">'+d.projects.length+'</div></div>';
+    html+='<div class="card"><h2>挂载 store</h2><div class="big">'+d.stores.length+'</div></div>';
+    html+='<div class="card"><h2>知识条目</h2><div class="big">'+d.entryCount+'</div></div>';
+    html+='<div class="card"><h2>CLI 版本</h2><div class="big mono">'+esc(d.fabricVersion)+'</div></div>';
+    html+='</div>';
+
+    html+='<div class="card" style="margin-bottom:14px"><h2>项目</h2>';
+    if(!d.projects.length){
+      html+='<div class="guide">上方已说明原因与下一步。</div>';
+    } else {
+      d.projects.forEach(function(p){
+        var note='';
+        // 三种需要用户动手的状态各说各的下一步，别合成一个「异常」。
+        if(p.stale) note='<span class="pill">目录已不存在</span>';
+        else if(p.unregistered) note='<span class="pill">未登记目录</span>';
+        else if(p.installedVersion&&p.installedVersion!==d.fabricVersion)
+          note='<span class="pill">装的是 '+esc(p.installedVersion)+'</span>';
+        html+='<div class="row"><span class="k">'+esc(p.name)+
+          (p.isCurrent?'<span class="pill write">当前</span>':'')+'</span>'+
+          '<span class="v mono">'+(p.path?esc(p.path):'<span class="muted">路径未知</span>')+note+'</span></div>';
+      });
+      if(d.outdatedCount)
+        html+='<div class="guide">其中 '+d.outdatedCount+' 个项目的安装版本低于当前 CLI —— 在那些仓库里重跑 <code>fabric install</code> 升级。</div>';
+    }
+    html+='</div>';
+
+    html+='<div class="card"><h2>本机挂载的 store</h2>';
+    html+=storeRows(d.stores,'本机没有挂载任何 store。');
+    html+='</div>';
+    return html;
+  }
+
+  function fail(title, body){
+    document.getElementById('main').innerHTML=
+      '<div class="card"><div class="guide"><span class="what err">'+title+'</span>'+body+'</div></div>';
+  }
+
+  fetch('/api/status'+FabricScope.param(),{cache:'no-store'})
+    .then(function(r){
+      if(!r.ok){
+        // 作用域打不开时,原因和下一步来自服务端的 reason —— 不静默退回启动目录,
+        // 否则用户会以为自己在看 A 项目而其实在看 B。
+        return r.json().catch(function(){ return null; }).then(function(p){
+          var d=FabricScope.describeError(r.status,p);
+          throw Object.assign(new Error(d.body),{ shown:d });
+        });
+      }
+      return r.json();
+    })
+    .then(function(d){
+      document.getElementById('main').innerHTML=
+        d.scope==='machine' ? renderMachine(d) : renderProject(d);
+    })
     .catch(function(e){
       // 失败也要说清是什么失败了。一片空白读起来是「坏了」,不是「读不到」。
-      document.getElementById('main').innerHTML=
-        '<div class="card"><div class="guide"><span class="what err">读取状态失败</span>'+
-        esc(e.message)+'<br>控制台只连本机,通常是服务已停止 —— 回终端看 <code>fabric preview</code> 还在不在跑。</div></div>';
+      if(e.shown) fail(e.shown.title, e.shown.body);
+      else fail('读取状态失败', esc(e.message)+
+        '<br>控制台只连本机,通常是服务已停止 —— 回终端看 <code>fabric preview</code> 还在不在跑。');
     });
 })();
 </script>

@@ -143,7 +143,9 @@
     var target={scope:'project',projectId:p.projectId};
     var open=!!OPEN[p.projectId||p.path];
     var badges=(p.isCurrent?'<span class="tag cur">'+esc(s['projects.current'])+'</span>':'')+
-      (p.origin==='config-only'?'<span class="tag">'+esc(s['projects.unregistered'])+'</span>':'')+
+      // 两种 origin 都是"不在机器登记表里",补救动作相同(回该仓库跑 fabric install)。
+      (p.origin==='config-only'||p.origin==='current-only'
+        ?'<span class="tag">'+esc(s['projects.unregistered'])+'</span>':'')+
       (p.stale?'<span class="tag">'+esc(s['projects.stale'])+'</span>':'');
     var count=p.overrides.length
       ? fmt(s['projects.override-count'],{count:p.overrides.length})

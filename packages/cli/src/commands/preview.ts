@@ -20,8 +20,9 @@ import {
   type ConfigWriteRequest,
 } from "../console/global-config-write.js";
 import { openKnowledgeEntry, type Opener } from "../console/open-entry.js";
+import { listScopes, resolveScope, type ResolvedScope } from "../console/scope.js";
 import { isSameOriginLoopback } from "../console/security.js";
-import { collectConsoleStatus } from "../console/status.js";
+import { collectConsoleStatus, collectMachineStatus } from "../console/status.js";
 import { t } from "../i18n.js";
 import { loadProjectConfig } from "../store/project-config-io.js";
 
@@ -385,24 +386,6 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           res.end(html);
           return;
         }
-        if (pathname === "/api/knowledge") {
-          // Source selection: `?all=1` walks every mounted store, `?all=0` forces
-          // the project read-set, absent falls back to the server's default (the
-          // --all flag). Lets a future UI toggle switch source without a restart.
-          const allParam = new URL(req.url ?? "/", `http://${host}`).searchParams.get("all");
-          const allStores =
-            allParam === null ? defaultAllStores : allParam === "1" || allParam === "true";
-          const entries = await collectStoreCanonicalEntries(projectRoot, { allStores });
-          // writeStore lets the sidebar order the current project's write-target
-          // store group first. Read live (cheap) so a switch-write shows on refresh.
-          const writeStore = loadProjectConfig(projectRoot)?.active_write_store ?? null;
-          sendJson(res, 200, { entries: entries.map(toPreviewEntry), writeStore });
-          return;
-        }
-        if (pathname === "/api/revision") {
-          sendJson(res, 200, { revision: await computeReadSetRevision(projectRoot) });
-          return;
-        }
         if (pathname === "/status") {
           const html = readFileSync(findTemplatePath("console/status.html"), "utf8");
           res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
@@ -416,16 +399,90 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
           return;
         }
 
+        if (pathname === "/api/scopes") {
+          sendJson(res, 200, await listScopes(projectRoot));
+          return;
+        }
+
+        // Every scoped API endpoint resolves the SAME way, once, here. A
+        // per-handler resolution would let one page fall back to the launch
+        // directory while its neighbour refused — and a console whose four pages
+        // disagree about which project they show is worse than one that only
+        // ever showed the launch directory.
+        //
+        // Deliberately BELOW the HTML page routes: a bad `?scope=` must still
+        // serve the page, because the page is what renders the reason and the
+        // next step. Refusing the document would leave a blank tab.
+        const scoped = await resolveScope(reqUrl.searchParams.get("scope"), projectRoot);
+        if (!scoped.ok) {
+          sendJson(res, scoped.status, { error: scoped.error, reason: scoped.reason });
+          return;
+        }
+        const scope: ResolvedScope = scoped.scope;
+
+        if (pathname === "/api/knowledge") {
+          // Source selection: `?all=1` walks every mounted store, `?all=0` forces
+          // the project read-set, absent falls back to the server's default (the
+          // --all flag). Lets a future UI toggle switch source without a restart.
+          //
+          // Machine scope IS the all-stores view (KT-DEC-0079 semantics reused
+          // rather than a third aggregate invented), so it pins allStores on
+          // regardless of `?all=`.
+          const allParam = reqUrl.searchParams.get("all");
+          const allStores =
+            scope.kind === "machine"
+              ? true
+              : allParam === null
+                ? defaultAllStores
+                : allParam === "1" || allParam === "true";
+          const root = scope.kind === "machine" ? projectRoot : scope.projectRoot;
+          const entries = await collectStoreCanonicalEntries(root, { allStores });
+          // writeStore lets the sidebar order the current project's write-target
+          // store group first. Read live (cheap) so a switch-write shows on
+          // refresh. Machine scope has no write target — a per-project setting.
+          const writeStore =
+            scope.kind === "machine"
+              ? null
+              : (loadProjectConfig(scope.projectRoot)?.active_write_store ?? null);
+          sendJson(res, 200, { entries: entries.map(toPreviewEntry), writeStore });
+          return;
+        }
+        if (pathname === "/api/revision") {
+          // Fingerprints the set the page is actually showing — polling the
+          // read-set while rendering all stores would leave machine scope
+          // silently stale for every store this project does not read.
+          const revision =
+            scope.kind === "machine"
+              ? await computeReadSetRevision(projectRoot, { allStores: true })
+              : await computeReadSetRevision(scope.projectRoot);
+          sendJson(res, 200, { revision });
+          return;
+        }
         if (pathname === "/api/config") {
-          // `projectRoot` contributes exactly one thing downstream — which
-          // project is flagged `isCurrent`. Everything else comes off the
-          // machine's own state.
+          // Intentionally NOT re-rooted by `?scope=`. This page is machine-scoped
+          // by construction — it lists every project on the machine, and the
+          // scope selection only decides which row the client expands first,
+          // which the client can do from the URL without the server changing
+          // anything.
+          //
+          // Re-rooting would also make the payload dishonest: `loadPanelContext`
+          // sets `applyEnv: true`, which is only true for the console's OWN
+          // process environment. Pointing it at another project would report this
+          // shell's `FABRIC_*` variables as that project's effective values,
+          // which is the "the value you see is not the value in effect" failure
+          // KT-MOD-0004 exists to prevent.
           sendJson(res, 200, await collectGlobalConfigView(projectRoot));
           return;
         }
 
         if (pathname === "/api/status") {
-          sendJson(res, 200, await collectConsoleStatus(projectRoot));
+          sendJson(
+            res,
+            200,
+            scope.kind === "machine"
+              ? await collectMachineStatus(projectRoot)
+              : await collectConsoleStatus(scope.projectRoot),
+          );
           return;
         }
         sendJson(res, 404, { error: "not found" });

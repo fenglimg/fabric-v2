@@ -32,6 +32,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/alpha", "p-alpha")],
       configuredIds: ["p-alpha"],
       currentProjectId: null,
+      currentProjectPath: null,
     });
 
     // One row, not two — the whole point of merging on id.
@@ -52,6 +53,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/unbound")],
       configuredIds: [],
       currentProjectId: null,
+      currentProjectPath: null,
     });
 
     expect(only).toMatchObject({
@@ -69,6 +71,7 @@ describe("mergeProjectList", () => {
       registry: [],
       configuredIds: ["p-ghost"],
       currentProjectId: null,
+      currentProjectPath: null,
     });
 
     expect(only).toMatchObject({
@@ -89,6 +92,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/moved", "p-moved", true)],
       configuredIds: [],
       currentProjectId: null,
+      currentProjectPath: null,
     });
     expect(only?.stale).toBe(true);
   });
@@ -101,6 +105,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/other", "p-other")],
       configuredIds: ["p-other"],
       currentProjectId: "p-here",
+      currentProjectPath: null,
     });
 
     // Sorted by display name ("other" < "p-here"), not current-first — the
@@ -109,6 +114,83 @@ describe("mergeProjectList", () => {
     expect(rows.find((r) => r.projectId === "p-here")).toMatchObject({
       isCurrent: true,
       editable: true,
+      // No path was supplied, so the row honestly has none and falls back to the
+      // id for a label.
+      path: null,
+      name: "p-here",
+      origin: "config-only",
+    });
+  });
+
+  it("labels the synthesized row by directory when the launch path is known", () => {
+    // The path is known first-hand — the console is running in it. Falling back
+    // to the bare uuid there would put an unreadable label on the ONE project
+    // the user is standing in, which on a machine installed before the registry
+    // is the only project row that exists at all.
+    const rows = mergeProjectList({
+      registry: [],
+      configuredIds: [],
+      currentProjectId: "p-here",
+      currentProjectPath: "/repos/my-app",
+    });
+    expect(rows).toEqual([
+      {
+        projectId: "p-here",
+        path: "/repos/my-app",
+        name: "my-app",
+        // Its own origin, not `config-only`: origin drives what the page may
+        // claim, and claiming the directory is unknown while displaying it is a
+        // lie. Not `both` either — it is in neither source, and the page still
+        // owes the user the "re-run fabric install here" remedy.
+        origin: "current-only",
+        stale: false,
+        isCurrent: true,
+        editable: true,
+      },
+    ]);
+  });
+
+  it("fills in the launch directory's path even when its id is already configured", () => {
+    // The real machine's state, and the defect the browser caught: every project
+    // has a config segment and none is registered. The config segment claims the
+    // id first, so the row that would have carried the observed path was never
+    // reached — leaving the ONE project whose directory we know first-hand
+    // rendered as a bare uuid and unopenable as a scope.
+    //
+    // The fixture must have the SEGMENT and no registry entry; a fixture where
+    // the id is only current passes on the old code too.
+    const rows = mergeProjectList({
+      registry: [],
+      configuredIds: ["p-here"],
+      currentProjectId: "p-here",
+      currentProjectPath: "/repos/my-app",
+    });
+    expect(rows).toEqual([
+      {
+        projectId: "p-here",
+        path: "/repos/my-app",
+        name: "my-app",
+        origin: "current-only",
+        stale: false,
+        isCurrent: true,
+        editable: true,
+      },
+    ]);
+  });
+
+  it("does NOT hand the launch path to any other project's row", () => {
+    // The path is observed, not looked up — it describes exactly one row. Nothing
+    // maps an id back to a directory (KT-PIT-0050), so a second configured id
+    // must stay pathless rather than inherit the directory we happen to be in.
+    const rows = mergeProjectList({
+      registry: [],
+      configuredIds: ["p-here", "p-elsewhere"],
+      currentProjectId: "p-here",
+      currentProjectPath: "/repos/my-app",
+    });
+    expect(rows.find((r) => r.projectId === "p-elsewhere")).toMatchObject({
+      path: null,
+      name: "p-elsewhere",
       origin: "config-only",
     });
   });
@@ -118,6 +200,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/a", "p-a"), reg("/repos/b", "p-b")],
       configuredIds: ["p-a", "p-b"],
       currentProjectId: "p-b",
+      currentProjectPath: null,
     });
     expect(withCurrent.filter((r) => r.isCurrent).map((r) => r.projectId)).toEqual(["p-b"]);
 
@@ -125,6 +208,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/a", "p-a"), reg("/repos/b", "p-b")],
       configuredIds: ["p-a", "p-b"],
       currentProjectId: null,
+      currentProjectPath: null,
     });
     expect(noCurrent.some((r) => r.isCurrent)).toBe(false);
     expect(noCurrent.map((r) => r.projectId)).toEqual(["p-a", "p-b"]);
@@ -139,6 +223,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/zeta", "p-z"), reg("/repos/alpha", "p-a"), reg("/repos/mid", "p-m")],
       configuredIds: [],
       currentProjectId: "p-z",
+      currentProjectPath: null,
     });
     expect(rows.map((r) => r.name)).toEqual(["alpha", "mid", "zeta"]);
     expect(rows.find((r) => r.name === "zeta")?.isCurrent).toBe(true);
@@ -148,6 +233,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/zeta", "p-z"), reg("/repos/alpha", "p-a"), reg("/repos/mid", "p-m")],
       configuredIds: [],
       currentProjectId: null,
+      currentProjectPath: null,
     });
     expect(elsewhere.map((r) => r.name)).toEqual(rows.map((r) => r.name));
   });
@@ -157,7 +243,12 @@ describe("mergeProjectList", () => {
     // this; inventing a placeholder row here would make that impossible to
     // distinguish from a machine with one real project.
     expect(
-      mergeProjectList({ registry: [], configuredIds: [], currentProjectId: null }),
+      mergeProjectList({
+        registry: [],
+        configuredIds: [],
+        currentProjectId: null,
+        currentProjectPath: null,
+      }),
     ).toEqual([]);
   });
 
@@ -168,6 +259,7 @@ describe("mergeProjectList", () => {
       registry: [reg("/repos/one"), reg("/repos/two")],
       configuredIds: [],
       currentProjectId: null,
+      currentProjectPath: null,
     });
     expect(rows.map((r) => r.path)).toEqual(["/repos/one", "/repos/two"]);
   });

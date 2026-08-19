@@ -104,16 +104,34 @@ describe("collectGlobalConfigView is machine-scoped (AC1)", () => {
     const fromInstalled = await collectGlobalConfigView(installedRepo("zzz-last"));
     const fromBare = await collectGlobalConfigView(bareDir());
 
-    // Everything the page renders must match. The two permitted differences are
-    // `currentProjectId` and the per-row `isCurrent` derived from it — together
-    // they are the whole of what the working directory legitimately decides, and
-    // they move a highlight, not availability. Anything else differing means the
-    // launch directory is still gating content.
+    // The launch directory legitimately decides two things. `currentProjectId`
+    // and the `isCurrent` derived from it move a highlight, not availability.
+    // The second is narrower and is an honest limit rather than a design choice:
+    // for the current row ALONE, its `path` is OBSERVED — the console is running
+    // in it — and nothing maps an id back to a directory anywhere else
+    // (KT-PIT-0050), so from a bare directory that path does not exist to be
+    // reported. `fabric install` is what removes the asymmetry for good, by
+    // putting the path in the registry where every console can see it.
+    //
+    // Normalising the current row back to its pathless form is what keeps the
+    // rest of the comparison sharp: it applies only to a row that is both
+    // current AND `current-only`, so a path leaking onto any OTHER row still
+    // fails, as does a project appearing or disappearing.
     const strip = (view: Awaited<ReturnType<typeof collectGlobalConfigView>>) => ({
       ...view,
       currentProjectId: null,
-      projects: view.projects.map(({ isCurrent: _isCurrent, ...rest }) => rest),
+      projects: view.projects.map(({ isCurrent, ...rest }) =>
+        isCurrent && rest.origin === "current-only" && rest.projectId !== null
+          ? { ...rest, path: null, name: rest.projectId, origin: "config-only" as const }
+          : rest,
+      ),
     });
+
+    // The normalisation must actually be doing something, or the comparison
+    // above passes for the wrong reason.
+    const current = fromInstalled.projects.find((p) => p.isCurrent);
+    expect(current).toMatchObject({ projectId: "zzz-last", origin: "current-only" });
+    expect(current?.path).not.toBeNull();
 
     expect(strip(fromBare)).toEqual(strip(fromInstalled));
   });
@@ -148,23 +166,29 @@ describe("collectGlobalConfigView is machine-scoped (AC1)", () => {
     expect(bare.projects.map((p) => p.projectId).sort()).toEqual(["proj-a", "proj-b"]);
   });
 
-  it("the ONLY content the launch directory may add is a row for a project no source knows", async () => {
+  it("adds a whole row for a project no source knows — the far end of the same exception", async () => {
     // The one documented exception to AC1, and it is the real machine's own
     // state today: an install that predates the registry and has never been
     // configured is in neither source, so standing in it is the only way the
-    // page can learn it exists. The row is additive and carries nothing but the
-    // id — no overrides, no path — so it cannot change what any other project
-    // shows. Without this branch the project the user is standing in would be
-    // missing from its own machine's list.
+    // page can learn it exists. The row is additive and carries no overrides, so
+    // it cannot change what any other project shows. Without this branch the
+    // project the user is standing in would be missing from its own machine's
+    // list.
     writeGlobal({ projects: { "proj-known": { nudge_mode: "silent" } } });
 
-    const fromUnknown = await collectGlobalConfigView(installedRepo("proj-unlisted"));
+    const launchDir = installedRepo("proj-unlisted");
+    const fromUnknown = await collectGlobalConfigView(launchDir);
     const fromBare = await collectGlobalConfigView(bareDir());
 
     expect(fromBare.projects.map((p) => p.projectId)).toEqual(["proj-known"]);
     const added = fromUnknown.projects.filter((p) => p.projectId === "proj-unlisted");
     expect(added).toHaveLength(1);
-    expect(added[0]).toMatchObject({ path: null, overrides: [], origin: "config-only" });
+    // The path IS carried: the console is running in it, so it is known
+    // first-hand rather than guessed. That is what lets the row be labelled by
+    // directory instead of by a bare uuid, and what makes it openable as a scope.
+    // `current-only`, not `both`: it really is in neither source, and the page
+    // owes the user that fact plus its remedy (re-run `fabric install` here).
+    expect(added[0]).toMatchObject({ path: launchDir, overrides: [], origin: "current-only" });
 
     // Drop that one row and the two payloads are identical again — the
     // exception is exactly this row and nothing else rides along with it.

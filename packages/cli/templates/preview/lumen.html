@@ -1,5 +1,8 @@
 <!doctype html>
-<html lang="zh">
+<!-- data-theme-owner="page": 本页自带主题初始化(末尾脚本,硬默认 light),
+     让 shell.js 跳过它的系统偏好初始化,否则会先按系统上暗色再被本页改回亮色,
+     产生一次可见闪烁。 -->
+<html lang="zh" data-theme-owner="page">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,6 +10,7 @@
 <meta name="variant-desc" content="亮色极光风结合终端利落条目与键盘导航预览页" />
 <!-- offline: 用系统字体栈(--sans/--mono 已含 -apple-system/ui-monospace 兜底),不引外部 Google Fonts -->
 <link rel="stylesheet" href="/assets/shell.css" />
+<script src="/assets/shell.js"></script>
 <style>
   /* --------------------------------------------------------
    * Design System & Themes (Lumen Light-Focused Fusion)
@@ -2020,13 +2024,18 @@
     dep.classList.toggle("active", hideDep());
     dep.textContent = hideDep() ? "弃用·已隐藏" : "弃用·隐藏";
     // 关联图带上当前数据源,图与列表同 scope
-    document.getElementById("graphtab").href = "/graph?all=" + (allOn() ? "1" : "0");
+    document.getElementById("graphtab").href = FabricScope.href(
+      "/graph?all=" + (allOn() ? "1" : "0"),
+    );
   }
 
   // Data Loading & Polling
   async function loadKnowledge() {
     try {
-      const res = await fetch("/api/knowledge?all=" + (allOn() ? "1" : "0"), { cache: "no-store" });
+      const res = await fetch(
+        "/api/knowledge?all=" + (allOn() ? "1" : "0") + FabricScope.param("&"),
+        { cache: "no-store" },
+      );
       const data = await res.json();
       let list = data.entries || [];
       // 默认显示+标记已弃用(deprecate-over-delete 可发现性,KT-DEC-0055);开关开启才隐藏
@@ -2060,7 +2069,7 @@
 
   async function pollRevision() {
     try {
-      const res = await fetch("/api/revision", { cache: "no-store" });
+      const res = await fetch("/api/revision" + FabricScope.param(), { cache: "no-store" });
       const { revision } = await res.json();
       if (state.revision !== null && revision !== state.revision) {
         await loadKnowledge();

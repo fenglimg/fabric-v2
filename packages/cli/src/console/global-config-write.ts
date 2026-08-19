@@ -32,7 +32,7 @@ import { listRegisteredProjects } from "../store/project-registry-io.js";
 import {
   asPlainObject,
   buildPanelContext,
-  loadPanelContext,
+  currentProjectIdOf,
   resetFieldValue,
   writeFieldValue,
 } from "./config-resolve.js";
@@ -107,7 +107,8 @@ async function resolveTarget(
     const known = mergeProjectList({
       registry: await listRegisteredProjects(),
       configuredIds: Object.keys(asPlainObject(global.projects)),
-      currentProjectId: loadPanelContext(launchDir).projectId,
+      currentProjectId: currentProjectIdOf(launchDir),
+      currentProjectPath: launchDir,
     });
     const match = known.find((p) => p.projectId === projectId);
     if (match === undefined) return bad(404, `unknown project: ${projectId}`);

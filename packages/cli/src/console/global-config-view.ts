@@ -302,6 +302,7 @@ export async function collectGlobalConfigView(launchDir: string): Promise<Global
     registry: await listRegisteredProjects(),
     configuredIds: Object.keys(asPlainObject(global.projects)),
     currentProjectId,
+    currentProjectPath: launchDir,
   });
 
   return {
