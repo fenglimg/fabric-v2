@@ -124,6 +124,18 @@ export const ARCHIVE_PRESETS: readonly ArchivePreset[] = [
   },
 ];
 
+/**
+ * The one key whose value the machine can refuse to honour.
+ *
+ * It is named here rather than inline in the view for the same reason every
+ * other named key is: the view derives its field list from the schema and must
+ * mention no key at all, so a bare string there would be checked by nothing.
+ * Sitting in this registry, it is covered by the same "is a real panel key"
+ * assertion as the promoted and preset keys — a rename in the schema fails a
+ * test instead of silently turning the state line off.
+ */
+export const SEMANTIC_SEARCH_KEY = "embed_enabled";
+
 export function getArchivePreset(id: string): ArchivePreset | undefined {
   return ARCHIVE_PRESETS.find((p) => p.id === id);
 }

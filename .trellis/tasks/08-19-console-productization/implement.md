@@ -28,8 +28,11 @@
 - [x] W2-2 常用 / 高级两层 + 搜索框（命中高级项时自动展开高级区）。
 - [x] W2-3 已修改竖条 + 悬停「恢复默认」（接 W0）。来源层降为详情。
 - [x] W2-4 预设卡：`POST /api/config/preset` 服务端逐键走 `writeFieldValue`；读取时逐键全等反推当前档位，不匹配显示「自定义」；**不落 `preset_name` 字段**。
-- [ ] W2-5 新增三项：`hint_dismiss_signals`、`embed_endpoint`/`embed_model`（key 只显示已设置/未设置）、`active_write_store`（仅项目作用域）。
-- [ ] W2-6 「已启用 · 未生效」状态：`embed_enabled=true` 但嵌入服务不可用时如实标注 + 下一步。
+- [x] W2-5 三项挑战完毕，结论是「加一项、驳两项」——
+  - **加**：`hint_dismiss_signals` 全量实装（schema 抽 `hintDismissSignalSchema` → 新 `multiselect` 控件类型 → CLI clack `multiselect` + 网页勾选框）。这一项价值最高：nudge 文案本身在教用户手改 JSON。
+  - **驳 `active_write_store`**：不加写控件。它存在各 repo 的 `.fabric/fabric-config.json`，而 `project_id → 仓库路径` 的反查在本机不存在（KT-PIT-0050），所以只有「当前行」可改 —— 在一个主张「启动目录不决定任何事」的页面上开这么一个例外，是自己拆自己的台。`fabric store switch-write` 已经能改。
+  - **驳远程嵌入可写**：`embed_endpoint`/`embed_model` 保持只读，并**说明为什么**。三项只有配齐才生效，第三项是密钥 —— 不在网页里做明文密钥输入框。改为在卡片上点名文件路径与 `FABRIC_EMBED_*` 环境变量（`remote.how`），把「只读」从遗漏变成一个带去处的决定。
+- [x] W2-6 「已启用 · 未生效」状态：`semanticSearch` 视图块把**意图**（本页自己解析的 `embed_enabled`）与**效果**（`gatherRecallStatus` 的机器级探针）分开报，挂在语义检索那一行下面。四态各有各的下一步，其中「模型还没下载」明确写「你不需要做什么」—— 与真故障合并成一句「没生效」会让一半的人去修一个自己会好的问题。
 - [x] W2-7 文案语域统一：陈述句 + 说清后果 + 给出实际数值（参照 VS Code 设置 / Raycast 手册），去掉口语化修辞。
 - [x] 验证：`cd packages/cli && pnpm exec vitest run __tests__/console-global-config-*.test.ts`
 - [x] 测试要点（对齐 KT-GLD-0019 变异判据）：① 塞一个未登记键，断言它出现在高级区而非消失；② 改预设覆盖的任一键，断言档位显示变「自定义」；③ reset 后该项竖条消失。

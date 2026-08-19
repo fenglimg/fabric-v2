@@ -222,9 +222,16 @@ describe("field list stays derived from the schema", () => {
       fileURLToPath(new URL("../src/console/global-config-view.ts", import.meta.url)),
       "utf8",
     );
+    // Comments are stripped first. What this is protecting is that no BEHAVIOUR
+    // here is keyed off a literal — a docstring explaining which switch the
+    // semantic-search state line describes cannot cause drift, and forbidding it
+    // would only push the explanation somewhere the reader will not look.
+    // (`SEMANTIC_SEARCH_KEY` is that one key-specific behaviour; it lives in
+    // config-presentation.ts, where a "is it a real panel key" test covers it.)
+    const code = source.replace(/\/\*[\s\S]*?\*\//gu, "").replace(/\/\/.*$/gmu, "");
     const mentioned = getPanelFields()
       .map((f) => String(f.key))
-      .filter((key) => source.includes(key));
+      .filter((key) => code.includes(key));
     // `underseed_node_threshold` is absent too — the corpus split is expressed
     // as `home === "corpus"`, not as a named key.
     expect(mentioned).toEqual([]);
@@ -381,6 +388,12 @@ describe("secrets never reach the wire (AC7)", () => {
       endpointHost: "api.example.com",
       hasApiKey: true,
       model: "BAAI/bge-m3",
+      // The file the page tells the reader to edit. Deliberately inside this
+      // exhaustive comparison rather than beside it: the point of an exact
+      // match here is that a field added to this payload has to be looked at
+      // by someone before it ships, and this is the only payload on the page
+      // that sits next to a credential.
+      configPath: join(process.env.FABRIC_HOME as string, ".fabric", "fabric-global.json"),
     });
     expect(JSON.stringify(view)).not.toContain("leak-me");
   });

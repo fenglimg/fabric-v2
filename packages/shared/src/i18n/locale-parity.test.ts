@@ -187,8 +187,18 @@ describe("i18n locale parity census", () => {
   // 前缀长度 ≥3 且含点」后,模式集 332 → 55,canary 立刻 3/3。
   // 教训与 ① ② 同族:**通配模式的宽度必须由 canary 量,不能靠读代码判断**——
   // 一个过宽的模式不会报错,只会让普查安静地永远返回 0。
+  // 2026-08-19 (控制台产品化 W2): 920 → 945。净 +25,全部是新增:
+  // 17 条 `cli.console.config.*`(搜索框与空结果、高级区的标题/说明/计数、已改标记、
+  // 恢复默认及其回执、提醒频率预设的三档名与自定义态与成功/部分失败回执),
+  // 2 条 `cli.config.fields.hint_dismiss_signals.{label,description}`
+  //(新面板字段:永久关闭哪些提醒,原先只能手改 JSON),
+  // 1 条 `cli.console.config.remote.how`(远程嵌入三项在这一页只读,那就得说去哪儿改),
+  // 5 条 `cli.console.config.semantic.*`(语义检索的意图 vs 实际生效四态)。
+  // 另有 4 条 `*.label` 改了**值**没改 key(archive_hint_hours / audit_mode /
+  // nudge_mode / fusion 的文案改成陈述句语域)—— 值变更不进 census。
+  // 纯增量,按上面的豁免不重跑 dead-key scan。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(920);
+    expect(enKeys.length).toBe(945);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

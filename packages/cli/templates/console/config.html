@@ -39,6 +39,14 @@
   .fctl button.ghost{color:var(--text-secondary);background:transparent;
     border-color:var(--border-strong)}
   .fctl button:disabled,.fctl input:disabled,.fctl select:disabled{opacity:.5;cursor:not-allowed}
+  /* 多选项走勾选框而不是逗号分隔的文本框:这一项存在的理由就是不必再手打枚举值。
+     竖排是因为选项名本身要读得懂,横排挤在一行会先被截断的正是它。 */
+  .fctl.multi{display:grid;grid-template-columns:1fr;gap:6px;justify-self:end;min-width:200px}
+  .chk{display:flex;flex-direction:column;gap:3px}
+  .chk label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);
+    cursor:pointer}
+  .chk input[type=checkbox]{min-width:0;margin:0;accent-color:var(--accent)}
+  .fctl.multi .btns{display:flex;gap:8px;justify-content:flex-end}
   .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
     border:1px solid var(--border-strong);color:var(--text-secondary);margin-left:6px}
   /* env 用警示色:它同时意味着"这是当前生效值"和"你在这里改不动"。 */
@@ -140,6 +148,30 @@
       return '<span class="note warn">'+esc(fmt(DATA.strings['env-locked'],{name:f.envVar}))+'</span>';
     }
     var id='c'+Math.random().toString(36).slice(2,9);
+    var t=esc(JSON.stringify(target));
+    // 恢复默认只在这一层真的有值时出现 —— 对一个本就继承来的项提供"恢复默认",
+    // 点下去什么也不会发生,是一个骗人的控件。
+    var reset=f.modified
+      ? '<button class="ghost" data-reset="'+esc(f.key)+'" data-target="'+t+'">'+
+        esc(DATA.strings.reset)+'</button>' : '';
+    var save='<button data-ctl="'+id+'" data-key="'+esc(f.key)+
+      '" data-target="'+t+'">'+esc(DATA.strings.save)+'</button>';
+
+    if(f.widget==='multiselect'){
+      // 勾选框只更新这个隐藏 input,保存仍旧读 #id 的 .value —— 三个写动作共用
+      // 一条通道,多一个"这一类控件怎么取值"的分支就多一处会忘记同步的地方。
+      // 逗号串正是服务端 validate 接受的形式,所以传输层不需要认识哪些 key 是集合。
+      var on={}; String(f.effective||'').split(',').forEach(function(v){
+        if(v) on[v]=true; });
+      var boxes=(f.enumValues||[]).map(function(v){
+        return '<label><input type="checkbox" data-set="'+id+'" value="'+esc(v)+'"'+
+          (on[v]?' checked':'')+' />'+esc(v)+'</label>';
+      }).join('');
+      return '<div class="fctl multi"><div class="chk">'+boxes+'</div>'+
+        '<input type="hidden" id="'+id+'" value="'+esc(f.effective)+'" />'+
+        '<div class="btns">'+reset+save+'</div></div>';
+    }
+
     var input;
     if(f.widget==='select'){
       input='<select id="'+id+'">'+(f.enumValues||[]).map(function(v){
@@ -148,14 +180,22 @@
     } else {
       input='<input type="text" id="'+id+'" value="'+esc(f.effective)+'" />';
     }
-    var t=esc(JSON.stringify(target));
-    // 恢复默认只在这一层真的有值时出现 —— 对一个本就继承来的项提供"恢复默认",
-    // 点下去什么也不会发生,是一个骗人的控件。
-    var reset=f.modified
-      ? '<button class="ghost" data-reset="'+esc(f.key)+'" data-target="'+t+'">'+
-        esc(DATA.strings.reset)+'</button>' : '';
-    return '<div class="fctl">'+input+reset+'<button data-ctl="'+id+'" data-key="'+esc(f.key)+
-      '" data-target="'+t+'">'+esc(DATA.strings.save)+'</button></div>';
+    return '<div class="fctl">'+input+reset+save+'</div>';
+  }
+
+  // 语义检索开关下面那一行:开关是意图,能不能算是另一回事。只挂在机器视角这一行,
+  // 因为探测到的是机器的事实(装没装 fastembed、模型在不在盘上),不随项目变。
+  function semanticNote(f,target,s){
+    if(f.key!=='embed_enabled'||target.scope!=='machine') return '';
+    var ss=DATA.semanticSearch; if(!ss) return '';
+    var text;
+    if(!ss.enabled) text=s['semantic.off'];
+    else if(ss.remote) text=s['semantic.remote'];
+    else if(ss.blocker==='model-missing')
+      text=fmt(s['semantic.model-missing'],{model:ss.model,dir:ss.modelCacheDir});
+    else if(ss.blocker==='package-missing') text=s['semantic.package-missing'];
+    else text=s['semantic.ready'];
+    return '<div class="note'+(ss.blocker==='package-missing'?' warn':'')+'">'+esc(text)+'</div>';
   }
 
   function row(f,target){
@@ -169,6 +209,7 @@
       '<div class="flabel">'+esc(f.label)+tag+'</div>'+
       '<div class="fkey">'+esc(f.key)+'</div>'+
       '<div class="fdesc">'+esc(f.description)+'</div>'+envNote+
+      semanticNote(f,target,DATA.strings)+
       '</div>'+control(f,target)+'</div>';
   }
 
@@ -331,8 +372,11 @@
         '<span class="tag">'+esc(r.hasApiKey?s['remote.key-set']:s['remote.key-missing'])+'</span>'+
         (r.model?'<span class="tag">'+esc(r.model)+'</span>':'');
     }
+    // 改法两种状态都给:没开的人要知道去哪儿开,开了的人要知道去哪儿改 —— 这一页
+    // 对这三项只读是个决定(其中一项是密钥),那就欠读者一个去处。
+    var how='<div class="note">'+esc(fmt(s['remote.how'],{path:r.configPath}))+'</div>';
     return '<section class="sec"><div class="card"><h3>'+esc(s['remote.title'])+
-      '</h3><div class="fdesc">'+body+'</div></div></section>';
+      '</h3><div class="fdesc">'+body+'</div>'+how+'</div></section>';
   }
 
   function render(){
@@ -367,6 +411,17 @@
     document.querySelectorAll('[data-toggle]').forEach(function(el){
       el.addEventListener('click',function(){
         var k=el.getAttribute('data-toggle'); OPEN[k]=!OPEN[k]; render();
+      });
+    });
+    document.querySelectorAll('[data-set]').forEach(function(box){
+      box.addEventListener('change',function(){
+        var target=box.getAttribute('data-set');
+        var picked=[];
+        document.querySelectorAll('[data-set="'+target+'"]').forEach(function(b){
+          if(b.checked) picked.push(b.value);
+        });
+        var hidden=document.getElementById(target);
+        if(hidden) hidden.value=picked.join(',');
       });
     });
     document.querySelectorAll('[data-ctl]').forEach(function(btn){

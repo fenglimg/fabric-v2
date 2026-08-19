@@ -30,7 +30,11 @@ import {
 import { join } from "node:path";
 
 import { t } from "../i18n.js";
-import { loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
+import { globalConfigPath, loadGlobalConfig, resolveGlobalRoot } from "../store/global-config-io.js";
+// The same probe `fabric info recall` reports from. Two implementations of
+// "is the vector channel actually up" would eventually disagree, and the one a
+// user is looking at would be the wrong one.
+import { gatherRecallStatus } from "../commands/info.js";
 import { listRegisteredProjects } from "../store/project-registry-io.js";
 import {
   asPlainObject,
@@ -44,6 +48,7 @@ import {
   ARCHIVE_PRESETS,
   ARCHIVE_PRESET_KEYS,
   matchArchivePreset,
+  SEMANTIC_SEARCH_KEY,
   tierOf,
   type FieldTier,
 } from "./config-presentation.js";
@@ -55,10 +60,15 @@ interface FieldView {
   home: "global_root" | "preference" | "corpus";
   label: string;
   description: string;
-  type: "boolean" | "number" | "string";
-  widget: "select" | "text";
+  type: "boolean" | "number" | "string" | "string[]";
+  widget: "select" | "text" | "multiselect";
   enumValues?: readonly string[];
-  /** Rendered through the field's own `format_for_display`. */
+  /**
+   * Rendered through the field's own `format_for_display`. A `multiselect` field
+   * arrives here comma-joined — the same wire form its `validate` accepts — so a
+   * value survives the page round-trip without the transport needing to know
+   * which keys are sets.
+   */
   effective: string;
   source: ValueSource;
   sourceLabel: string;
@@ -113,6 +123,13 @@ interface RemoteEmbeddingView {
   endpointHost: string | null;
   hasApiKey: boolean;
   model: string | null;
+  /**
+   * Where to go to change any of this. Read-only on the page is a decision, not
+   * an omission — the trio only works as a unit and one member is a secret — so
+   * the card owes the reader the file it would have edited. A path, not a
+   * value: naming a file discloses nothing the reader could not already read.
+   */
+  configPath: string;
 }
 
 /**
@@ -143,7 +160,41 @@ export interface GlobalConfigView {
   projects: ProjectView[];
   stores: StoreView[];
   remoteEmbedding: RemoteEmbeddingView;
+  semanticSearch: SemanticSearchView;
   strings: Record<string, string>;
+}
+
+/**
+ * Semantic search, as INTENT versus EFFECT.
+ *
+ * `embed_enabled` is a switch a user flips and the page then reports back to
+ * them — which is a lie whenever the machine cannot honour it. The vector
+ * channel additionally needs the server to resolve `fastembed` and the model to
+ * be on disk (or a remote embedder configured), and neither is something the
+ * switch can cause. So the row gets a second line saying whether the intent is
+ * actually in force, and when it is not, which of the two is missing.
+ *
+ * `enabled` deliberately does NOT come from `gatherRecallStatus`: that reads the
+ * launch directory's own resolution, while this page resolves the machine-wide
+ * layer with a clean environment. Taking the probes from there and the intent
+ * from here is the whole point — the probes are facts about the machine, the
+ * intent is a layered decision.
+ */
+interface SemanticSearchView {
+  enabled: boolean;
+  /** Will the vector channel actually score? Mirrors `vector_ready`. */
+  ready: boolean;
+  /**
+   * Why not, when `enabled` and not `ready`. `model-missing` resolves itself on
+   * the next search (the model downloads); `package-missing` does not, and
+   * needs a reinstall. Collapsing them into one "not working" would send the
+   * first group off chasing a problem that fixes itself.
+   */
+  blocker: "package-missing" | "model-missing" | null;
+  /** True when a remote embedder serves the channel and no local model is needed. */
+  remote: boolean;
+  model: string;
+  modelCacheDir: string;
 }
 
 function hostOf(endpoint: unknown): string | null {
@@ -178,10 +229,11 @@ function readRemoteEmbedding(global: Record<string, unknown>): RemoteEmbeddingVi
       ? (global.embed_remote as Record<string, unknown>)
       : {};
 
+  const configPath = globalConfigPath();
   const endpoint =
     str(process.env.FABRIC_EMBED_ENDPOINT) ?? str(nested.endpoint) ?? str(global.embed_endpoint);
   if (endpoint === undefined) {
-    return { configured: false, endpointHost: null, hasApiKey: false, model: null };
+    return { configured: false, endpointHost: null, hasApiKey: false, model: null, configPath };
   }
   const apiKey =
     str(process.env.FABRIC_EMBED_API_KEY) ?? str(nested.api_key) ?? str(global.embed_api_key);
@@ -192,6 +244,39 @@ function readRemoteEmbedding(global: Record<string, unknown>): RemoteEmbeddingVi
     endpointHost: hostOf(endpoint),
     hasApiKey: apiKey !== undefined,
     model: model ?? null,
+    configPath,
+  };
+}
+
+/**
+ * @param enabled the machine-wide resolution of `embed_enabled` from this
+ * page's own layer walk — see {@link SemanticSearchView} for why it is not
+ * taken from the probe's own read.
+ */
+function readSemanticSearch(
+  launchDir: string,
+  enabled: boolean,
+  remote: RemoteEmbeddingView,
+): SemanticSearchView {
+  const probe = gatherRecallStatus(launchDir);
+  // The remote transport needs neither the local package nor the model, and it
+  // only counts as configured with a key — an endpoint alone gets 401s, which
+  // would show here as "ready" and in recall as silence.
+  const remoteReady = remote.configured && remote.hasApiKey;
+  const ready = enabled && (remoteReady || (probe.fastembed_resolvable && probe.model_cached));
+  const blocker =
+    !enabled || ready
+      ? null
+      : !probe.fastembed_resolvable
+        ? ("package-missing" as const)
+        : ("model-missing" as const);
+  return {
+    enabled,
+    ready,
+    blocker,
+    remote: remoteReady,
+    model: probe.embed_model,
+    modelCacheDir: probe.model_cache_dir,
   };
 }
 
@@ -368,6 +453,12 @@ function chromeStrings(): Record<string, string> {
     "remote.on",
     "remote.key-set",
     "remote.key-missing",
+    "remote.how",
+    "semantic.ready",
+    "semantic.off",
+    "semantic.remote",
+    "semantic.model-missing",
+    "semantic.package-missing",
   ] as const;
   const out: Record<string, string> = {};
   for (const key of keys) out[key] = t(`cli.console.config.${key}`);
@@ -391,16 +482,24 @@ export async function collectGlobalConfigView(launchDir: string): Promise<Global
     currentProjectPath: launchDir,
   });
 
+  const machine = machineFields(global);
+  const remoteEmbedding = readRemoteEmbedding(global);
+
   return {
     currentProjectId,
-    machine: machineFields(global),
+    machine,
     archivePreset: archivePresetView(global),
     projects: projects.map((project) => ({
       ...project,
       overrides: projectOverrides(project, global, currentCtx),
     })),
     stores: storeViews(global),
-    remoteEmbedding: readRemoteEmbedding(global),
+    remoteEmbedding,
+    semanticSearch: readSemanticSearch(
+      launchDir,
+      machine.find((f) => f.key === SEMANTIC_SEARCH_KEY)?.effective === "true",
+      remoteEmbedding,
+    ),
     strings: chromeStrings(),
   };
 }

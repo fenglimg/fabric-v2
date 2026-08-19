@@ -140,6 +140,28 @@ export const defaultLayerFilterSchema = z.enum(["team", "personal", "both"]);
 // retained as fine-grained OVERRIDES that win over the preset when set.
 export const nudgeModeSchema = z.enum(["silent", "minimal", "normal", "verbose"]);
 
+/**
+ * The nudge surfaces a user can durably silence — see `hint_dismiss_signals`
+ * below for the per-value routing and the C-004 default semantics.
+ *
+ * Named and exported rather than inlined into the array so the option list has
+ * ONE source: the settings panel derives its checkboxes from `.options` here,
+ * and a hand-copied list in the panel would go stale the next time a surface is
+ * added (`archive_backlog` reached the hook and missed this enum for exactly
+ * that reason — see the parity test).
+ */
+export const hintDismissSignalSchema = z.enum([
+  "archive",
+  // Stop-hook cross-session backlog safety net (fabric-hint crack 2).
+  "archive_backlog",
+  "review",
+  "import",
+  "maintenance",
+  // per-edit (PreToolUse) nudge surfaces — TASK-005
+  "narrow",
+  "cite-evict",
+]);
+
 // v2.2 dual-sink (Goal A / D4): observe.* are per-event human-output toggles —
 // each gates whether that lifecycle event emits a human-facing systemMessage.
 // Same invariant as nudge_mode: the AI additionalContext sink is unaffected.
@@ -403,21 +425,7 @@ export const fabricConfigSchema = z.object({
   // by fabric-hint "crack 2" but never mirrored here. The hook path reads raw
   // JSON so it worked at runtime, yet the documented contract rejected it — see
   // the parity test that now pins hook ⊆ enum in both directions of drift.
-  hint_dismiss_signals: z
-    .array(
-      z.enum([
-        "archive",
-        // Stop-hook cross-session backlog safety net (fabric-hint crack 2).
-        "archive_backlog",
-        "review",
-        "import",
-        "maintenance",
-        // per-edit (PreToolUse) nudge surfaces — TASK-005
-        "narrow",
-        "cite-evict",
-      ]),
-    )
-    .optional(),
+  hint_dismiss_signals: z.array(hintDismissSignalSchema).optional(),
   // v2.1 ADJ-NEWN-4: user-override escape hatches for the two strong behavioral
   // policies (cite-before-edit + self-archive). The strong policies can make an
   // agent feel like a "stubborn parrot" (D2 user-in-control red line); these

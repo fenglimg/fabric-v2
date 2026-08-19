@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cancel, isCancel, log, select, text } from "@clack/prompts";
+import { cancel, isCancel, log, multiselect, select, text } from "@clack/prompts";
 import type { FabricConfig } from "@fenglimg/fabric-shared";
 import {
   CONFIG_PROFILE_KEYS,
@@ -802,7 +802,7 @@ export default configCmd;
 const CANCELLED = Symbol("config-cancelled");
 const SKIPPED = Symbol("config-skipped");
 
-type PromptOutcome = string | number | typeof CANCELLED | typeof SKIPPED;
+type PromptOutcome = string | number | readonly string[] | typeof CANCELLED | typeof SKIPPED;
 
 async function promptFieldValue(
   field: PanelFieldMeta,
@@ -841,6 +841,36 @@ async function promptFieldValue(
       return SKIPPED;
     }
     return result.value as string;
+  }
+
+  if (field.widget === "multiselect") {
+    const enumValues = field.enum_values ?? [];
+    if (enumValues.length === 0) {
+      log.warn(t("cli.config.errors.no-enum-options"));
+      return SKIPPED;
+    }
+    // An explicit branch rather than letting `multiselect` fall through to the
+    // text prompt below. It would "work" — validate parses a comma-joined
+    // string — but it would ask the user to type enum values from memory, which
+    // is the JSON-editing experience this field exists to replace.
+    const picked = await multiselect<string>({
+      message: t("cli.config.prompt.select", {
+        key: field.key as string,
+        current: currentDisplay,
+      }),
+      options: enumValues.map((value) => ({ value, label: value })),
+      initialValues: currentDisplay.split(",").filter((v) => v.length > 0),
+      required: false,
+    });
+    if (isCancel(picked)) {
+      return CANCELLED;
+    }
+    const result = field.validate(picked.join(","));
+    if (!result.ok) {
+      log.error(result.error);
+      return SKIPPED;
+    }
+    return result.value as readonly string[];
   }
 
   // widget === "text" → positive-integer threshold

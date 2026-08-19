@@ -26,6 +26,7 @@ import {
   ARCHIVE_PRESET_KEYS,
   getArchivePreset,
   matchArchivePreset,
+  SEMANTIC_SEARCH_KEY,
   tierOf,
 } from "../src/console/config-presentation.ts";
 import { collectGlobalConfigView } from "../src/console/global-config-view.ts";
@@ -136,6 +137,17 @@ describe("tierOf — promotion only, never omission", () => {
     // reproduces it one level down.
     expect(promoted.length).toBeLessThanOrEqual(8);
   });
+
+  it("every key this registry names by hand is a real panel key", () => {
+    // The registry is allowed to name keys — that is its job — but a name it
+    // gets wrong fails SILENTLY at every call site: the preset writes seven of
+    // eight values, the semantic state line never renders. Only comparing
+    // against the schema turns a rename into a red test.
+    const known = new Set(getPanelFields().map((f) => String(f.key)));
+    for (const key of [...ARCHIVE_PRESET_KEYS, SEMANTIC_SEARCH_KEY]) {
+      expect(known.has(key), key).toBe(true);
+    }
+  });
 });
 
 describe("matchArchivePreset — derived, never stored", () => {
@@ -238,6 +250,72 @@ describe("the change bar reports the SOURCE, not a value comparison", () => {
     // in place — `defaults` is gone from the file entirely.
     expect(readGlobal().defaults).toBeUndefined();
     expect(field?.effective).toBe("normal");
+  });
+});
+
+describe("a set-valued field over the console's one string channel", () => {
+  // `hint_dismiss_signals` is the first panel key whose value is a LIST. The
+  // console has exactly one write shape — `{key, value: <string>}` — and the
+  // field's own `validate` is what turns the wire string back into the array on
+  // disk. These pin both ends of that: what the page is handed to render, and
+  // what a browser POST leaves in the file.
+  it("is handed to the page as a set with all of its options", async () => {
+    writeGlobal({});
+    const view = await collectGlobalConfigView(bareDir());
+    const field = view.machine.find((f) => f.key === "hint_dismiss_signals");
+
+    expect(field?.widget).toBe("multiselect");
+    expect(field?.type).toBe("string[]");
+    // Without the options the page can only offer a text box, which is the JSON
+    // editing this field exists to replace.
+    expect(field?.enumValues).toContain("cite-evict");
+    // Nothing dismissed reads as an empty control, not as the string "undefined".
+    expect(field?.effective).toBe("");
+  });
+
+  it("round-trips a comma-joined POST into a real array on disk", async () => {
+    writeGlobal({});
+    const dir = bareDir();
+
+    await applyGlobalConfigEdit(
+      { key: "hint_dismiss_signals", value: "narrow,review", target: { scope: "machine" } },
+      dir,
+    );
+
+    // An ARRAY, not the string it arrived as: every reader of this key does
+    // `Array.isArray(...)` and would silently ignore a stored string, which the
+    // page would still render as a ticked checkbox.
+    const defaults = readGlobal().defaults as Record<string, unknown>;
+    expect(defaults.hint_dismiss_signals).toEqual(["review", "narrow"]);
+
+    const view = await collectGlobalConfigView(dir);
+    const field = view.machine.find((f) => f.key === "hint_dismiss_signals");
+    expect(field?.effective).toBe("review,narrow");
+    expect(field?.modified).toBe(true);
+  });
+
+  it("treats an emptied set as a decision, not as a missing value", async () => {
+    // Unchecking the last box has to be distinguishable from never having set
+    // the key: the first is "dismiss nothing", the second lets a lower layer
+    // decide. Only `reset` is allowed to mean the second.
+    writeGlobal({ defaults: { hint_dismiss_signals: ["narrow"] } });
+    const dir = bareDir();
+
+    await applyGlobalConfigEdit(
+      { key: "hint_dismiss_signals", value: "", target: { scope: "machine" } },
+      dir,
+    );
+    expect((readGlobal().defaults as Record<string, unknown>).hint_dismiss_signals).toEqual([]);
+    expect(
+      (await collectGlobalConfigView(dir)).machine.find((f) => f.key === "hint_dismiss_signals")
+        ?.modified,
+    ).toBe(true);
+
+    await applyGlobalConfigEdit(
+      { key: "hint_dismiss_signals", action: "reset", target: { scope: "machine" } },
+      dir,
+    );
+    expect(readGlobal().defaults).toBeUndefined();
   });
 });
 

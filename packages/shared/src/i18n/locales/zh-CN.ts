@@ -103,11 +103,25 @@ export const zhCNMessages: Messages = {
   "cli.console.config.env-available": "可被 {name} 覆盖",
   "cli.console.config.loading": "正在读取配置…",
   "cli.console.config.load-failed": "读取配置失败",
+  // 「已启用 · 未生效」:开关是意图,能不能算是另一回事。四种状态各说各的下一步,
+  // 其中「模型还没下载」不需要用户做任何事 —— 把它和真正的故障混成一句「没生效」,
+  // 会让一半的人去修一个自己会好的问题。
+  "cli.console.config.semantic.ready": "已生效 —— 语义通道正在参与排序。",
+  "cli.console.config.semantic.off": "已关闭 —— 只按关键词命中排序。",
+  "cli.console.config.semantic.remote": "已生效 —— 由远程嵌入服务计算，本机不需要模型。",
+  "cli.console.config.semantic.model-missing":
+    "已开启，尚未生效 —— 模型 {model} 还没下载。下次检索时自动下载到 {dir}，之后即生效，你不需要做什么。",
+  "cli.console.config.semantic.package-missing":
+    "已开启，但用不了 —— server 加载不到 fastembed，检索会退回关键词排序。重装 fabric（npm i -g @fenglimg/fabric-cli@latest）后用 fabric info recall 复查。",
   "cli.console.config.remote.title": "远程嵌入",
   "cli.console.config.remote.off": "未开启 —— 召回在本机排序。",
   "cli.console.config.remote.on": "已开启 —— 嵌入在 {host} 计算。",
   "cli.console.config.remote.key-set": "已设置 API key(此处永不显示原文)",
   "cli.console.config.remote.key-missing": "未设置 API key —— 召回降级为纯文本排序",
+  // 这一段是「为什么这里没有输入框」的答案。三项里有一项是密钥,网页表单不做明文
+  // 密钥输入;只给状态而不说去哪儿改,等于把人留在原地。
+  "cli.console.config.remote.how":
+    "这三项要一起配齐才生效，其中 API key 是密钥 —— 网页不提供明文密钥输入框。改法：编辑 {path} 的 embed_endpoint / embed_model / embed_api_key，或设环境变量 FABRIC_EMBED_ENDPOINT / FABRIC_EMBED_MODEL / FABRIC_EMBED_API_KEY（环境变量优先）。",
   "cli.preview.port-fallback": "端口 {requested} 被占用,已自动改用 {actual}。",
   "cli.preview.started": "知识预览已启动:{url}",
   "cli.preview.opening": "正在打开浏览器…",
@@ -322,10 +336,13 @@ export const zhCNMessages: Messages = {
     "本机活动记录保留的天数：7 最精简，30 均衡，90 便于回溯。超期记录转存到相邻的归档文件，不删除。",
   "cli.config.fields.embed_enabled.label": "语义检索",
   "cli.config.fields.embed_enabled.description":
-    "开启后，用词与原文不同的提问也能命中（中文差异尤其明显）。这是意图开关：实际生效还需 server 能加载 fastembed 且模型已下载（首次检索时下载到 ~/.fabric/cache/embed）。用 fabric info recall 查看实际状态。",
+    "开启后，用词与原文不同的提问也能命中（中文差异尤其明显）。这是意图开关：实际生效还需 server 能加载 fastembed 且模型已下载。下面一行是这台机器上的实际状态。",
   "cli.config.fields.fusion.label": "检索结果排序策略",
   "cli.config.fields.fusion.description":
     "关键词命中与语义相似度的合成方式：auto 按语义通道是否出分自动选择，rrf 两者等权，additive 关键词主导。",
+  "cli.config.fields.hint_dismiss_signals.label": "永久关闭的提醒类型",
+  "cli.config.fields.hint_dismiss_signals.description":
+    "勾选的类型在所有界面都不再出现，重开会话也不恢复。archive 归档提醒 · archive_backlog 待审积压提醒 · review 审核提醒 · import 历史导入建议 · maintenance 知识库体检提醒 · narrow 编辑文件时的相关知识提示 · cite-evict 未检索就编辑的提醒。一个都不勾即不关闭任何提醒。",
 
   "cli.doctor.description":
     "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）",

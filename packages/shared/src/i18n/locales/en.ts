@@ -120,12 +120,30 @@ export const enMessages: Messages = {
   "cli.console.config.env-available": "can be overridden by {name}",
   "cli.console.config.loading": "Reading configuration…",
   "cli.console.config.load-failed": "Could not read configuration",
+  // "On but not in force": the switch is an intent, and whether the machine can
+  // honour it is a separate fact. Each state carries its own next step — and
+  // "the model has not downloaded yet" needs no action at all, so folding it in
+  // with a real failure would send half the readers chasing a problem that
+  // fixes itself.
+  "cli.console.config.semantic.ready": "In force — the semantic channel is contributing to ranking.",
+  "cli.console.config.semantic.off": "Off — ranking is by keyword hits only.",
+  "cli.console.config.semantic.remote":
+    "In force — computed by the remote embedder, so no local model is needed.",
+  "cli.console.config.semantic.model-missing":
+    "On, not yet in force — model {model} has not been downloaded. The next search fetches it into {dir} and it takes effect from then on; nothing for you to do.",
+  "cli.console.config.semantic.package-missing":
+    "On but unusable — the server cannot load fastembed, so search falls back to keyword ranking. Reinstall fabric (npm i -g @fenglimg/fabric-cli@latest), then re-check with fabric info recall.",
   "cli.console.config.remote.title": "Remote embedding",
   "cli.console.config.remote.off": "Off — recall ranks locally.",
   "cli.console.config.remote.on": "On — embeddings are computed at {host}.",
   "cli.console.config.remote.key-set": "API key set (never shown here)",
   "cli.console.config.remote.key-missing":
     "No API key — recall falls back to text-only ranking",
+  // The answer to "why is there no input box here". One of the three is a
+  // secret, and this page does not take plaintext secrets; reporting the state
+  // without saying where to change it would leave the reader stuck.
+  "cli.console.config.remote.how":
+    "All three take effect only together, and the API key is a secret — this page takes no plaintext key. To change them: edit embed_endpoint / embed_model / embed_api_key in {path}, or set FABRIC_EMBED_ENDPOINT / FABRIC_EMBED_MODEL / FABRIC_EMBED_API_KEY (the environment wins).",
   "cli.preview.port-fallback":
     "Port {requested} was busy — using {actual} instead.",
   "cli.preview.started": "Knowledge preview started: {url}",
@@ -370,10 +388,13 @@ export const enMessages: Messages = {
   "cli.config.fields.embed_enabled.label":
     "Semantic search",
   "cli.config.fields.embed_enabled.description":
-    "When on, a question worded differently from the entry still finds it (the difference is most pronounced in Chinese). This is an intent switch: it takes effect only once the server can load fastembed and the model is downloaded (fetched to ~/.fabric/cache/embed on first search). Check the actual state with fabric info recall.",
+    "When on, a question worded differently from the entry still finds it (the difference is most pronounced in Chinese). This is an intent switch: it takes effect only once the server can load fastembed and the model is downloaded. The line below reports the actual state on this machine.",
   "cli.config.fields.fusion.label": "Result ranking strategy",
   "cli.config.fields.fusion.description":
     "How keyword hits and semantic similarity combine into one ranking: auto selects based on whether the semantic channel is scoring, rrf weights them equally, additive is keyword-led.",
+  "cli.config.fields.hint_dismiss_signals.label": "Permanently silenced notices",
+  "cli.config.fields.hint_dismiss_signals.description":
+    "A checked type stops appearing on every surface and stays silenced across sessions. archive = archive reminder · archive_backlog = pending-review backlog · review = review reminder · import = history import suggestion · maintenance = knowledge-base checkup reminder · narrow = per-edit related-knowledge hint · cite-evict = notice on editing without recall. Nothing checked silences nothing.",
 
   "cli.doctor.description":
     "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift)",
