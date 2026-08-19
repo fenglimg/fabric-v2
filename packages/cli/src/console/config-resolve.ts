@@ -224,27 +224,53 @@ export function resolveEffective(
 }
 
 /**
- * Persist a panel value into the field's ONE home. `preferProjectScope` picks
- * between the two preference segments (`projects[<id>]` vs `defaults`); it is
- * ignored for corpus / global-root fields, which have a single possible target.
- * Returns a human-readable description of where the value landed.
+ * What to do to a field's home: write a value, or remove the entry so the next
+ * layer down decides again.
+ *
+ * `reset` is not "write the default". Writing the default materialises a value
+ * that outranks every lower layer, so a project reset to `normal` would keep
+ * ignoring a machine-wide `silent` set later — the value looks restored and
+ * behaves pinned. Removal is the only operation that actually gives the layer
+ * below the decision back.
  */
-export async function writeFieldValue(
+export type FieldMutation =
+  | { readonly kind: "set"; readonly value: unknown }
+  | { readonly kind: "reset" };
+
+/** `{...rest}` without `key`, never mutating the input. */
+function omitKey(source: Record<string, unknown>, key: string): Record<string, unknown> {
+  const next = { ...source };
+  delete next[key];
+  return next;
+}
+
+/**
+ * Apply one mutation to the field's ONE home. `preferProjectScope` picks between
+ * the two preference segments (`projects[<id>]` vs `defaults`); it is ignored for
+ * corpus / global-root fields, which have a single possible target. Returns a
+ * human-readable description of where the change landed.
+ *
+ * Both public entries route through here so `set` and `reset` can never disagree
+ * about WHICH home a key belongs to — a reset that cleared a different layer than
+ * the set wrote would leave the original value in place while reporting success.
+ */
+async function applyFieldMutation(
   field: PanelFieldMeta,
-  value: unknown,
+  op: FieldMutation,
   ctx: PanelContext,
   preferProjectScope: boolean,
 ): Promise<string> {
   const key = field.key as string;
 
   if (field.home === "global_root") {
-    await mutateGlobalConfig(
-      (current) => ({
-        ...(current ?? { uid: "local", stores: [] }),
-        language: value as "zh-CN" | "en",
-      }),
-      resolveGlobalRoot(),
-    );
+    await mutateGlobalConfig((current) => {
+      const base = current ?? { uid: "local", stores: [] };
+      if (op.kind === "reset") {
+        const { language: _cleared, ...rest } = base;
+        return rest;
+      }
+      return { ...base, language: op.value as "zh-CN" | "en" };
+    }, resolveGlobalRoot());
     return "global language";
   }
 
@@ -253,7 +279,14 @@ export async function writeFieldValue(
       throw new Error(t("cli.config.errors.no-store-target"));
     }
     const storeConfigPath = join(ctx.storeRoot, STORE_LAYOUT.configFile);
-    const next = storeConfigSchema.parse({ ...ctx.storeConfig, [key]: value });
+    // Safe on reset because every storeConfigSchema field is `.optional()` with
+    // NO `.default()` (KT-DEC-0048, read-tolerant): the parse on the way out
+    // cannot resurrect the key just removed. A `.default()` added there later
+    // would silently turn every store reset into "write the default", which is
+    // the exact failure this operation exists to avoid.
+    const next = storeConfigSchema.parse(
+      op.kind === "reset" ? omitKey(ctx.storeConfig, key) : { ...ctx.storeConfig, [key]: op.value },
+    );
     await atomicWriteJson(storeConfigPath, next);
     return `store: ${storeConfigPath}`;
   }
@@ -264,15 +297,60 @@ export async function writeFieldValue(
   }
   await mutateGlobalConfig((current) => {
     const base = current ?? { uid: "local", stores: [] };
+
     if (!useProject) {
-      return { ...base, defaults: { ...(base.defaults ?? {}), [key]: value } };
+      if (op.kind === "reset") {
+        const defaults = omitKey(base.defaults ?? {}, key);
+        const { defaults: _cleared, ...rest } = base;
+        // Drop the segment once it is empty rather than leaving `{}` behind: an
+        // empty object is indistinguishable from a configured one when reading
+        // the file, and the project list keys "has settings here" off presence.
+        return Object.keys(defaults).length === 0 ? rest : { ...rest, defaults };
+      }
+      return { ...base, defaults: { ...(base.defaults ?? {}), [key]: op.value } };
     }
+
+    const projectId = ctx.projectId as string;
     const projects = { ...(base.projects ?? {}) };
-    projects[ctx.projectId as string] = {
-      ...(projects[ctx.projectId as string] ?? {}),
-      [key]: value,
-    };
+    if (op.kind === "reset") {
+      const scoped = omitKey(projects[projectId] ?? {}, key);
+      if (Object.keys(scoped).length === 0) {
+        delete projects[projectId];
+      } else {
+        projects[projectId] = scoped;
+      }
+      const { projects: _cleared, ...rest } = base;
+      return Object.keys(projects).length === 0 ? rest : { ...rest, projects };
+    }
+    projects[projectId] = { ...(projects[projectId] ?? {}), [key]: op.value };
     return { ...base, projects };
   });
   return useProject ? `global projects.${ctx.projectId as string}` : "global defaults";
+}
+
+/**
+ * Persist a panel value into the field's ONE home.
+ * @see applyFieldMutation
+ */
+export async function writeFieldValue(
+  field: PanelFieldMeta,
+  value: unknown,
+  ctx: PanelContext,
+  preferProjectScope: boolean,
+): Promise<string> {
+  return applyFieldMutation(field, { kind: "set", value }, ctx, preferProjectScope);
+}
+
+/**
+ * Remove this field's entry from the target layer so the layer below decides
+ * again. A no-op when the layer never had the key — resetting something that was
+ * already inherited is a legitimate request, not an error.
+ * @see applyFieldMutation
+ */
+export async function resetFieldValue(
+  field: PanelFieldMeta,
+  ctx: PanelContext,
+  preferProjectScope: boolean,
+): Promise<string> {
+  return applyFieldMutation(field, { kind: "reset" }, ctx, preferProjectScope);
 }

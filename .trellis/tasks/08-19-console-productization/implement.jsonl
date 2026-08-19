@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/08-19-console-productization/research/config-surface-census.md", "reason": "全部可配置面的普查结果 + 三档归类判据；决定哪些字段进常用/高级/不进"}
+{"file": ".trellis/spec/guides/state-placement-thinking-guide.md", "reason": "新增 hint_dismiss_signals / embed_* / active_write_store 时判断值该落 global / project / store 哪一层"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "作用域参数化跨 server 路由 / 模板 / 前端取数三层，且新增 API 契约字段"}

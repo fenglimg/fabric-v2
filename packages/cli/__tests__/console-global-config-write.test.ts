@@ -20,8 +20,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { storeRelativePathForMount } from "@fenglimg/fabric-shared";
+import { getPanelFieldByKey, storeRelativePathForMount } from "@fenglimg/fabric-shared";
 
+import { buildPanelContext, resolveEffective } from "../src/console/config-resolve.ts";
 import { applyGlobalConfigEdit } from "../src/console/global-config-write.ts";
 import { resolveGlobalRoot } from "../src/store/global-config-io.ts";
 
@@ -369,6 +370,158 @@ describe("the current project, known to neither the registry nor the config", ()
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.status).toBe(404);
     expect(diskFingerprint()).toBe(before);
+  });
+});
+
+describe("reset — giving the decision back to the layer below (W0)", () => {
+  /**
+   * What a reset actually resolves to afterwards. Asserting the JSON alone
+   * cannot tell "the key was removed" from "the key was overwritten with the
+   * code default" — and those two differ the moment a lower layer changes.
+   */
+  function effective(key: string, projectId: string | null): unknown {
+    const field = getPanelFieldByKey(key);
+    if (field === undefined) throw new Error(`no such panel field: ${key}`);
+    return resolveEffective(field, buildPanelContext({ projectId, storeRoot: null, applyEnv: false }))
+      .value;
+  }
+
+  beforeEach(() => {
+    // `verbose` is deliberately NOT the code default (`normal`). If it were, a
+    // reset implemented as "write the code default" would produce the same
+    // resolved value and every assertion below would pass on it (KT-PIT-0062).
+    writeGlobal({
+      defaults: { nudge_mode: "verbose" },
+      projects: { "proj-a": { nudge_mode: "silent" }, "proj-b": { nudge_mode: "silent" } },
+    });
+  });
+
+  it("clears the project override so the machine default decides again", async () => {
+    expect(effective("nudge_mode", "proj-a")).toBe("silent");
+
+    const result = await applyGlobalConfigEdit(
+      { key: "nudge_mode", action: "reset", target: { scope: "project", projectId: "proj-a" } },
+      elsewhereDir(),
+    );
+    expect(result.ok).toBe(true);
+
+    // The machine layer's value, not the code default — a reset that wrote
+    // `normal` back would keep outranking a later machine-wide change.
+    expect(effective("nudge_mode", "proj-a")).toBe("verbose");
+    // And it cleared exactly one project.
+    expect(effective("nudge_mode", "proj-b")).toBe("silent");
+    expect((readGlobal().defaults as Record<string, unknown>).nudge_mode).toBe("verbose");
+  });
+
+  it("removes the project segment once its last override is gone", async () => {
+    await applyGlobalConfigEdit(
+      { key: "nudge_mode", action: "reset", target: { scope: "project", projectId: "proj-a" } },
+      elsewhereDir(),
+    );
+    const projects = readGlobal().projects as Record<string, unknown>;
+    // Not `{}`. An empty segment is indistinguishable from a configured one when
+    // reading the file, and the project list keys "has settings" off presence.
+    expect(Object.keys(projects)).toEqual(["proj-b"]);
+  });
+
+  it("clears the machine default so the code default decides again", async () => {
+    const result = await applyGlobalConfigEdit(
+      { key: "nudge_mode", action: "reset", target: { scope: "machine" } },
+      elsewhereDir(),
+    );
+    expect(result.ok).toBe(true);
+
+    const after = readGlobal();
+    expect(after.defaults).toBeUndefined();
+    // Nothing left at any config layer — `undefined` is how resolveEffective
+    // reports "no layer decided", which is what makes the code default apply.
+    expect(effective("nudge_mode", null)).toBeUndefined();
+    // The projects it did not name keep their overrides.
+    expect(effective("nudge_mode", "proj-b")).toBe("silent");
+  });
+
+  it("clears a store key without the schema resurrecting it", async () => {
+    writeGlobal({ stores: [{ store_uuid: STORE_X, alias: "x" }] });
+    const storeRoot = join(resolveGlobalRoot(), storeRelativePathForMount({ store_uuid: STORE_X }));
+    mkdirSync(storeRoot, { recursive: true });
+    const storeConfigPath = join(storeRoot, "store-config.json");
+    writeFileSync(
+      storeConfigPath,
+      JSON.stringify({ underseed_node_threshold: 25, broad_index_backstop: 60 }, null, 2),
+      "utf8",
+    );
+
+    const result = await applyGlobalConfigEdit(
+      {
+        key: "underseed_node_threshold",
+        action: "reset",
+        target: { scope: "store", storeUuid: STORE_X },
+      },
+      elsewhereDir(),
+    );
+    expect(result.ok).toBe(true);
+
+    const after = JSON.parse(readFileSync(storeConfigPath, "utf8")) as Record<string, unknown>;
+    // storeConfigSchema is read-tolerant (every field optional, no `.default()`),
+    // so the parse on the way out cannot put back what the reset removed. A
+    // `.default()` added there later would silently break this.
+    expect(after.underseed_node_threshold).toBeUndefined();
+    // …and left the store's other settings alone.
+    expect(after.broad_index_backstop).toBe(60);
+  });
+
+  it("succeeds on a key that layer never had, changing nothing", async () => {
+    // Resetting something already inherited is a legitimate request — the page
+    // offers the control per key, not per "has an override here".
+    const before = readGlobal();
+    const result = await applyGlobalConfigEdit(
+      { key: "archive_hint_hours", action: "reset", target: { scope: "project", projectId: "proj-a" } },
+      elsewhereDir(),
+    );
+    expect(result.ok).toBe(true);
+    expect(readGlobal()).toEqual(before);
+  });
+
+  it("clears a value the field would now reject", async () => {
+    // The escape hatch: a setting written by an older version, or hand-edited
+    // out of range, must still be clearable. Validating `value` on a reset would
+    // strand it — and `value` is not even sent.
+    writeGlobal({ projects: { "proj-a": { archive_hint_hours: -5 } } });
+    const result = await applyGlobalConfigEdit(
+      { key: "archive_hint_hours", action: "reset", target: { scope: "project", projectId: "proj-a" } },
+      elsewhereDir(),
+    );
+    expect(result.ok).toBe(true);
+    expect(readGlobal().projects).toBeUndefined();
+  });
+
+  it("refuses an unrecognised action and writes nothing", async () => {
+    // Not defaulted to `set`: a typo'd action carrying a `value` would perform
+    // the opposite of what was asked and report success.
+    const before = diskFingerprint();
+    const result = await applyGlobalConfigEdit(
+      {
+        key: "nudge_mode",
+        action: "clear",
+        value: "silent",
+        target: { scope: "project", projectId: "proj-a" },
+      },
+      elsewhereDir(),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.status).toBe(400);
+    expect(diskFingerprint()).toBe(before);
+  });
+
+  it("still treats an absent action as a write", async () => {
+    // Every client that predates `action` sends none. Control for the case
+    // above: without it, refusing ALL actions would pass that test too.
+    const result = await applyGlobalConfigEdit(
+      { key: "nudge_mode", value: "normal", target: { scope: "project", projectId: "proj-a" } },
+      elsewhereDir(),
+    );
+    expect(result.ok).toBe(true);
+    expect(effective("nudge_mode", "proj-a")).toBe("normal");
   });
 });
 

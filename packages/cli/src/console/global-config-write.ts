@@ -33,6 +33,7 @@ import {
   asPlainObject,
   buildPanelContext,
   loadPanelContext,
+  resetFieldValue,
   writeFieldValue,
 } from "./config-resolve.js";
 import { mergeProjectList } from "./project-list.js";
@@ -45,6 +46,8 @@ export interface ConfigWriteRequest {
   key?: unknown;
   value?: unknown;
   target?: unknown;
+  /** `"set"` (default) or `"reset"`. Anything else is refused, not defaulted. */
+  action?: unknown;
 }
 
 /** Where a value is being written. Deliberately has no path-shaped member. */
@@ -160,6 +163,17 @@ export async function applyGlobalConfigEdit(
     return bad(400, `not a configurable key: ${key}`);
   }
 
+  // Absent means `set` (every client that predates this field sends none);
+  // anything else present must be one of the two. Falling back to `set` on an
+  // unrecognised action would turn a typo'd `"clear"` into a write of whatever
+  // `value` happened to hold — the opposite of what was asked, reported as
+  // success.
+  const rawAction = body?.action;
+  if (rawAction !== undefined && rawAction !== "set" && rawAction !== "reset") {
+    return bad(400, "action must be one of: set, reset");
+  }
+  const action: "set" | "reset" = rawAction === "reset" ? "reset" : "set";
+
   const global = asPlainObject(loadGlobalConfig(resolveGlobalRoot()));
   const target = await resolveTarget(body?.target, global, launchDir);
   if ("ok" in target) return target;
@@ -171,10 +185,17 @@ export async function applyGlobalConfigEdit(
   // What gets persisted is validate's RETURN value, not the request's. That is
   // how `"42"` from an HTML input becomes the number 42 readers expect — writing
   // the string back would produce a value the page shows and nothing honours.
-  const raw = body?.value;
-  const validated = field.validate(typeof raw === "string" ? raw : String(raw));
-  if (!validated.ok) {
-    return bad(400, validated.error);
+  // A reset carries no value, so it is not validated: requiring a valid value in
+  // order to REMOVE one would strand any setting written by an older version or
+  // hand-edited out of range — exactly the case reset exists for.
+  let validatedValue: unknown;
+  if (action === "set") {
+    const raw = body?.value;
+    const validated = field.validate(typeof raw === "string" ? raw : String(raw));
+    if (!validated.ok) {
+      return bad(400, validated.error);
+    }
+    validatedValue = validated.value;
   }
 
   // Targeting is expressed entirely by WHICH CONTEXT gets built; `writeFieldValue`
@@ -189,12 +210,10 @@ export async function applyGlobalConfigEdit(
   });
 
   try {
-    const written = await writeFieldValue(
-      field,
-      validated.value,
-      ctx,
-      target.scope === "project",
-    );
+    const written =
+      action === "reset"
+        ? await resetFieldValue(field, ctx, target.scope === "project")
+        : await writeFieldValue(field, validatedValue, ctx, target.scope === "project");
     return { ok: true, target: written };
   } catch (error) {
     return bad(400, error instanceof Error ? error.message : String(error));
