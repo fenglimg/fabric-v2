@@ -52,7 +52,10 @@
 - [x] 测试要点：① 非 POST / 跨源 Origin 被拒（`/api/repair` 作为写通道表第四条，与前三条同矩阵）；② 非法 action 400 且**不 spawn** —— 判据取响应 `content-type`：子进程输出一旦开流就是 `text/plain` 且状态已随首块发出，所以 JSON 响应体即「流分支从未进入」，只断言状态码会漏掉「先跑了再判非法」；③ 清单以文件系统为真源（删/改/加文件后载荷跟着变）。
 - [x] 额外钉住：`BEHAVIORS[].keys ∪ NON_HOOK_KEYS ∪ UNWIRED_BEHAVIOR_KEYS` 必须**恰好等于**非 corpus 面板键全集且无重复——这条全划分是发现四个死键（`audit_mode` / `cite_policy_enabled` / `self_archive_policy_enabled` / `review_stale_pending_days`）的原因，也是新加 schema 键不会两边都不落的保证。
 - [x] 变异验证 5 个全被杀：M1 `compareFile` 装了就报 ok；M2 `active` 去掉 registered 合取；M3 MCP 以文件存在即视为已接入；M4 `NON_HOOK_KEYS` 少一个键；M5 Claude 托管块见 import 行即 ok。
-- [ ] 未做实机执行验证：`install` / `doctor --fix` 会改用户真实 store 与安装树，未在未经确认的情况下点。服务端流式（spawn → 边跑边写 → 退出码尾行）已用真实子进程测；浏览器侧 reader pump 未实跑。
+- [x] 浏览器侧 reader pump 已实跑（2026-08-19，`/integrations` 真实页面 + 桩流）。两条分支都走到：
+  - **成功流**：请求体 `{"action":"doctor-fix","scope":"<id>"}`，无路径（与服务端按枚举拼 argv 的设计一致）；点击后两个按钮同时 `disabled`、`#rout` 由 `hidden` 转可见；三个 chunk 逐块累加（`""` → `fabric doctor --fix\n` → `+ ✓ 42 项通过\n` → `+ exit code: 0\n`），确认是边跑边显示而不是跑完一次性灌进去；结束时先出「已结束，页面已重新读取文件状态」的 toast，再 `load()` 重绘 —— 重绘换掉了 `#rout` 节点而正文从 `ROUT` 原样画回，即注释声称的行为；按钮在 `load()` 落地后恢复可用（1200ms 采样时仍 disabled，是 `load()` 在途，非卡死）。
+  - **拒绝流**：400 + JSON `{error}` → 错误原文进 `.toast.bad`，按钮立刻恢复，`#rout` 保持空 —— 没有留下一段假装跑过的旧输出。
+- [ ] **仍未做**：真实命令的端到端执行。`install` / `doctor --fix` 会写用户的真实安装树与共享 store，需明确授权。2026-08-19 实测 `fabric doctor` 本仓有 7 项待处理，`--fix` 会：恢复 bootstrap 快照（会盖掉 `AGENTS.md` / `.fabric/AGENTS.md` / `.claude/settings.json` 的未提交改动）、轮转 `events.jsonl`、**改写共享 team store 的知识正文**（去重段落 / 重命名 `## Session context` / 合并 `tech_stack` 进 `tags`）、把游离 `.fabric` 目录改名为 `.fabric.stale-<ts>`（KT-PIT-0051 记录过它两次误伤测试夹具）。即"这一按不是验证，是一次真实变更"。
 
 ## W4 全局项目发现（切换器只看得见一个项目）
 
