@@ -95,10 +95,28 @@
 
 ## 收口
 
-- [ ] `pnpm -r exec tsc --noEmit`（本地必跑，不靠 build —— 三次复发史）
-- [ ] 全量 `pnpm -r test`
-- [ ] AC1–AC9 逐条对照勾验，未达成的写明原因而不是删判据
-- [ ] 归档判断：走一遍并把结论说出来，允许结论是"本段无可归档"
+- [x] `pnpm -r exec tsc --noEmit`（本地必跑，不靠 build —— 三次复发史）
+- [x] 全量 `pnpm -r test`
+- [x] AC1–AC9 逐条对照勾验，未达成的写明原因而不是删判据
+- [x] 归档判断：走一遍并把结论说出来，允许结论是"本段无可归档"
+
+### AC 逐条对照（2026-08-20）
+
+| AC | 结论 | 证据 |
+|---|---|---|
+| AC1 切换器只剩保留项 | ✅ | 真机 `/api/scopes` = machine / ccpm / pcf / werewolf-minigame，`blockedByReason` 空（三行「另有 N 个…」提示一并消失）。重载后不复现。 |
+| AC2 执行前列出具体位置 + 一次显式确认，取消零变化 | ✅ | 不带 `confirm` 的调用在服务端是纯读并返回清单；副本上取消后 9 个文件 + 全局配置 sha 逐行一致。UI 实拍清单含注册表目录、`projects.<id>`、binding 绝对路径。 |
+| AC3 不触碰未选中项目 | ✅ | 副本与真机两次执行前后逐项 sha 比对：只少了该少的 binding 文件、`projects.json` 变一次，其余全等；邻居项目三处逐字节不变另有单测钉住。 |
+| AC4 五页 `.seg:hover` 一致且知识页 ≠ `--primary` | ✅ | 五页 `--fx-accent` 均 `#f4f4f5`；知识页 `--accent` = `--primary` = `#2563eb` 而 `--fx-accent` ≠ 二者。悬停实拍为淡灰。 |
+| AC5 token 冲突回归闸 | ✅ | `console-chrome-tokens.test.ts` 断言「外壳读取集 ∩ 页面声明集 = ∅」，钉的是机制不是当前取值；另有非空性守卫。变异 `.seg:hover` 回读 `var(--accent)` → 变红并点名 `lumen.html: --accent`。 |
+| AC6 未触碰即可见「移除此处设置」 | ✅ | `/integrations` 未触碰状态下可达的移除按钮 0 → 2；点击后该行退回继承态、徽标由「本项目」转下层来源。 |
+| AC7 多选保存往返 | ✅ | 勾 `archive_backlog` → 保存出现 → 落盘 → 重载一致 → 改回初始集合保存入口消失。用户真实 `fabric-global.json` 操作前后 sha 一致（`a18bbdccfb52`）。 |
+| AC8 「说明」与「移除此处设置」可区分 | ✅ | 前者贴层级徽标在标签列，后者贴控件在 `.fx-row` 内且不在 `.fx-actions` 里；结构断言 + 变异钉住。 |
+| AC9 全量测试 + `tsc --noEmit`，新增断言经变异证明会红 | ✅ | `pnpm -r exec tsc --noEmit` 干净；shared 668 / server 1216 / cli 1763 全绿。变异共 11 次：W1 两次、W2 一次、W3 五次、W4 一次、project-list 一次、write-guard 一次，每次都精确杀掉预期的用例。 |
+
+**已知边界（不是未达成，是范围内说清楚）**：真机 6 个被注销项目里没有一个在 `fabric-global.json` 的 `projects` 段有条目，所以「删配置段」那条臂在真机上未被触发 —— 它由单测覆盖（`clears all three places for a project that is in all three`），并在副本演练里同样未触发。
+
+**归档判断**：本段有可归档内容 —— 「token 层冲突在选择器层查不出来」与「按 id 命名行会让无 id 的项目永久不可操作」两条都是可复用的坑，已在下一段处理。
 
 ## 风险文件
 
