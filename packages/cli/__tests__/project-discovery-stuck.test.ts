@@ -88,22 +88,47 @@ describe("a directory that never answers", () => {
   });
 
   it("keeps the per-read budget under the whole-walk budget", async () => {
-    // Two stuck directories with a 100ms read budget is 200ms of waiting, which
-    // must not be allowed to overrun a 50ms walk budget. Without the min() the
-    // per-read ceiling silently becomes the real deadline, and the bound the
-    // caller asked for is not the bound it gets.
+    // Without the min() the per-read ceiling silently becomes the real deadline,
+    // and the bound the caller asked for is not the bound it gets: a 5s read
+    // budget would let two stuck directories wait 10s inside a 50ms walk.
+    //
+    // Asserted on the timeout each read ASKS FOR, not on how long the walk took.
+    // The wall-clock version of this (`Date.now() - started < 2000`) measured OS
+    // scheduling rather than a property of the code, and reddened roughly one
+    // full-suite run in three while passing every time it ran alone — the same
+    // defect KT-GLD-0007 records against the old recall-perf p95 assertion, and
+    // the fix is the same one KT-PIT-0023 landed there: replace the timing proxy
+    // with the deterministic quantity it was standing in for. `readdirWithin`
+    // hands its budget straight to `setTimeout`, so that argument IS the bound,
+    // observable without waiting for it to elapse.
     mkdirSync(join(home, `${HANG_MARKER}-a`), { recursive: true });
     mkdirSync(join(home, `${HANG_MARKER}-b`), { recursive: true });
 
-    const started = Date.now();
-    const result = await discoverFabricProjects({
-      roots: [home],
-      globalRoot,
-      maxMs: 50,
-      maxDirMs: 5_000,
-    });
+    const requested: number[] = [];
+    const realSetTimeout = globalThis.setTimeout;
+    const spy = vi
+      .spyOn(globalThis, "setTimeout")
+      .mockImplementation(((handler: TimerHandler, ms?: number, ...rest: unknown[]) => {
+        if (typeof ms === "number") requested.push(ms);
+        return (realSetTimeout as (...a: unknown[]) => NodeJS.Timeout)(handler, ms, ...rest);
+      }) as unknown as typeof globalThis.setTimeout);
 
-    expect(Date.now() - started).toBeLessThan(2_000);
+    let result;
+    try {
+      result = await discoverFabricProjects({
+        roots: [home],
+        globalRoot,
+        maxMs: 50,
+        maxDirMs: 5_000,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    // Non-vacuity: the bounded reads really happened, so an empty list can never
+    // satisfy the ceiling below by never having asked for anything.
+    expect(requested.length).toBeGreaterThan(0);
+    expect(Math.max(...requested)).toBeLessThanOrEqual(50);
     expect(result.stoppedBy).toBe("time");
   });
 });
