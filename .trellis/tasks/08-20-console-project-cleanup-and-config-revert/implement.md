@@ -74,15 +74,24 @@
 
 ## W4 — 配色收敛（改动面最广，全部可逆）
 
-- [ ] 新增 `--fx-btn-solid-bg` / `--fx-btn-solid-fg` 一对 token，`.fx-btn` 主态改中性近黑实心
-- [ ] `.frow.mod::before` 改 2px、低饱和强调色
-- [ ] `.tag` 层级徽标改中性灰
-- [ ] 复核 `--primary` 的剩余消费方只剩 `--ring`（焦点）与 `.seg.active`（选中）两类
-- [ ] 新增样式一律带类/id 锚点、无裸标签选择器、无字面色号
-- [ ] 跑 `ui-metrics-probe.mjs` 静态半
-- [ ] 五页 × 700/768/1024/1440 截图比对，无横向滚动
+- [x] 新增 `--fx-btn-solid-bg` / `--fx-btn-solid-fg` 一对 token，`.fx-btn` 主态改中性近黑实心
+- [x] `.frow.mod::before` 改 2px、低饱和强调色
+- [x] `.tag` 层级徽标改中性灰
+- [x] 复核 `--primary` 的剩余消费方只剩 `--ring`（焦点）与 `.seg.active`（选中）两类
+- [x] 新增样式一律带类/id 锚点、无裸标签选择器、无字面色号
+- [x] 跑 `ui-metrics-probe.mjs` 静态半
+- [x] 五页 × 700/768/1024/1440 截图比对，无横向滚动
 
 **验证**：真机比对 + probe 静态半
+
+**W4 实测（2026-08-20，真机 7792）**
+
+- **改动四处**：`.fx-btn` 主态 → `--fx-btn-solid-bg/-fg`（浅色 `#18181b` 深色反相 `#fafafa`，靠**重量**而不是色相当主操作）；`.fx-badge.primary` 由蓝实心块改描边中性（它标的是「这一行是当前那个」这件事实，不是一个动作，而一张表里十几个实心块会跟被它标注的数据抢注意力）；`.frow.mod::before` 3px → 2px 且改半透明 `--fx-mod-mark`（45%，随行背景走而不是挑一个死灰蓝）；`integrations` 的 `.tag.on` 由蓝改 `--success`（「已启用」是状态不是选中，而它跟顶栏那条选中标签会同屏出现）。
+- **层级徽标复核后未改**：`.tag` 本就是 `--muted-foreground`、`.tag.set` 本就是 `--foreground`，两者已经是中性。计划里写「改中性灰」是照 F5 的推断写的，实测不成立 —— 记下来而不是为了勾掉这一条去动一个已经对的地方。
+- **`--primary` 剩余消费方实测四处**，全部是选中态：`.seg.active` / `.seg.active::after` / `.fx-tab[aria-selected="true"]` / `.chk input[type="checkbox"]` 的 `accent-color`；焦点走 `--ring`（同值不同名）。页面层保留三处：`.cbtn.on`、`.preset.on`（都是选中）与 `.goto`（超链接 —— 蓝色链接是第五种通用约定，把它改成灰比留着更怪）。
+- **新增断言（`blue is spent only on selection`）是 pin 不是 mechanism** —— 「蓝＝选中」没有解析器判得了，它的作用是让「再往别处花一次蓝」变成一次要写理由的显式编辑，而不是一条一条悄悄侵蚀回去。变异：把主按钮背景改回 `var(--primary)` → 当场变红。
+- **五页 × 700/768/1024/1440 共 20 组**：`scrollWidth ≤ innerWidth` 全部成立，无横向滚动。明暗两套实测：浅色主按钮 `rgb(24,24,27)`／深色 `rgb(250,250,250)`，竖条 `rgba(37,99,235,.45)`／`rgba(96,165,250,.5)` 且均为 2px，选中标签两套仍是各自的蓝。
+- `ui-metrics-probe.mjs` 静态半 all clear（无字面色号、无裸标签选择器、`fx-` 前缀规则）。
 
 ## 收口
 

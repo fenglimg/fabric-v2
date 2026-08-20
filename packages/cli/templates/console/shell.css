@@ -168,6 +168,28 @@
   --fx-mono: "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas,
     monospace;
 
+  /* --- where blue is allowed --------------------------------------------
+   * `--primary` had grown four jobs at once — focus, selected, modified-here,
+   * and primary action — and a colour carrying four meanings indicates none of
+   * them. It now means SELECTED (the active nav tab, a checked box) and FOCUSED
+   * (`--ring`) and nothing else, which is what gives it back its pointing
+   * power.
+   *
+   * The primary action goes neutral near-black: it is still unmistakably the
+   * heaviest control on the page — weight is what marks a primary action, not
+   * hue — without competing with the one colour that means "this one".
+   *
+   * It inverts in dark mode rather than lightening, for the same reason the
+   * light value is near-black: what makes a solid button read as primary is
+   * maximum contrast against the page, and in dark mode that is the light end. */
+  --fx-btn-solid-bg: #18181b;
+  --fx-btn-solid-fg: #fafafa;
+  /* The "set at this layer" rail. Deliberately translucent rather than a picked
+   * grey-blue: it then sits correctly on the row's own background whether that
+   * row is plain, hovered or inside a card. At 45% it still reads as blue at a
+   * glance while dropping out of the foreground competition entirely. */
+  --fx-mod-mark: rgba(37, 99, 235, 0.45);
+
   /* --- legacy aliases ----------------------------------------------------
    * lumen.html (zero-regression protected, cannot be edited) and graph.html
    * consume these names. They are NOT dead — they are the reason those two
@@ -233,6 +255,9 @@
    * place to forget. */
   --fx-accent: #27272a;
   --fx-border: rgba(255, 255, 255, 0.1);
+  --fx-btn-solid-bg: #fafafa;
+  --fx-btn-solid-fg: #18181b;
+  --fx-mod-mark: rgba(96, 165, 250, 0.5);
 
   --accent-light: rgba(96, 165, 250, 0.14);
   --edge: rgba(160, 160, 160, 0.26);
@@ -512,8 +537,8 @@ body {
   cursor: pointer;
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  color: var(--primary-foreground);
-  background: var(--primary);
+  color: var(--fx-btn-solid-fg);
+  background: var(--fx-btn-solid-bg);
   transition: var(--tx);
 }
 
@@ -811,10 +836,14 @@ body {
   height: 11px;
 }
 
+/* Outlined rather than a solid fill. It marks "this is the current one", which
+ * is a fact about a row, not an action to take — and a filled block is the
+ * loudest thing a table can contain, so a dozen rows each carrying one made the
+ * badges compete with the data they annotate. */
 .fx-badge.primary {
-  color: var(--primary-foreground);
-  background: var(--primary);
-  border-color: transparent;
+  color: var(--foreground);
+  background: transparent;
+  border-color: var(--muted-foreground);
 }
 
 .fx-badge.ok {
@@ -1144,9 +1173,9 @@ body {
   left: 0;
   top: 6px;
   bottom: 6px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--primary);
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--fx-mod-mark);
 }
 
 .frow:hover {

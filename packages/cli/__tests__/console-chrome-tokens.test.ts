@@ -86,6 +86,31 @@ describe("shared chrome tokens are not redefinable by any page", () => {
     expect(lumen.has("--accent")).toBe(true);
   });
 
+  it("blue is spent only on selection (and, via --ring, on focus)", () => {
+    // `--primary` had grown four jobs — focus, selected, set-at-this-layer, and
+    // primary action — and the user's report was the symptom: with everything
+    // shouting, the solid blue blocks read as noise rather than as pointing at
+    // anything. It now means SELECTED, and `--ring` (which is the same value)
+    // means FOCUSED.
+    //
+    // This is a PIN, not a mechanism: "blue means selected" is a judgement no
+    // parser can make. Its job is to make spending blue somewhere new a
+    // deliberate act — an edit here, with a reason — instead of a default that
+    // erodes the meaning again one rule at a time. If you are adding a genuine
+    // selected state, add its selector below.
+    const css = code(readFileSync(SHELL_CSS, "utf8"));
+    const selectors: string[] = [];
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (/var\(\s*--primary\s*\)/.test(match[2]!)) selectors.push(match[1]!.trim());
+    }
+    expect(selectors.sort()).toEqual([
+      ".chk input[type=\"checkbox\"]", // a ticked box IS the selection
+      ".fx-tab[aria-selected=\"true\"]",
+      ".seg.active",
+      ".seg.active::after",
+    ]);
+  });
+
   it("every fx- token the chrome reads is declared with a literal, not an alias", () => {
     // `--fx-accent: var(--accent)` would look like a fix and restore the bug one
     // hop later: the alias resolves against the page's `:root`, so lumen's blue

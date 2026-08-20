@@ -16,7 +16,9 @@
   .card h3{margin:0 0 6px;font-size:var(--fs-3);font-weight:var(--fw-semibold);color:var(--foreground)}
   .tag{display:inline-block;font-size:var(--fs-1);padding:1px 7px;border-radius:999px;
     border:1px solid currentColor;color:var(--muted-foreground);margin-left:6px}
-  .tag.on{color:var(--primary)}
+  /* 「已启用」是状态不是选中 —— 用蓝会跟顶栏那条选中标签抢同一个含义,而它俩
+     在同一屏里同时出现。绿/琥珀这一对本身就说明 on/off,不用再借蓝。 */
+  .tag.on{color:var(--success)}
   .tag.off{color:var(--warning)}
   /* 指向别处控件的引用。长得像正文里的一个词,不像按钮 —— 它做的事是导航,
      不是提交,给它按钮的分量会让人以为点下去会改什么。 */
