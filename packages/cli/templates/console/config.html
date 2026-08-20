@@ -21,6 +21,9 @@
     font-weight:var(--fw-medium);padding:0 7px;border-radius:999px;
     border:1px solid var(--border);color:var(--muted-foreground)}
   .tag.env{color:var(--warning);border-color:currentColor}
+  /* 值就设在你正看的这一层。继承来的保持中性灰 —— 差别本身就是要传达的信息,
+     两者同样醒目就等于没说。 */
+  .tag.set{color:var(--foreground);border-color:var(--muted-foreground)}
   .tag.cur{color:var(--primary);border-color:currentColor}
   /* 预设卡:三档并排。收起时只有档名 + 这一档会改动多少项 —— 数值收进展开区。
      三档共摊 24 个数字,等于让人为了选一个档位先读 24 个数。 */
@@ -135,7 +138,9 @@
   // 九个开关。说明没有被删,只是挪到了一次点击之后。
   var descSeq=0;
   function row(f,target,extraTag){
-    var tag='<span class="tag'+(f.source==='env'?' env':'')+'">'+esc(f.sourceLabel)+'</span>';
+    // 出处标签走 shell.js 的同一个渲染器 —— 集成页的行为行也用它。这一页原本
+    // 自己拼这个 span,于是两页对同一个值说的话可以不一样。
+    var tag=FabricField.sourceTag(f,DATA.strings);
     // 没生效但存在的 env 变量也要标出来 —— 用户排查"我改了怎么没用"时,这一行
     // 往往就是答案。
     var envNote=(f.envVar&&f.source!=='env')
@@ -144,8 +149,7 @@
     var expand='<div class="fexp" id="'+id+'" data-open="false">'+
       '<div class="fdesc">'+esc(f.description)+'</div>'+envNote+
       semanticNote(f,target,DATA.strings)+'</div>';
-    return '<div class="frow'+(f.modified?' mod':'')+'"'+
-      (f.modified?' title="'+esc(DATA.strings.modified)+'"':'')+'>'+
+    return '<div class="frow'+(f.modified?' mod':'')+'">'+
       '<div class="fmain">'+
       '<span class="flabel">'+esc(f.label)+'</span>'+
       '<span class="fkey">'+esc(f.key)+'</span>'+tag+(extraTag||'')+
@@ -382,9 +386,22 @@
     // 仍然挂着一张卡。
     var remote=Q?'':remoteCard(DATA.remoteEmbedding,s);
 
+    // 顶栏的作用域下拉对这一页**不改任何值** —— /api/config 刻意不按 scope 重新
+    // 取根(配置在 ~/.fabric,与你站在哪个目录无关)。不说出来的后果是用户切了项目
+    // 看到一模一样的一页,判断成"这个下拉坏了",而它在集成页与状态页是生效的。
+    // 只在真选了某个项目时出现:选着「本机」时这一页本来就是全机器的,没有落差要解释。
+    // 只在 scope 真的对上某个已知项目时才出现。这一页不走 resolveScope(配置本就
+    // 与作用域无关),所以它是全站唯一一个「?scope= 是垃圾值也照样渲染」的页面 ——
+    // 拿没校验过的值当项目名念出来,等于用一句解释制造出一个不存在的项目。
+    var sc=FabricScope.current();
+    var scoped=(sc&&sc!=='machine')
+      ? (DATA.projects||[]).filter(function(p){ return p.projectId===sc; })[0] : null;
+    var scopeNote=scoped
+      ? '<div class="note">'+esc(fmt(s['scope-note'],{name:scoped.name}))+'</div>' : '';
+
     document.getElementById('main').innerHTML=
       '<div class="fx-page-head"><h1 class="fx-page-title"><b>配置</b></h1>'+
-      '<span class="fx-page-sub">'+esc(s.intro)+'</span></div>'+
+      '<span class="fx-page-sub">'+esc(s.intro)+'</span>'+scopeNote+'</div>'+
       '<div class="searchbar">'+FabricIcon.svg('search')+
         '<input id="q" type="search" placeholder="'+esc(s.search)+
         '" value="'+esc(Q)+'" /></div>'+

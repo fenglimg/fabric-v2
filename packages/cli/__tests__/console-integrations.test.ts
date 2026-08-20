@@ -54,12 +54,25 @@ import { findTemplatePath } from "../src/install/template-io.ts";
 const dirs: string[] = [];
 let savedHome: string | undefined;
 const savedEnv = new Map<string, string | undefined>();
+// `FABRIC_HOME` is not the only home this view reads. The MCP probe looks for
+// the user-level registration at `$HOME/.claude.json` and `$HOME/.codex/config.toml`
+// — real files on a developer machine, where Fabric is registered — so pointing
+// only `FABRIC_HOME` at a temp dir left "an empty directory has nothing
+// installed" reading the machine running the test. It failed for anyone who had
+// actually installed Fabric and passed in CI, which is the worst orientation for
+// that pair.
+const HOME_VARS = ["HOME", "USERPROFILE"] as const;
+const savedHomeVars = new Map<string, string | undefined>();
 
 beforeEach(() => {
   savedHome = process.env.FABRIC_HOME;
   const home = mkdtempSync(join(tmpdir(), "fab-int-home-"));
   dirs.push(home);
   process.env.FABRIC_HOME = home;
+  for (const name of HOME_VARS) {
+    savedHomeVars.set(name, process.env[name]);
+    process.env[name] = home;
+  }
   mkdirSync(join(home, ".fabric"), { recursive: true });
   writeFileSync(
     join(home, ".fabric", "fabric-global.json"),
@@ -75,6 +88,11 @@ beforeEach(() => {
 afterEach(() => {
   if (savedHome === undefined) delete process.env.FABRIC_HOME;
   else process.env.FABRIC_HOME = savedHome;
+  for (const [name, value] of savedHomeVars) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+  savedHomeVars.clear();
   for (const [name, value] of savedEnv) {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
@@ -326,6 +344,60 @@ describe("behaviours — a hook runs only when the file is there AND registered"
       ?.keys.find((k) => k.key === "nudge_mode");
     expect(nudge?.effective).toBe("silent");
     expect(nudge?.source).toBe("defaults");
+    // INHERITED, not set here. This page resolves against `p-test`, so the
+    // machine-wide value is one layer up — and the row's marker says "set here,
+    // no longer follows the layer below" while its reset button removes the
+    // project's own entry. Both are wrong about a value the project never wrote:
+    // the sentence is false and the button has nothing to remove.
+    expect(nudge?.modified).toBe(false);
+    expect(nudge?.inherited).toBe(true);
+    expect(nudge?.sourceLabel.length).toBeGreaterThan(0);
+  });
+
+  it("marks a knob the PROJECT itself set as set here, not as inherited", async () => {
+    // The other half of the discriminator. Same key, same page, same fixture —
+    // only the layer holding the value moves. Without this pair, an implementation
+    // that answered a constant would pass one of the two (KT-PIT-0097).
+    const root = installedProject();
+    writeFileSync(
+      join(process.env.FABRIC_HOME as string, ".fabric", "fabric-global.json"),
+      JSON.stringify({
+        uid: "u-test",
+        stores: [],
+        // Both layers hold a value, and DIFFERENT ones: if the resolver were
+        // reading the wrong layer, `effective` would say so out loud.
+        defaults: { nudge_mode: "normal" },
+        projects: { "p-test": { nudge_mode: "silent" } },
+      }),
+      "utf8",
+    );
+
+    const nudge = (await collectIntegrations(scopeOf(root))).behaviors
+      .find((b) => b.id === "fabric-hint")
+      ?.keys.find((k) => k.key === "nudge_mode");
+    expect(nudge?.effective).toBe("silent");
+    expect(nudge?.source).toBe("project");
+    expect(nudge?.modified).toBe(true);
+    expect(nudge?.inherited).toBe(false);
+  });
+
+  it("marks a knob no layer ever set as neither", async () => {
+    // The third state. `modified` and `inherited` are not complements — a page
+    // that rendered `!modified` as "inherited from …" would name a layer that
+    // holds nothing.
+    const root = installedProject();
+    writeFileSync(
+      join(process.env.FABRIC_HOME as string, ".fabric", "fabric-global.json"),
+      JSON.stringify({ uid: "u-test", stores: [] }),
+      "utf8",
+    );
+
+    const nudge = (await collectIntegrations(scopeOf(root))).behaviors
+      .find((b) => b.id === "fabric-hint")
+      ?.keys.find((k) => k.key === "nudge_mode");
+    expect(nudge?.source).toBe("default");
+    expect(nudge?.modified).toBe(false);
+    expect(nudge?.inherited).toBe(false);
   });
 
   it("renders one control per key, and cross-references the other readers", async () => {

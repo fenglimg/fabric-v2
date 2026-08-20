@@ -75,16 +75,35 @@ export interface FieldView {
   /** Front page or behind "advanced". Unknown keys land in advanced, never nowhere. */
   tier: FieldTier;
   /**
-   * Someone put a value here — as opposed to the code default deciding.
+   * THIS layer holds a value for this key — the layer the surrounding context
+   * targets, which is also the one a write from this row would land in.
    *
-   * This is what the page's change bar keys off, and it is derived from the
-   * resolved SOURCE rather than by comparing the value to the default. The two
-   * differ exactly where it matters: a key explicitly set to the same value the
-   * default would have produced is still a pinned decision that outranks every
-   * layer below it, and hiding that would make "why does my machine-wide setting
-   * not reach this project" unanswerable from the page.
+   * Derived from the resolved SOURCE rather than by comparing the value to the
+   * default: a key explicitly set to the same value the default would have
+   * produced is still a pinned decision that outranks every layer below it, and
+   * hiding that would make "why does my machine-wide setting not reach this
+   * project" unanswerable from the page.
+   *
+   * The predicate used to be `source !== "default"`, which is a different
+   * question — "is anyone anywhere overriding the built-in" — and answers yes
+   * for a value merely INHERITED from a higher layer. It drives two things that
+   * both need the narrow reading: the "set here, no longer follows the layer
+   * below" marker, which was simply false on an inherited row, and the reset
+   * button, which on such a row removes nothing and reports success anyway.
+   * @see layerOf
    */
   modified: boolean;
+  /**
+   * Some OTHER layer decided this value. Mutually exclusive with `modified`;
+   * both false means the built-in default is deciding and nobody has an opinion.
+   *
+   * `source` says which layer, and `sourceLabel` names it in the user's
+   * language — so a row can state where its value actually came from instead of
+   * leaving the reader to guess whether silence means "default" or "inherited".
+   * An env-decided value counts as inherited (the environment is another layer);
+   * a page that renders the env lock separately can branch on `source`.
+   */
+  inherited: boolean;
   /** The variable that can override this key, or null when none reads one. */
   envVar: string | null;
   /**
@@ -281,6 +300,30 @@ function readSemanticSearch(
 }
 
 /**
+ * The layer a context TARGETS — the single layer a write built from this same
+ * context would land in, and therefore the only one whose holding a value makes
+ * "set here" true.
+ *
+ * It mirrors `applyFieldMutation`'s home selection exactly: `global_root` keys
+ * go to the global file, `corpus` keys to the store, and preference keys to
+ * `projects[<id>]` when the context carries a project id and to `defaults`
+ * otherwise. The write side picks the same two branches off
+ * `preferProjectScope && ctx.projectId !== null`, and every console caller
+ * passes `preferProjectScope = target.scope === "project"`, which is true for
+ * exactly the contexts built with a non-null project id.
+ *
+ * Keyed off the context rather than off the field alone because the SAME field
+ * is rendered at three different layers on these pages — machine-wide, per
+ * project, per store — and "is it set here" has a different answer at each. A
+ * field-only helper would have to guess which section it was rendering for.
+ */
+export function layerOf(field: PanelFieldMeta, ctx: PanelContext): ValueSource {
+  if (field.home === "global_root") return "global";
+  if (field.home === "corpus") return "store";
+  return ctx.projectId === null ? "defaults" : "project";
+}
+
+/**
  * One panel field, resolved against one context.
  *
  * Exported because the integrations page renders a handful of the same keys as
@@ -292,6 +335,7 @@ function readSemanticSearch(
 export function viewOf(field: PanelFieldMeta, ctx: PanelContext): FieldView {
   const key = String(field.key);
   const { value, source } = resolveEffective(field, ctx);
+  const layer = layerOf(field, ctx);
   return {
     key,
     group: field.group,
@@ -305,7 +349,8 @@ export function viewOf(field: PanelFieldMeta, ctx: PanelContext): FieldView {
     source,
     sourceLabel: t(`cli.config.source.${source}`),
     tier: tierOf(key),
-    modified: source !== "default",
+    modified: source === layer,
+    inherited: source !== layer && source !== "default",
     envVar: envOverrideFor(key),
     editable: source !== "env",
   };
@@ -439,6 +484,8 @@ function chromeStrings(): Record<string, string> {
     "advanced.intro",
     "advanced.count",
     "modified",
+    "inherited-from",
+    "scope-note",
     "reset",
     "reset-done",
     "preset.title",

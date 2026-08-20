@@ -324,6 +324,39 @@
 
   var FabricField = {
     /**
+     * The provenance chip: which layer decided this value, and whether that
+     * layer is the one you are looking at.
+     *
+     * Three states, because there are three. A row used to be able to say only
+     * "set here" or nothing at all, and the nothing covered two different
+     * situations — no layer holds this key, versus a layer above holds it — so
+     * "I see `silent` on this project, did I set that?" had no answer on the
+     * page. `inherited` splits them; `sourceLabel` names the layer in the
+     * user's own language.
+     *
+     * @param f       one FieldView
+     * @param strings the page's chrome strings; needs `modified`,
+     *                `inherited-from`
+     */
+    sourceTag: function (f, strings) {
+      var title = f.modified
+        ? strings.modified
+        : f.inherited
+          ? String(strings["inherited-from"]).replace("{source}", f.sourceLabel)
+          : "";
+      var cls = f.source === "env" ? " env" : f.modified ? " set" : "";
+      return (
+        '<span class="tag' +
+        cls +
+        '"' +
+        (title ? ' title="' + esc(title) + '"' : "") +
+        ">" +
+        esc(f.sourceLabel) +
+        "</span>"
+      );
+    },
+
+    /**
      * @param f       one FieldView from /api/config or /api/integrations
      * @param target  the write target, serialized into the button's dataset
      * @param strings the page's chrome strings; needs `save`, `reset`,

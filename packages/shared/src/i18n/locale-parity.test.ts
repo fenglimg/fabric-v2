@@ -219,8 +219,23 @@ describe("i18n locale parity census", () => {
   // (卡片正上方已经写着是哪个行为),这个键就没有落点了。
   // 删除路径按注释 ① 的口径处理:先 grep 全仓确认唯一引用点(integrations-view.ts
   // 的 ship list)已随模板一起移除,再两端 locale 同步删,parity 不破。
+  // 2026-08-20 (控制台可操作性 W1): 1010 → 1013。净 +3,全部是新增,三条都在补
+  // 同一类沉默 —— 页面知道答案却没说出口:
+  // 1 条 `cli.console.config.inherited-from`。配置行此前只有两态可说:「已在此处
+  // 设置」或者什么都不说。而「什么都不说」压着两件不同的事 —— 没人设过(内置默认
+  // 在决定)与上层设了(继承)—— 用户排查「我在项目里看到 silent,这是我设的吗」
+  // 时,页面沉默地把两者混为一谈。`{source}` 由已有的 `cli.config.source.*` 填充,
+  // 不需要再加来源名的键。
+  // 1 条 `cli.console.config.scope-note`。顶栏的作用域下拉对配置页不改任何值
+  //(/api/config 刻意不按 scope 重新取根),而它在集成页与状态页是生效的 —— 不说
+  // 出来,用户切了项目看到一模一样的一页,得到的结论是「这个下拉坏了」。
+  // 1 条 `cli.console.integrations.scope-line`。集成页每一句话都只对一个项目成立,
+  // 而选的是哪个项目只写在顶栏。两个项目装出来的东西本就该一样,于是切换后页面
+  // 没有任何地方能证明它生效了。
+  // 同轮另有 `cli.console.config.reset` 等**值**变更(见 W2),值变更不进 census。
+  // 纯增量,按上面的豁免不重跑 dead-key scan。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(1010);
+    expect(enKeys.length).toBe(1013);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

@@ -96,6 +96,9 @@ export const enMessages: Messages = {
     "Settings whose consequences you need to know before changing them. The defaults suit most cases.",
   "cli.console.config.advanced.count": "{count} settings",
   "cli.console.config.modified": "Set here; no longer follows the layer below",
+  "cli.console.config.inherited-from": "Inherited from {source}; nothing set here",
+  "cli.console.config.scope-note":
+    'The switcher is on "{name}". This page is machine-wide, so changing scope does not change the values here — it only decides which row under "Per-project settings" opens first.',
   "cli.console.config.reset": "Reset to default",
   "cli.console.config.reset-done": "Removed from {target}; the layer below decides again.",
   "cli.console.config.preset.title": "Reminder frequency",
@@ -150,6 +153,7 @@ export const enMessages: Messages = {
   "cli.console.integrations.title": "Integrations",
   "cli.console.integrations.intro":
     "What Fabric installed into this project, and how each client is wired to it. Every state is read from disk now, not recorded at install time.",
+  "cli.console.integrations.scope-line": "This page is about {name} — {path}",
   "cli.console.integrations.machine-only": "Integrations are per project",
   "cli.console.integrations.machine-only-hint":
     "Hooks, skills and the managed block all live inside a repository. Switch to a project above to see them.",

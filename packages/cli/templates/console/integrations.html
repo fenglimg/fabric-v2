@@ -18,6 +18,13 @@
     border:1px solid currentColor;color:var(--muted-foreground);margin-left:6px}
   .tag.on{color:var(--primary)}
   .tag.off{color:var(--warning)}
+  /* 「这一页在说哪个项目」。等宽字用于路径 —— 它是要被拿去比对的字面量,不是散文。 */
+  .scopeline{display:flex;align-items:center;gap:6px;margin:8px 0 0;
+    font-size:var(--fs-1);font-family:var(--mono);color:var(--muted-foreground)}
+  /* provenance —— 与配置页同义:env 是"生效且你在这里改不动",set 是"值就设在
+     你正看的这一层",继承来的保持中性灰。 */
+  .tag.env{color:var(--warning)}
+  .tag.set{color:var(--foreground);border-color:var(--muted-foreground)}
   /* 左客户端列表 / 右详情。窄屏塌成单列 —— 两栏在 720px 以下会把路径挤成一列字。 */
   .split{display:grid;grid-template-columns:190px 1fr;gap:14px;align-items:start}
   @media (max-width:720px){ .split{grid-template-columns:1fr} }
@@ -119,10 +126,14 @@
     var keys=b.keys.length
       ? b.keys.map(function(f){
           var fd=disclosure('<div class="fdesc">'+esc(f.description)+'</div>','说明');
+          // 出处标签与配置页共用一个渲染器。这一页原先完全不画它,于是一个从
+          // 全机器层继承下来的值,在这里和项目自己设的值长得一模一样 —— 而它们
+          // 的「移除」按钮做的事完全不同。
           return '<div class="frow'+(f.modified?' mod':'')+'">'+
             '<div class="fmain">'+
             '<span class="flabel">'+esc(f.label)+'</span>'+
-            '<span class="fkey">'+esc(f.key)+'</span>'+fd.btn+'</div>'+
+            '<span class="fkey">'+esc(f.key)+'</span>'+
+            FabricField.sourceTag(f,DATA.strings)+fd.btn+'</div>'+
             FabricField.control(f,target,DATA.strings)+fd.box+'</div>';
         }).join('')
       : '';
@@ -244,8 +255,17 @@
   }
 
   function pageHead(){
+    // 这一页的每一句话都只对一个项目成立,而选的是哪个项目只写在顶栏那个下拉里。
+    // 切到另一个项目后如果两边碰巧一模一样(常见 —— 装出来的东西本就该一样),
+    // 页面就没有任何地方能证明切换生效了,读起来就是「点了没反应」。
+    var s=DATA.scope;
+    var line=s.kind==='project'
+      ? '<p class="scopeline">'+FabricIcon.svg('folder','fx-ico-sm')+
+        esc(fmt(S('scope-line'),{name:(s.path||'').split('/').pop()||s.projectId||'',
+          path:s.path||''}))+'</p>'
+      : '';
     return '<div class="fx-page-head"><h1 class="fx-page-title"><b>'+esc(S('title'))+'</b></h1>'+
-      '<p class="fx-page-sub">'+esc(S('intro'))+'</p></div>';
+      '<p class="fx-page-sub">'+esc(S('intro'))+'</p>'+line+'</div>';
   }
 
   function render(){

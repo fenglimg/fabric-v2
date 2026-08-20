@@ -81,6 +81,9 @@ export const zhCNMessages: Messages = {
   "cli.console.config.advanced.intro": "改动前需要知道后果的项。默认值适用于大多数情况。",
   "cli.console.config.advanced.count": "{count} 项",
   "cli.console.config.modified": "已在此处设置,不再跟随下层",
+  "cli.console.config.inherited-from": "继承自{source},此处没有设置",
+  "cli.console.config.scope-note":
+    "顶栏当前选的是「{name}」。这一页是全机器的配置,换作用域不会换掉这里的值 —— 它只决定下面「按项目单独设置」先展开哪一个。",
   "cli.console.config.reset": "恢复默认",
   "cli.console.config.reset-done": "已从 {target} 移除,改由下层决定。",
   "cli.console.config.preset.title": "提醒频率",
@@ -127,6 +130,7 @@ export const zhCNMessages: Messages = {
   "cli.console.integrations.title": "集成",
   "cli.console.integrations.intro":
     "Fabric 装进这个项目的物件，以及各客户端当前的接入状态。所有状态都是现读文件算出来的，不是安装时记下的。",
+  "cli.console.integrations.scope-line": "这一页说的是 {name} —— {path}",
   "cli.console.integrations.machine-only": "集成是项目级的",
   "cli.console.integrations.machine-only-hint":
     "hook、skill 与托管块都装在某个仓库里。在右上角切到一个具体项目查看。",

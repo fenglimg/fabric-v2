@@ -536,6 +536,7 @@ function chromeStrings(): Record<string, string> {
   const keys = [
     "title",
     "intro",
+    "scope-line",
     "machine-only",
     "machine-only-hint",
     "mcp.title",
@@ -592,7 +593,19 @@ function chromeStrings(): Record<string, string> {
   // from the settings namespace rather than duplicated into this one: two
   // strings for one button is two things to translate and one of them to get
   // out of step with what the button actually does.
-  for (const key of ["save", "saved", "save-failed", "reset", "reset-done", "env-locked"]) {
+  for (const key of [
+    "save",
+    "saved",
+    "save-failed",
+    "reset",
+    "reset-done",
+    "env-locked",
+    // Provenance, borrowed for the same reason the buttons are: a behaviour row
+    // and a settings row are the same row, and two vocabularies for one layer
+    // would have this page call `defaults` something the settings page does not.
+    "modified",
+    "inherited-from",
+  ]) {
     out[key] = t(`cli.console.config.${key}`);
   }
   return out;
