@@ -1,11 +1,16 @@
 <!doctype html>
-<html lang="zh">
+<!-- data-theme-owner="page": 本页自带主题初始化(末尾脚本,硬默认 light),
+     让 shell.js 跳过它的系统偏好初始化,否则会先按系统上暗色再被本页改回亮色,
+     产生一次可见闪烁。 -->
+<html lang="zh" data-theme-owner="page">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Aurora×Terminal · Lumen 知识预览</title>
 <meta name="variant-desc" content="亮色极光风结合终端利落条目与键盘导航预览页" />
 <!-- offline: 用系统字体栈(--sans/--mono 已含 -apple-system/ui-monospace 兜底),不引外部 Google Fonts -->
+<link rel="stylesheet" href="/assets/shell.css" />
+<script src="/assets/shell.js"></script>
 <style>
   /* --------------------------------------------------------
    * Design System & Themes (Lumen Light-Focused Fusion)
@@ -173,6 +178,10 @@
     position: relative;
     z-index: 10;
     flex-shrink: 0;
+    /* 上移 1px,让下面那条三色渐变条正好盖住导航条的 1px 下边框。原来两条线只差
+       1px 并排,读起来是「有一条线没画齐」而不是两个分区 —— 一个装饰条和一个结构
+       边界抢同一个位置,谁都不像故意的。现在只剩一条,而且是有意义的那条。 */
+    margin-top: -1px;
   }
   [data-theme="dark"] header {
     background: rgba(18, 19, 26, 0.7);
@@ -184,33 +193,8 @@
     background: linear-gradient(90deg, var(--scope-team-color), var(--scope-project-color), var(--scope-personal-color));
   }
 
-  .brand {
-    font-weight: 700;
-    font-size: 16px;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text);
-  }
-  .brand span {
-    color: var(--text-tertiary);
-    font-weight: 400;
-  }
-  .brand-logo {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, var(--scope-team-color), var(--scope-personal-color));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-weight: 800;
-    font-size: 13px;
-    letter-spacing: 0;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-  }
+  /* `.brand` / `.brand-logo` 随那个页头一起删了。留着一份没有元素的规则,下一个人
+     只能靠 grep 才知道它是死的 —— 而 `#fff` 与 rgba 硬编码色号也正好跟着一起走。 */
 
   .search-wrapper {
     position: relative;
@@ -1213,6 +1197,15 @@
 </style>
 </head>
 <body>
+<nav class="navbar">
+  <h1 class="nav-title">Fabric 控制台</h1>
+  <a class="seg active" href="/">知识</a>
+  <a class="seg" href="/graph">关联图</a>
+  <a class="seg" href="/status">状态</a>
+  <a class="seg" href="/config">配置</a>
+  <a class="seg" href="/integrations">集成</a>
+  <span class="spacer"></span>
+</nav>
   <!-- Aurora Glowing Background Spots -->
   <div class="aurora-bg">
     <div class="aurora-circle aurora-1"></div>
@@ -1221,11 +1214,10 @@
   </div>
 
   <!-- Header -->
+  <!-- 这里曾经有第二个品牌标识(「Aurora×Terminal · Lumen」+ L 徽标)。导航条上
+       已经写着「Fabric 控制台」,同屏两个名字、且互相不认识,读者只能得出「这是两个
+       东西」。留下的是导航条那一个 —— 它五页都在,并且说的是这个产品的名字。 -->
   <header>
-    <div class="brand">
-      <div class="brand-logo">L</div>
-      Aurora×Terminal <span>· Lumen</span>
-    </div>
     <div class="search-wrapper">
       <span class="search-icon" id="search-icon-placeholder"></span>
       <input id="search" type="search" placeholder="输入关键字、tag、scope 或 type (按 / 聚焦)..." autocomplete="off" />
@@ -2011,13 +2003,18 @@
     dep.classList.toggle("active", hideDep());
     dep.textContent = hideDep() ? "弃用·已隐藏" : "弃用·隐藏";
     // 关联图带上当前数据源,图与列表同 scope
-    document.getElementById("graphtab").href = "/graph?all=" + (allOn() ? "1" : "0");
+    document.getElementById("graphtab").href = FabricScope.href(
+      "/graph?all=" + (allOn() ? "1" : "0"),
+    );
   }
 
   // Data Loading & Polling
   async function loadKnowledge() {
     try {
-      const res = await fetch("/api/knowledge?all=" + (allOn() ? "1" : "0"), { cache: "no-store" });
+      const res = await fetch(
+        "/api/knowledge?all=" + (allOn() ? "1" : "0") + FabricScope.param("&"),
+        { cache: "no-store" },
+      );
       const data = await res.json();
       let list = data.entries || [];
       // 默认显示+标记已弃用(deprecate-over-delete 可发现性,KT-DEC-0055);开关开启才隐藏
@@ -2051,7 +2048,7 @@
 
   async function pollRevision() {
     try {
-      const res = await fetch("/api/revision", { cache: "no-store" });
+      const res = await fetch("/api/revision" + FabricScope.param(), { cache: "no-store" });
       const { revision } = await res.json();
       if (state.revision !== null && revision !== state.revision) {
         await loadKnowledge();

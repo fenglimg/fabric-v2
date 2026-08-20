@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric 控制台 · 配置</title>
+<link rel="stylesheet" href="/assets/shell.css" />
+<script src="/assets/shell.js"></script>
+<style>
+  /* 页面专有规则。令牌 / body 基线 / .navbar / fx-* / .frow 全家来自
+     /assets/shell.css。这里只留本页独有的布局。 */
+  main{max-width:1000px;margin:0 auto;padding:24px 20px 64px}
+  /* 搜索框跨两层过滤。放在最上面:它是「我知道要改哪一项」时的主路径。 */
+  .searchbar{position:relative;margin:0 0 20px}
+  .searchbar .fx-ico{position:absolute;left:11px;top:50%;margin-top:-8px;color:var(--muted-foreground)}
+  .searchbar input{font:inherit;font-size:var(--fs-3);width:100%;height:36px;
+    padding:0 12px 0 34px;color:var(--foreground);background:var(--card);
+    border:1px solid var(--border);border-radius:var(--radius-md);transition:var(--tx)}
+  .searchbar input:hover{border-color:var(--input)}
+  .searchbar input:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+  /* provenance 标签。env 用警示色:它同时意味着"这是当前生效值"和"你在这里改不动"。 */
+  .tag{display:inline-flex;align-items:center;height:18px;font-size:var(--fs-1);
+    font-weight:var(--fw-medium);padding:0 7px;border-radius:999px;
+    border:1px solid var(--border);color:var(--muted-foreground)}
+  .tag.env{color:var(--warning);border-color:currentColor}
+  /* 值就设在你正看的这一层。继承来的保持中性灰 —— 差别本身就是要传达的信息,
+     两者同样醒目就等于没说。 */
+  .tag.set{color:var(--foreground);border-color:var(--muted-foreground)}
+  .tag.cur{color:var(--primary);border-color:currentColor}
+  /* 预设卡:三档并排。收起时只有档名 + 这一档会改动多少项 —— 数值收进展开区。
+     三档共摊 24 个数字,等于让人为了选一个档位先读 24 个数。 */
+  .presets{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+  @media (max-width:760px){.presets{grid-template-columns:minmax(0,1fr)}}
+  .preset{text-align:left;font:inherit;cursor:pointer;padding:11px 13px;
+    color:var(--foreground);background:var(--card);border:1px solid var(--border);
+    border-radius:var(--radius-md);transition:var(--tx)}
+  .preset:hover{background:var(--muted)}
+  .preset:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+  .preset.on{border-color:var(--primary);color:var(--primary)}
+  .preset .pn{font-size:var(--fs-3);font-weight:var(--fw-semibold);display:block;margin-bottom:3px}
+  .preset .pd{font-size:var(--fs-2);color:var(--muted-foreground);display:block}
+  .preset.on .pd{color:inherit;opacity:.8}
+  .pvals{font-size:var(--fs-2);color:var(--muted-foreground);line-height:var(--lh-loose);
+    padding-top:8px;margin-top:10px;border-top:1px solid var(--border)}
+  /* 折叠区:标题整行可点。收起时不渲染内容,搜索命中时强制展开。 */
+  .dhead{display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;cursor:pointer;
+    user-select:none;font:inherit;text-align:left;color:var(--foreground);
+    background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+    transition:var(--tx)}
+  .dhead:hover{background:var(--muted)}
+  .dhead:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+  .dhead .fx-ico{color:var(--muted-foreground);transition:transform var(--dur-2) var(--ease)}
+  .dhead[aria-expanded="true"] .fx-ico{transform:rotate(90deg)}
+  .dhead .dt{font-size:var(--fs-3);font-weight:var(--fw-medium)}
+  .dhead .dc{margin-left:auto;font-size:var(--fs-2);color:var(--muted-foreground)}
+  /* 项目行:整块可展开。收起时只给一行摘要,展开后才是覆盖列表 + 添加控件。 */
+  .prow{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;
+    background:var(--card);overflow:hidden}
+  .phead{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;cursor:pointer;
+    user-select:none;font:inherit;text-align:left;color:var(--foreground);
+    background:transparent;border:none;transition:var(--tx)}
+  .phead:hover{background:var(--muted)}
+  .phead:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
+  .phead .fx-ico{color:var(--muted-foreground);transition:transform var(--dur-2) var(--ease)}
+  .phead[aria-expanded="true"]>.fx-ico:first-child{transform:rotate(90deg)}
+  .phead .pname{font-size:var(--fs-3);font-weight:var(--fw-medium)}
+  .phead .ppath{font-family:var(--mono);font-size:var(--fs-1);color:var(--muted-foreground);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px}
+  .phead .pcount{margin-left:auto;font-size:var(--fs-2);color:var(--muted-foreground);white-space:nowrap}
+  .pbody{padding:0 14px 12px;border-top:1px solid var(--border)}
+  /* 注销区与设置区之间要有一道明确的分界:上面是可反复改的值,下面是一次性的
+     不可逆动作,挨着排会让人以为是同一类操作。 */
+  .pforget{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)}
+  .pfplan{margin-top:8px}
+  .pfplan .pfwhere{display:flex;gap:8px;align-items:baseline;padding:3px 0;
+    font-size:var(--fs-2)}
+  .pfplan .pfwhere .pfdetail{font-family:var(--mono);font-size:var(--fs-1);
+    color:var(--muted-foreground);word-break:break-all}
+  .pfplan .pfacts{display:flex;gap:8px;margin-top:10px}
+  .addbar{display:flex;align-items:center;gap:8px;padding:12px 0 2px;flex-wrap:wrap}
+  .addbar select{font:inherit;font-size:var(--fs-2);height:28px;padding:0 8px;
+    color:var(--foreground);background:var(--card);border:1px solid var(--input);
+    border-radius:var(--radius-md)}
+  .addbar select:focus-visible{outline:2px solid var(--ring);outline-offset:1px}
+  code{font-family:var(--mono);font-size:var(--fs-2);background:var(--muted);
+    color:var(--foreground);border-radius:var(--radius-sm);padding:1px 5px}
+</style></head><body>
+<nav class="navbar">
+  <h1 class="nav-title">Fabric 控制台</h1>
+  <a class="seg" href="/">知识</a>
+  <a class="seg" href="/graph">关联图</a>
+  <a class="seg" href="/status">状态</a>
+  <a class="seg" href="/config">配置</a>
+  <a class="seg" href="/integrations">集成</a>
+  <span class="spacer"></span>
+  <button class="seg" id="shellThemeBtn" title="切换主题">☀</button>
+</nav>
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':'&quot;'; }); }
+  function fmt(tpl,vars){ return String(tpl).replace(/\{(\w+)\}/g,function(m,k){
+    return vars[k]==null?m:vars[k]; }); }
+
+  var DATA=null;
+  var GROUP_ORDER=['A_locale','B_hint_threshold','C_audit','D_behavior'];
+  // 展开状态按 project id 记住:保存后要重新拉数据重渲染,不记的话每次保存都会
+  // 把用户正在编辑的那一行收起来。
+  var OPEN={};
+  var ADV=false;   // 高级区是否展开
+  var Q='';        // 搜索词
+
+  var toast=FabricField.toast;
+
+  // 搜索命中标签、说明与 key 三处。只搜标签会让人搜不到自己在 JSON 里见过的
+  // key 名,而 key 名往往正是他来这一页的原因。
+  function hit(f){
+    if(!Q) return true;
+    var q=Q.toLowerCase();
+    return (f.label+' '+f.description+' '+f.key).toLowerCase().indexOf(q)>=0;
+  }
+
+  // 控件本体渲染在 shell.js 的 FabricField —— 集成页的行为行用的是同一个函数。
+  // 两页各渲染一份「可改的配置项」会在字段载荷长出新情况(新 widget、新的不可编辑
+  // 原因)的第一天分叉,而分叉的那一页会静默地少一种情况。
+  function control(f,target){
+    return FabricField.control(f,target,DATA.strings);
+  }
+
+  // 语义检索开关下面那一行:开关是意图,能不能算是另一回事。只挂在机器视角这一行,
+  // 因为探测到的是机器的事实(装没装 fastembed、模型在不在盘上),不随项目变。
+  function semanticNote(f,target,s){
+    if(f.key!=='embed_enabled'||target.scope!=='machine') return '';
+    var ss=DATA.semanticSearch; if(!ss) return '';
+    var text;
+    if(!ss.enabled) text=s['semantic.off'];
+    else if(ss.remote) text=s['semantic.remote'];
+    else if(ss.blocker==='model-missing')
+      text=fmt(s['semantic.model-missing'],{model:ss.model,dir:ss.modelCacheDir});
+    else if(ss.blocker==='package-missing') text=s['semantic.package-missing'];
+    else text=s['semantic.ready'];
+    return '<div class="note'+(ss.blocker==='package-missing'?' warn':'')+'">'+esc(text)+'</div>';
+  }
+
+  // 一行 = 标签 + key + 出处标签 + 一枚展开按钮;说明、env 提示、语义检索实况
+  // 都收进展开区。原来说明常驻在每行下面,九项设置就要 2709px —— 四屏才看得完
+  // 九个开关。说明没有被删,只是挪到了一次点击之后。
+  var descSeq=0;
+  function row(f,target,extraTag){
+    // 出处标签走 shell.js 的同一个渲染器 —— 集成页的行为行也用它。这一页原本
+    // 自己拼这个 span,于是两页对同一个值说的话可以不一样。
+    var tag=FabricField.sourceTag(f,DATA.strings);
+    // 没生效但存在的 env 变量也要标出来 —— 用户排查"我改了怎么没用"时,这一行
+    // 往往就是答案。
+    var envNote=(f.envVar&&f.source!=='env')
+      ? '<div class="note">'+esc(fmt(DATA.strings['env-available'],{name:f.envVar}))+'</div>' : '';
+    var id='d'+(++descSeq);
+    var expand='<div class="fexp" id="'+id+'" data-open="false">'+
+      '<div class="fdesc">'+esc(f.description)+'</div>'+envNote+
+      semanticNote(f,target,DATA.strings)+'</div>';
+    return '<div class="frow'+(f.modified?' mod':'')+'">'+
+      '<div class="fmain">'+
+      '<span class="flabel">'+esc(f.label)+'</span>'+
+      '<span class="fkey">'+esc(f.key)+'</span>'+tag+(extraTag||'')+
+      '<button class="fx-disclose" data-desc="'+id+'" aria-expanded="false" '+
+        'aria-controls="'+id+'" aria-label="说明">'+FabricIcon.svg('info','fx-ico-sm')+'</button>'+
+      '</div>'+control(f,target)+expand+'</div>';
+  }
+
+  // ---- 提醒频率预设 -------------------------------------------------------
+  // 三档并排,每档展开它实际会写入的 8 个数值。只给档位名而不给数值,等于让用户
+  // 在三个不知道含义的词里选一个。
+  function presetCard(s){
+    var ap=DATA.archivePreset;
+    var byKey={}; DATA.machine.forEach(function(f){ byKey[f.key]=f; });
+    var cards=ap.options.map(function(o){
+      // 收起时给的是**后果**而不是数值:这一档会动几项。数值本身对"选哪一档"
+      // 没有帮助 —— 三档共 24 个数字,读完才能选,等于把决策成本推给用户。
+      var changes=ap.keys.filter(function(k){
+        var f=byKey[k];
+        return f && String(f.effective)!==String(o.values[k]);
+      }).length;
+      var effect=ap.active===o.id
+        ? '当前生效'
+        : (changes ? '会改动 '+changes+' 项阈值' : '与当前生效值一致');
+      return '<button class="preset'+(ap.active===o.id?' on':'')+'" data-preset="'+esc(o.id)+
+        '" aria-pressed="'+(ap.active===o.id?'true':'false')+'">'+
+        '<span class="pn">'+esc(s['preset.'+o.id])+'</span>'+
+        '<span class="pd">'+esc(effect)+'</span></button>';
+    }).join('');
+    // 具体数值仍然拿得到,收在一次点击之后 —— 需要核对的人一定会去点,选档位的
+    // 人不必先读 24 个数。
+    var vals=ap.options.map(function(o){
+      return '<b>'+esc(s['preset.'+o.id])+'</b>：'+ap.keys.map(function(k){
+        var f=byKey[k];
+        return esc((f?f.label:k)+' '+o.values[k]);
+      }).join('、');
+    }).join('<br>');
+    var custom=ap.active===null
+      ? '<div class="note">'+esc(s['preset.custom'])+' — '+esc(s['preset.custom-hint'])+'</div>' : '';
+    return '<div class="fx-card" style="margin-bottom:12px">'+
+      '<div class="fx-section-title" style="font-size:var(--fs-4);margin-bottom:2px">'+
+        esc(s['preset.title'])+'</div>'+
+      '<div class="fdesc">'+esc(s['preset.intro'])+'</div>'+custom+
+      '<div class="presets">'+cards+'</div>'+
+      '<div style="margin-top:12px"><button class="fx-disclose" data-desc="presetvals" '+
+        'aria-expanded="false" aria-controls="presetvals">'+
+        FabricIcon.svg('chevron','fx-ico-sm')+'查看具体数值</button>'+
+      '<div class="fexp" id="presetvals" data-open="false"><div class="pvals">'+vals+'</div></div></div>'+
+      '</div>';
+  }
+
+  // ---- 常用 / 高级 --------------------------------------------------------
+  function sectionHead(iconName,title,sub){
+    return '<h2 class="fx-section-title">'+FabricIcon.svg(iconName)+esc(title)+'</h2>'+
+      (sub?'<p class="fx-section-desc">'+esc(sub)+'</p>':'');
+  }
+
+  function commonSection(s){
+    var fields=DATA.machine.filter(function(f){ return f.tier==='common'&&hit(f); });
+    var html='<section class="fx-section">'+sectionHead('sliders',s['machine.title'],s['machine.intro']);
+    // 预设卡本身是一项设置,搜索时按它覆盖的 8 个键是否命中来决定去留。
+    var presetHit=!Q||DATA.machine.some(function(f){
+      return DATA.archivePreset.keys.indexOf(f.key)>=0&&hit(f); });
+    var count=fields.length+(presetHit?1:0);
+    // 搜索时一节都没命中就整节不出现 —— 一个下面什么也没有的小标题读起来像
+    // 「这里本该有东西但坏了」。
+    if(Q&&!count) return {html:'',count:0};
+    if(presetHit) html+=presetCard(s);
+    if(fields.length){
+      html+='<div class="fx-card">'+fields.map(function(f){
+        return row(f,{scope:'machine'}); }).join('')+'</div>';
+    }
+    return {html:html+'</section>',count:count};
+  }
+
+  function advancedSection(s){
+    var fields=DATA.machine.filter(function(f){ return f.tier==='advanced'&&hit(f); });
+    if(Q&&!fields.length) return {html:'',count:0};
+    // 搜索有词时强制展开:否则用户搜到东西却看见一个收起的盒子,等同于没搜到。
+    var open=ADV||!!Q;
+    var head='<button class="dhead" data-adv="1" aria-expanded="'+(open?'true':'false')+'">'+
+      FabricIcon.svg('chevron')+
+      '<span class="dt">'+esc(s['advanced.title'])+'</span>'+
+      '<span class="dc">'+esc(fmt(s['advanced.count'],{count:fields.length}))+'</span></button>';
+    var body='';
+    if(open&&fields.length){
+      body='<p class="fx-section-desc" style="margin:10px 0 8px">'+esc(s['advanced.intro'])+'</p>';
+      GROUP_ORDER.forEach(function(g){
+        var inGroup=fields.filter(function(f){ return f.group===g; });
+        if(!inGroup.length) return;
+        body+='<div class="fx-card" style="margin-bottom:10px">'+
+          '<h3 class="fx-section-title" style="font-size:var(--fs-4);margin-bottom:6px">'+
+          esc(s['group.'+g])+'</h3>'+
+          inGroup.map(function(f){ return row(f,{scope:'machine'}); }).join('')+'</div>';
+      });
+    }
+    return {html:'<section class="fx-section">'+head+body+'</section>',count:fields.length};
+  }
+
+  function projectRow(p,s,open){
+    var target={scope:'project',projectId:p.projectId};
+    var badges=(p.isCurrent?'<span class="tag cur">'+esc(s['projects.current'])+'</span>':'')+
+      // 两种 origin 都是"不在机器登记表里",补救动作相同(回该仓库跑 fabric install)。
+      (p.origin==='config-only'||p.origin==='current-only'
+        ?'<span class="tag">'+esc(s['projects.unregistered'])+'</span>':'')+
+      (p.stale?'<span class="tag">'+esc(s['projects.stale'])+'</span>':'');
+    var count=p.overrides.length
+      ? fmt(s['projects.override-count'],{count:p.overrides.length})
+      : s['projects.no-overrides'];
+
+    var body='';
+    if(!p.editable){
+      // 未绑 store → 没有 project_id → 没有可写的位置。不给控件,给原因和下一步。
+      body='<div class="note warn" style="padding:10px 0">'+esc(s['projects.unbound'])+'</div>';
+    } else {
+      body=p.overrides.map(function(f){ return row(f,target); }).join('');
+      // 可加的项 = 全机器那些 preference 键里,这个项目还没单独设过的。
+      var taken={}; p.overrides.forEach(function(f){ taken[f.key]=1; });
+      var addable=DATA.machine.filter(function(f){
+        return f.home==='preference' && !taken[f.key]; });
+      if(addable.length){
+        var selId='a'+(p.projectId||'x').replace(/[^a-z0-9]/gi,'');
+        body+='<div class="addbar"><select id="'+selId+'"><option value="">'+
+          esc(s['projects.add-placeholder'])+'</option>'+
+          addable.map(function(f){
+            return '<option value="'+esc(f.key)+'">'+esc(f.label)+'</option>'; }).join('')+
+          '</select><button class="fx-btn sm" data-add="'+selId+'" data-target="'+
+          esc(JSON.stringify(target))+'">'+esc(s['projects.add'])+'</button></div>';
+      }
+    }
+    // 注销对每个项目都提供 —— 包括没有 project_id、因而下面一个设置控件都没有
+    // 的那种。恰恰是那种项目最需要被移走,而它在这一页原本只剩一句解释。
+    body+=forgetBlock(p,s);
+
+    return '<div class="prow"><button class="phead" data-toggle="'+esc(p.projectId||p.path)+
+      '" aria-expanded="'+(open?'true':'false')+'">'+
+      FabricIcon.svg('chevron')+
+      '<span class="pname" title="'+esc(p.name)+'">'+esc(mid(p.name))+'</span>'+badges+
+      (p.path?'<span class="ppath" title="'+esc(p.path)+'">'+esc(mid(p.path,34))+'</span>':'')+
+      '<span class="pcount">'+esc(count)+'</span></button>'+
+      (open?'<div class="pbody">'+body+'</div>':'')+'</div>';
+  }
+
+  // 两步:先问服务端"这会动哪些地方",把答案原样列出来,再要一次确认。计划不是
+  // 前端猜的 —— 同一个函数既产出这份清单也执行删除,所以列出来的就是会发生的。
+  function forgetBlock(p,s){
+    if(p.isCurrent) return '<div class="pforget"><div class="note">'+
+      esc(s['projects.forget-current'])+'</div></div>';
+    return '<div class="pforget">'+
+      '<button class="fx-btn ghost sm" data-forget="'+esc(p.key)+'">'+
+      esc(s['projects.forget'])+'</button>'+
+      '<div class="pfplan" id="pf'+esc(safeId(p.key))+'"></div></div>';
+  }
+
+  function safeId(v){ return String(v).replace(/[^a-z0-9]/gi,''); }
+
+  function planHtml(plan,s){
+    var where={registry:s['projects.forget-where-registry'],
+      config:s['projects.forget-where-config'],
+      bindings:s['projects.forget-where-bindings']};
+    if(!plan.items.length) return '<div class="note">'+esc(s['projects.forget-nothing'])+'</div>';
+    return '<div class="note">'+esc(s['projects.forget-intro'])+'</div>'+
+      plan.items.map(function(it){
+        return '<div class="pfwhere"><span>'+esc(where[it.where]||it.where)+'</span>'+
+          '<span class="pfdetail">'+esc(it.detail)+'</span></div>';
+      }).join('')+
+      '<div class="note warn">'+esc(s['projects.forget-cost'])+'</div>'+
+      '<div class="pfacts"><button class="fx-btn sm" data-forget-go="'+esc(plan.key)+'">'+
+      esc(s['projects.forget-confirm'])+'</button>'+
+      '<button class="fx-btn ghost sm" data-forget-no="'+esc(plan.key)+'">'+
+      esc(s['projects.forget-cancel'])+'</button></div>';
+  }
+
+  // 中间省略,不是末尾省略。未命名项目的名字就是它的 uuid,路径也常常只在最后
+  // 一段才互相区分 —— CSS 的 text-overflow 砍掉的正好是那一段,于是一列长得
+  // 一模一样的值。完整值留在 title 里。
+  function mid(v,max){
+    var s=String(v==null?'':v); max=max||26;
+    if(s.length<=max) return s;
+    var keep=Math.floor((max-1)/2);
+    return s.slice(0,keep)+'…'+s.slice(-keep);
+  }
+
+  // 搜索必须穿透下面两节。只过滤全机器那一节的话,搜一个词会得到「没有匹配」加
+  // 三行仍然摆在那里的无关设置 —— 页面同时给出两个互相矛盾的答案。
+  function projectsSection(s){
+    // 搜索时项目节只保留命中的覆盖项;搜到零项的项目整行不出现。
+    var rows=DATA.projects.map(function(p){
+      return {p:p,overrides:p.overrides.filter(hit)};
+    }).filter(function(r){ return !Q||r.overrides.length; });
+    var count=rows.reduce(function(n,r){ return n+r.overrides.length; },0);
+    if(Q&&!count) return {html:'',count:0};
+
+    var html='<section class="fx-section">'+sectionHead('folder',s['projects.title'],s['projects.intro']);
+    if(!rows.length){
+      // 空态是这台机器当前的真实状态,不是错误。给出可执行的下一步。
+      html+='<div class="fx-card"><div class="fx-empty">'+
+        '<div class="fx-empty-ico">'+FabricIcon.svg('folder','fx-ico-lg')+'</div>'+
+        '<div class="fx-empty-title">'+esc(s['projects.empty'])+'</div>'+
+        '<div class="fx-empty-body">'+esc(s['projects.empty-hint'])+'</div></div></div>';
+    } else {
+      html+=rows.map(function(r){
+        // 搜索时把该项目当成只有命中的那几项,展开状态也强制打开 —— 否则搜到的
+        // 东西藏在一行收起的摘要后面,等同于没搜到。
+        var p=Q?Object.assign({},r.p,{overrides:r.overrides}):r.p;
+        return projectRow(p,s,Q?true:!!OPEN[p.projectId||p.path]);
+      }).join('');
+    }
+    return {html:html+'</section>',count:count};
+  }
+
+  function storesSection(s){
+    var rows=DATA.stores.map(function(st){
+      return {st:st,fields:st.fields.filter(hit)};
+    }).filter(function(r){ return !Q||r.fields.length; });
+    var count=rows.reduce(function(n,r){ return n+r.fields.length; },0);
+    if(Q&&!count) return {html:'',count:0};
+
+    var html='<section class="fx-section">'+sectionHead('database',s['stores.title'],s['stores.intro']);
+    if(!rows.length){
+      html+='<div class="fx-card"><div class="fx-note" style="text-align:center;padding:14px 0">'+
+        esc(s['stores.empty'])+'</div></div>';
+    } else {
+      html+=rows.map(function(r){
+        // 每行都带上库名,而不是只靠卡片标题。两个库同时挂了同一个键时,两行的
+        // 标签、key、说明三者完全相同 —— 卡片标题在行外面,滚一屏就看不见了,
+        // 于是页面上出现两行一模一样的设置而无从分辨改的是哪一个。
+        var storeTag='<span class="tag">'+esc(r.st.alias)+'</span>';
+        return '<div class="fx-card" style="margin-bottom:10px">'+
+          '<h3 class="fx-section-title" style="font-size:var(--fs-4);margin-bottom:6px">'+
+          FabricIcon.svg('database')+esc(r.st.alias)+
+          (r.st.personal?'<span class="tag">'+esc(s['stores.personal'])+'</span>':'')+'</h3>'+
+          r.fields.map(function(f){
+            return row(f,{scope:'store',storeUuid:r.st.storeUuid},storeTag); }).join('')+'</div>';
+      }).join('');
+    }
+    return {html:html+'</section>',count:count};
+  }
+
+  function remoteCard(r,s){
+    var body;
+    if(!r.configured){ body=esc(s['remote.off']); }
+    else {
+      body=esc(fmt(s['remote.on'],{host:r.endpointHost||'?'}))+
+        '<span class="tag">'+esc(r.hasApiKey?s['remote.key-set']:s['remote.key-missing'])+'</span>'+
+        (r.model?'<span class="tag">'+esc(r.model)+'</span>':'');
+    }
+    // 改法两种状态都给:没开的人要知道去哪儿开,开了的人要知道去哪儿改 —— 这一页
+    // 对这三项只读是个决定(其中一项是密钥),那就欠读者一个去处。
+    var how='<div class="note">'+esc(fmt(s['remote.how'],{path:r.configPath}))+'</div>';
+    return '<section class="fx-section"><div class="fx-card">'+
+      '<h3 class="fx-section-title" style="font-size:var(--fs-4);margin-bottom:6px">'+
+      FabricIcon.svg('layers')+esc(s['remote.title'])+'</h3>'+
+      '<div class="fdesc">'+body+'</div>'+how+'</div></section>';
+  }
+
+  function render(){
+    var s=DATA.strings;
+    var common=commonSection(s), adv=advancedSection(s);
+    var proj=projectsSection(s), stores=storesSection(s);
+    var total=common.count+adv.count+proj.count+stores.count;
+    // 搜索无结果时说清楚是搜索的结果,而不是渲染一片空白让人以为页面坏了。
+    var none=(Q&&total===0)
+      ? '<div class="fx-card"><div class="fx-note" style="text-align:center;padding:14px 0">'+
+        esc(fmt(s['search-empty'],{q:Q}))+'</div></div>' : '';
+    // 远程嵌入卡是状态而非设置项,搜索时一并让位 —— 留着它会让「没有匹配」下面
+    // 仍然挂着一张卡。
+    var remote=Q?'':remoteCard(DATA.remoteEmbedding,s);
+
+    // 顶栏的作用域下拉对这一页**不改任何值** —— /api/config 刻意不按 scope 重新
+    // 取根(配置在 ~/.fabric,与你站在哪个目录无关)。不说出来的后果是用户切了项目
+    // 看到一模一样的一页,判断成"这个下拉坏了",而它在集成页与状态页是生效的。
+    // 只在真选了某个项目时出现:选着「本机」时这一页本来就是全机器的,没有落差要解释。
+    // 只在 scope 真的对上某个已知项目时才出现。这一页不走 resolveScope(配置本就
+    // 与作用域无关),所以它是全站唯一一个「?scope= 是垃圾值也照样渲染」的页面 ——
+    // 拿没校验过的值当项目名念出来,等于用一句解释制造出一个不存在的项目。
+    var sc=FabricScope.current();
+    var scoped=(sc&&sc!=='machine')
+      ? (DATA.projects||[]).filter(function(p){ return p.projectId===sc; })[0] : null;
+    var scopeNote=scoped
+      ? '<div class="note">'+esc(fmt(s['scope-note'],{name:scoped.name}))+'</div>' : '';
+
+    document.getElementById('main').innerHTML=
+      '<div class="fx-page-head"><h1 class="fx-page-title"><b>配置</b></h1>'+
+      '<span class="fx-page-sub">'+esc(s.intro)+'</span>'+scopeNote+'</div>'+
+      '<div class="searchbar">'+FabricIcon.svg('search')+
+        '<input id="q" type="search" placeholder="'+esc(s.search)+
+        '" value="'+esc(Q)+'" /></div>'+
+      none+common.html+adv.html+proj.html+stores.html+remote;
+
+    var q=document.getElementById('q');
+    q.addEventListener('input',function(){
+      Q=q.value.trim(); render();
+      // 重渲染会换掉这个 input,焦点与光标要自己接回去,否则第二个字符打不进去。
+      var n=document.getElementById('q');
+      n.focus(); n.setSelectionRange(n.value.length,n.value.length);
+    });
+
+    // 说明的展开是纯本地状态,不重渲染 —— 重渲染会连带把用户正在编辑的输入框
+    // 换掉,而点一个 ⓘ 不该有那种代价。
+    document.querySelectorAll('[data-desc]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var box=document.getElementById(btn.getAttribute('data-desc'));
+        if(!box) return;
+        var open=box.getAttribute('data-open')==='true';
+        box.setAttribute('data-open',open?'false':'true');
+        btn.setAttribute('aria-expanded',open?'false':'true');
+      });
+    });
+
+    document.querySelectorAll('[data-adv]').forEach(function(el){
+      el.addEventListener('click',function(){ ADV=!ADV; render(); });
+    });
+    document.querySelectorAll('[data-toggle]').forEach(function(el){
+      el.addEventListener('click',function(){
+        var k=el.getAttribute('data-toggle'); OPEN[k]=!OPEN[k]; render();
+      });
+    });
+    // 保存 / 恢复默认 / 多选勾选的 DOM 接线也在 FabricField —— 写入策略(toast 文案、
+    // 成功后重新拉数据、预设的部分失败分支)仍留在本页的 post 里。
+    FabricField.bind(document,{
+      post:post,
+      saved:function(target){ return fmt(DATA.strings.saved,{target:target}); },
+      reset:function(target){ return fmt(DATA.strings['reset-done'],{target:target}); },
+    });
+    document.querySelectorAll('[data-preset]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var id=btn.getAttribute('data-preset');
+        post('/api/config/preset',{preset:id,target:{scope:'machine'}},btn,function(b){
+          return fmt(DATA.strings['preset.applied'],
+            {name:DATA.strings['preset.'+id],count:(b.applied||[]).length});
+        });
+      });
+    });
+    // 展开计划走的是同一个写端点、只是不带 confirm —— 那一次调用在服务端是纯读,
+    // 所以"点开看看然后取消"在磁盘上确实什么都没发生,不靠前端自觉。
+    document.querySelectorAll('[data-forget]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var key=btn.getAttribute('data-forget');
+        var box=document.getElementById('pf'+safeId(key));
+        if(!box) return;
+        if(box.innerHTML){ box.innerHTML=''; return; }
+        btn.disabled=true;
+        fetch('/api/projects/deregister',{method:'POST',cache:'no-store',
+          headers:{'content-type':'application/json'},body:JSON.stringify({key:key})})
+        .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+        .then(function(res){
+          btn.disabled=false;
+          if(!res.ok){ toast(fmt(DATA.strings['projects.forget-failed'],
+            {error:(res.body&&res.body.error)||''}),true); return; }
+          box.innerHTML=planHtml(res.body.plan,DATA.strings);
+          bindForgetActions(box,res.body.plan);
+        })
+        .catch(function(e){ btn.disabled=false;
+          toast(fmt(DATA.strings['projects.forget-failed'],{error:String(e)}),true); });
+      });
+    });
+    document.querySelectorAll('[data-add]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var sel=document.getElementById(btn.getAttribute('data-add'));
+        if(!sel||!sel.value) return;
+        // 新覆盖先落成当前生效值:用户点"添加"是要把这一项固定下来,不是要改它。
+        var f=DATA.machine.filter(function(m){ return m.key===sel.value; })[0];
+        post('/api/config/set',{key:sel.value,value:f?f.effective:'',action:'set',
+          target:JSON.parse(btn.getAttribute('data-target'))},btn,
+          function(b){ return fmt(DATA.strings.saved,{target:b.target}); });
+      });
+    });
+  }
+
+  function bindForgetActions(box,plan){
+    var no=box.querySelector('[data-forget-no]');
+    if(no) no.addEventListener('click',function(){ box.innerHTML=''; });
+    var go=box.querySelector('[data-forget-go]');
+    if(!go) return;
+    go.addEventListener('click',function(){
+      go.disabled=true;
+      fetch('/api/projects/deregister',{method:'POST',cache:'no-store',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({key:plan.key,confirm:true})})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+      .then(function(res){
+        if(!res.ok){ go.disabled=false;
+          toast(fmt(DATA.strings['projects.forget-failed'],
+            {error:(res.body&&res.body.error)||''}),true); return; }
+        // 剩余数是服务端重新数出来的,不是这里减一 —— 静默失败会体现为数字没动。
+        toast(fmt(DATA.strings['projects.forget-done'],
+          {name:plan.name,count:res.body.remainingCount}));
+        load();
+      })
+      .catch(function(e){ go.disabled=false;
+        toast(fmt(DATA.strings['projects.forget-failed'],{error:String(e)}),true); });
+    });
+  }
+
+  // 三个写动作共用一条通道:成功都要重新拉数据(见下),失败都要说清原因。
+  function post(url,body,btn,ok){
+    btn.disabled=true;
+    fetch(url,{method:'POST',cache:'no-store',
+      headers:{'content-type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+    .then(function(res){
+      if(!res.ok){
+        // 预设是逐键写的,部分失败时已经改了一部分。把两边都说出来,否则用户会
+        // 以为什么都没变而去找错方向。
+        if(res.body&&res.body.failed){
+          toast(fmt(DATA.strings['preset.partial'],{count:res.body.failed.length,
+            keys:res.body.failed.map(function(f){ return f.key; }).join(', ')}),true);
+          return load();
+        }
+        throw new Error(res.body&&res.body.error?res.body.error:'HTTP error');
+      }
+      toast(ok(res.body));
+      // 重新拉一次而不是乐观更新:写进哪一层、有没有被 env 顶掉、这一改让预设变
+      // 成了哪一档,只有重新 resolve 才知道。乐观更新会显示一个我们并未验证过的
+      // 状态。
+      return load();
+    })
+    .catch(function(e){
+      toast(fmt(DATA.strings['save-failed'],{reason:e.message}),true);
+      btn.disabled=false;
+    });
+  }
+
+  function load(){
+    return fetch('/api/config',{cache:'no-store'})
+      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(function(d){ DATA=d; render(); })
+      .catch(function(e){
+        document.getElementById('main').innerHTML=
+          '<div class="fx-page-head"><h1 class="fx-page-title"><b>配置</b></h1></div>'+
+          '<div class="fx-card"><div class="fx-empty">'+
+          '<div class="fx-empty-ico">'+FabricIcon.svg('alert','fx-ico-lg')+'</div>'+
+          '<div class="fx-empty-title">'+
+          esc(DATA&&DATA.strings?DATA.strings['load-failed']:'读取配置失败')+'</div>'+
+          '<div class="fx-empty-body">'+esc(e.message)+
+          '<br>控制台只连本机,通常是服务已停止 —— 回终端看 '+
+          '<code>fabric preview</code> 还在不在跑。</div></div></div>';
+      });
+  }
+
+  load();
+})();
+</script>
+</body></html>

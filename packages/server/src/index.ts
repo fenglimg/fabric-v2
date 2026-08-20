@@ -146,6 +146,31 @@ export {
   type RelatedGraphNode,
   type RelatedHubEntry,
 } from "./services/doctor/doctor-related-graph.js";
+// The install-copy drift oracle. Exported for the console's integrations page,
+// which reports the same manifest state `fabric doctor` does — one inspector, so
+// the page and the command it tells you to run cannot disagree.
+export {
+  inspectInstallCopyDrift,
+  type InstallDriftInspection,
+  type InstallDriftStatus,
+} from "./services/doctor/doctor-install-drift.js";
+// The reminder-cache sweep, exported for the console's cleanup button. Same
+// matcher and same family list `fabric doctor --fix` reaps with — a second
+// hand-written list of "which files are reminder state" would drift from the
+// writers the moment a sidecar is added, and only one of the two would be wrong
+// (KT-PIT-0095). The console differs only in its arguments: age floor 0, and
+// the live-session family excluded.
+export {
+  applySessionHintsStaleCleanup,
+  inspectSessionHintsStale,
+  matchStaleSweepFamily,
+  LIVE_SESSION_FAMILY_PREFIX,
+  ON_DEMAND_SWEEP_FAMILIES,
+  STALE_SWEEP_FAMILIES,
+  SESSION_HINTS_STALE_DAYS,
+  type SessionHintsStaleCandidate,
+  type StaleSweepFamily,
+} from "./services/doctor/doctor-session-hints-stale.js";
 export {
   clearPrecheckCache,
   evaluateStoreDir,

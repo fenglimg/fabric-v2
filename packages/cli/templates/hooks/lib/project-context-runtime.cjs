@@ -4244,6 +4244,17 @@ var planContextTopKSchema = external_exports.number().int().min(1).max(200);
 external_exports.enum(["zh-CN", "en"]);
 var defaultLayerFilterSchema = external_exports.enum(["team", "personal", "both"]);
 var nudgeModeSchema = external_exports.enum(["silent", "minimal", "normal", "verbose"]);
+var hintDismissSignalSchema = external_exports.enum([
+  "archive",
+  // Stop-hook cross-session backlog safety net (fabric-hint crack 2).
+  "archive_backlog",
+  "review",
+  "import",
+  "maintenance",
+  // per-edit (PreToolUse) nudge surfaces — TASK-005
+  "narrow",
+  "cite-evict"
+]);
 var observeConfigSchema = external_exports.object({
   session_start: external_exports.boolean().optional(),
   pre_tool_use: external_exports.boolean().optional(),
@@ -4494,19 +4505,7 @@ var fabricConfigSchema = external_exports.object({
   // by fabric-hint "crack 2" but never mirrored here. The hook path reads raw
   // JSON so it worked at runtime, yet the documented contract rejected it — see
   // the parity test that now pins hook ⊆ enum in both directions of drift.
-  hint_dismiss_signals: external_exports.array(
-    external_exports.enum([
-      "archive",
-      // Stop-hook cross-session backlog safety net (fabric-hint crack 2).
-      "archive_backlog",
-      "review",
-      "import",
-      "maintenance",
-      // per-edit (PreToolUse) nudge surfaces — TASK-005
-      "narrow",
-      "cite-evict"
-    ])
-  ).optional(),
+  hint_dismiss_signals: external_exports.array(hintDismissSignalSchema).optional(),
   // v2.1 ADJ-NEWN-4: user-override escape hatches for the two strong behavioral
   // policies (cite-before-edit + self-archive). The strong policies can make an
   // agent feel like a "stubborn parrot" (D2 user-in-control red line); these

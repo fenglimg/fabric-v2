@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric 控制台 · 状态</title>
+<link rel="stylesheet" href="/assets/shell.css" />
+<script src="/assets/shell.js"></script>
+<style>
+  /* 页面专有规则。令牌 / body 基线 / .navbar / fx-* 组件全部来自 /assets/shell.css。
+     这里只留"只有本页在用"的布局 —— 按 shell.css 的口径,第二个页面要用时再上提。 */
+  main{max-width:1080px;margin:0 auto;padding:24px 20px 64px}
+  .scan-row{display:flex;align-items:flex-start;gap:12px;padding-top:12px;margin-top:4px;
+    border-top:1px solid var(--border)}
+  .scan-row .out{font-size:var(--fs-2);line-height:var(--lh-loose);color:var(--muted-foreground)}
+</style></head><body>
+<nav class="navbar">
+  <h1 class="nav-title">Fabric 控制台</h1>
+  <a class="seg" href="/">知识</a>
+  <a class="seg" href="/graph">关联图</a>
+  <a class="seg" href="/status">状态</a>
+  <a class="seg" href="/config">配置</a>
+  <a class="seg" href="/integrations">集成</a>
+  <span class="spacer"></span>
+  <button class="seg" id="shellThemeBtn" title="切换主题">☀</button>
+</nav>
+<main id="main"></main>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':'&quot;'; }); }
+  function ico(n,c){ return FabricIcon.svg(n,c); }
+
+  // 页头。每页只有这一处 30px,而且承载的是"你在看哪个作用域",不是产品名。
+  // 之前全页最大的字是导航栏里的「Fabric 控制台」—— 眼睛落在 chrome 上,
+  // 落完之后没有下一站。
+  // 标题词加粗、它指向的那个值不加粗,同一行 —— 「本项目 pcf」读起来是一句话,
+  // 而拆成大标题 + 灰色副标题会读成两件事,并且副标题里那个仓库名才是你要找的东西。
+  function head(title, value, sub, actions){
+    return '<div class="fx-page-head"><h1 class="fx-page-title"><b>'+esc(title)+'</b>'+
+      (value?' '+esc(value):'')+'</h1>'+
+      (sub?'<span class="fx-page-sub">'+sub+'</span>':'')+
+      (actions?'<div class="fx-page-actions">'+actions+'</div>':'')+'</div>';
+  }
+
+  function section(iconName, title, desc, body){
+    return '<section class="fx-section"><h2 class="fx-section-title">'+ico(iconName)+esc(title)+'</h2>'+
+      (desc?'<p class="fx-section-desc">'+desc+'</p>':'')+body+'</section>';
+  }
+
+  function stat(iconName, label, value, mono){
+    return '<div class="fx-stat"><div class="fx-stat-label">'+ico(iconName,'fx-ico-sm')+esc(label)+'</div>'+
+      '<div class="fx-stat-value'+(mono?' mono':'')+'">'+esc(value)+'</div></div>';
+  }
+
+  function kv(k, v){
+    return '<div class="fx-kv"><span class="fx-kv-k">'+esc(k)+'</span><span class="fx-kv-v">'+v+'</span></div>';
+  }
+
+  // 长标识符（sha256 / uuid / 绝对路径）整串直出会换行后被裁掉尾部 —— 而尾部正是
+  // 区分两个 id 的那一半。所以:头尾各留一段,全文一次点击可展开,并且永远带复制,
+  // 因为看这种值的唯一理由就是要把它粘到别处去。
+  var identSeq=0;
+  function ident(value){
+    var v=String(value==null?'':value);
+    if(v.length<24) return '<span class="fx-mono">'+esc(v)+'</span>';
+    var id='id'+(++identSeq);
+    var short=v.slice(0,10)+'…'+v.slice(-8);
+    return '<span class="fx-ident" id="'+id+'" data-expanded="false" data-full="'+esc(v)+'">'+
+      '<span class="fx-ident-text" data-short="'+esc(short)+'">'+esc(short)+'</span>'+
+      '<button class="fx-icon-btn" style="width:22px;height:22px" data-ident-toggle="'+id+'" '+
+        'aria-label="展开完整值" title="展开完整值">'+ico('chevron','fx-ico-sm')+'</button>'+
+      '<button class="fx-icon-btn" style="width:22px;height:22px" data-ident-copy="'+id+'" '+
+        'aria-label="复制" title="复制">'+ico('copy','fx-ico-sm')+'</button></span>';
+  }
+
+  function empty(iconName, title, body){
+    return '<div class="fx-empty"><div class="fx-empty-ico">'+ico(iconName,'fx-ico-lg')+'</div>'+
+      '<div class="fx-empty-title">'+esc(title)+'</div>'+
+      '<div class="fx-empty-body">'+body+'</div></div>';
+  }
+
+  // 空状态文案按 emptyReason 分三种,而不是共用一句「暂无数据」。
+  // 三种情况的下一步命令互不相同,合成一句就等于把用户推向错的那条。
+  var GUIDE={
+    'no-config':{icon:'folder',what:'这个目录还没装 Fabric',
+      body:'当前目录下没有 <code>.fabric/fabric-config.json</code>。在项目根目录跑 <code>fabric install</code> 即可接入知识层。'},
+    'no-stores':{icon:'database',what:'装好了,但还没接知识库',
+      body:'Fabric 已安装,但本项目没有挂载任何 store —— 所以没有知识会浮现给 AI。用 <code>fabric store bind &lt;alias&gt;</code> 绑定一个,再用 <code>fabric store switch-write &lt;alias&gt;</code> 选定写入目标。'},
+    'no-entries':{icon:'inbox',what:'知识库是空的',
+      body:'store 已挂载但里面还没有条目。空库不是正常起点 —— 装完却永远没有命中,就等于知识层没生效。用 <code>fabric-archive</code> 归档第一条,或 <code>fabric first-hit --seed</code> 灌入样例。'}
+  };
+
+  function renderProject(d){
+    var html=head('本项目', d.projectRoot.split('/').pop()||d.projectRoot);
+
+    var g=GUIDE[d.emptyReason];
+    if(g) html+='<div class="fx-card" style="margin-bottom:22px">'+empty(g.icon,g.what,g.body)+'</div>';
+
+    html+='<div class="fx-grid cols-3" style="margin-bottom:26px">'+
+      stat('inbox','知识条目',d.entryCount)+
+      stat('database','挂载 store',d.stores.length)+
+      stat('terminal','CLI 版本',d.fabricVersion,true)+
+      '</div>';
+
+    html+=section('folder','标识与路径','这个项目在磁盘上的位置,以及知识写到哪里去。',
+      '<div class="fx-card">'+
+      kv('项目根', ident(d.projectRoot))+
+      kv('project_id', d.projectId?ident(d.projectId):'<span class="fx-muted">未分配 — 绑定 store 时才写入</span>')+
+      kv('写入 store', d.activeWriteStore?esc(d.activeWriteStore):'<span class="fx-muted">未选定</span>')+
+      kv('read-set 版本', ident(d.revision))+
+      '</div>');
+
+    html+=section('database','read-set 内的 store','AI 这一轮能读到的知识来自这些库。',
+      '<div class="fx-card">'+storeRows(d.stores,'本项目 read-set 为空 —— 上方已说明原因与下一步。')+'</div>');
+    return html;
+  }
+
+  function storeRows(stores, emptyLine){
+    if(!stores.length) return '<div class="fx-note" style="text-align:center;padding:14px 0">'+emptyLine+'</div>';
+    return '<table class="fx-table"><thead><tr><th>别名</th><th>层</th><th style="text-align:right">条目</th></tr></thead><tbody>'+
+      stores.map(function(s){
+        return '<tr><td class="fx-mono">'+esc(s.alias)+
+          (s.write?' <span class="fx-badge primary">写入</span>':'')+'</td>'+
+          '<td class="muted">'+esc(s.layer)+'</td>'+
+          '<td style="text-align:right">'+s.entryCount+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  }
+
+  // 「本机」作用域回答的是另一个问题：这台机器上装了哪些项目、挂了哪些知识库、
+  // 哪些项目的安装版本落后于当前 CLI。不是把某个项目的状态改个标题。
+  var MACHINE_GUIDE={
+    'no-projects':{icon:'folder',what:'本机还没有登记任何项目',
+      // 原来这里写的是「不会自动补登,去每个仓库重跑 install」。那是当时的实情,
+      // 不是必然:项目自己的 .fabric/fabric-config.json 里就有 id,扫一遍就能补。
+      body:'项目是在 <code>fabric install</code> 时登记的,而注册表比大多数安装都年轻。点下面的「扫描本机」把装过 Fabric 的目录找回来,或在每个仓库里重跑一次 <code>fabric install</code>。'},
+    'no-stores':{icon:'database',what:'本机没有挂载任何知识库',
+      body:'没有 store 就没有知识可浮现。用 <code>fabric store bind &lt;alias&gt;</code> 挂载一个。'},
+    'no-entries':{icon:'inbox',what:'挂载的知识库都是空的',
+      body:'store 在，但里面没有条目。用 <code>fabric-archive</code> 归档第一条，或 <code>fabric first-hit --seed</code> 灌入样例。'}
+  };
+
+  function renderMachine(d){
+    var html=head('本机', null, d.projects.length+' 个项目 · '+d.stores.length+' 个 store');
+
+    var g=MACHINE_GUIDE[d.emptyReason];
+    if(g) html+='<div class="fx-card" style="margin-bottom:22px">'+empty(g.icon,g.what,g.body)+'</div>';
+
+    html+='<div class="fx-grid" style="margin-bottom:26px">'+
+      stat('folder','已知项目',d.projects.length)+
+      stat('database','挂载 store',d.stores.length)+
+      stat('inbox','知识条目',d.entryCount)+
+      stat('terminal','CLI 版本',d.fabricVersion,true)+
+      '</div>';
+
+    var body='';
+    if(!d.projects.length){
+      body='<div class="fx-note" style="text-align:center;padding:14px 0">上方已说明原因与下一步。</div>';
+    } else {
+      body='<table class="fx-table"><thead><tr><th>项目</th><th>路径</th><th>状态</th></tr></thead><tbody>'+
+        d.projects.map(function(p){
+          // 三种需要用户动手的状态各说各的下一步，别合成一个「异常」。
+          var note='<span class="fx-muted">正常</span>';
+          if(p.stale) note='<span class="fx-badge bad">目录已不存在</span>';
+          else if(p.unregistered) note='<span class="fx-badge warn">未登记目录</span>';
+          else if(p.installedVersion&&p.installedVersion!==d.fabricVersion)
+            note='<span class="fx-badge warn">装的是 '+esc(p.installedVersion)+'</span>';
+          return '<tr><td>'+esc(p.name)+
+            (p.isCurrent?' <span class="fx-badge primary">当前</span>':'')+'</td>'+
+            '<td>'+(p.path?ident(p.path):'<span class="fx-muted">路径未知</span>')+'</td>'+
+            '<td>'+note+'</td></tr>';
+        }).join('')+'</tbody></table>';
+
+      var notes=[];
+      if(d.outdatedCount)
+        notes.push('其中 '+d.outdatedCount+' 个项目的安装版本低于当前 CLI —— 在那些仓库里重跑 <code>fabric install</code> 升级。');
+      // 「知道 id 但不知道在哪」以前根本进不了这个列表,于是页面安静地少报了几个
+      // 项目。现在它进来了,就必须把它是什么、以及怎么解决说清楚。
+      if(d.unlocatedCount)
+        notes.push('其中 '+d.unlocatedCount+' 个只知道 id、不知道目录 —— 它们在这台机器上留过配置或 store 绑定,但注册表里没有路径,所以打不开。扫描能找回还在磁盘上的那些。');
+      if(notes.length) body+='<div class="fx-note" style="padding-top:10px">'+notes.join('<br>')+'</div>';
+    }
+
+    // 扫描入口跟项目列表放在一起:它回答的正是这张卡上「怎么只有这么几个」。
+    body+='<div class="scan-row">'+
+      '<button id="scan" class="fx-btn ghost">'+ico('scan')+'扫描本机</button>'+
+      '<span id="scan-out" class="out">在你的主目录下找装过 Fabric 的项目并补登路径。只读你的目录名，不改任何项目里的文件。</span></div>';
+
+    html+=section('folder','项目','这台机器上登记过的全部项目,不只是当前目录这一个。','<div class="fx-card">'+body+'</div>');
+    html+=section('database','本机挂载的 store',null,
+      '<div class="fx-card">'+storeRows(d.stores,'本机没有挂载任何 store。')+'</div>');
+    return html;
+  }
+
+  function fail(title, body){
+    document.getElementById('main').innerHTML=
+      head('状态')+'<div class="fx-card">'+empty('alert',title,body)+'</div>';
+  }
+
+  // 展开与复制对所有 ident 生效,一次委托挂在 main 上 —— 每次重渲染都重新绑定
+  // 才是这种页面最容易漏的一步。
+  document.getElementById('main').addEventListener('click',function(e){
+    var t=e.target.closest('[data-ident-toggle],[data-ident-copy]');
+    if(!t) return;
+    var toggle=t.getAttribute('data-ident-toggle');
+    if(toggle){
+      var box=document.getElementById(toggle);
+      var open=box.getAttribute('data-expanded')==='true';
+      box.setAttribute('data-expanded',open?'false':'true');
+      var txt=box.querySelector('.fx-ident-text');
+      txt.textContent=open?txt.getAttribute('data-short'):box.getAttribute('data-full');
+      t.setAttribute('aria-label',open?'展开完整值':'收起');
+      return;
+    }
+    var box2=document.getElementById(t.getAttribute('data-ident-copy'));
+    var full=box2.getAttribute('data-full');
+    // 剪贴板在非安全上下文下会拒绝。控制台跑在 http://127.0.0.1 上,浏览器把它算
+    // 安全上下文,但这一条不是所有浏览器都一致 —— 失败时把值展开,让用户能自己选。
+    (navigator.clipboard&&navigator.clipboard.writeText
+      ? navigator.clipboard.writeText(full)
+      : Promise.reject())
+      .then(function(){ FabricField.toast('已复制'); })
+      .catch(function(){
+        box2.setAttribute('data-expanded','true');
+        box2.querySelector('.fx-ident-text').textContent=full;
+        FabricField.toast('这个浏览器不允许复制,已展开完整值供手动选取',true);
+      });
+  });
+
+  // 扫描完要重新拉一次数据,所以取数得是个能再调的函数 —— 原来它是一条裸的
+  // fetch 链,只能在页面加载时跑一次。
+  function load(){
+    return fetch('/api/status'+FabricScope.param(),{cache:'no-store'})
+      .then(function(r){
+        if(!r.ok){
+          // 作用域打不开时,原因和下一步来自服务端的 reason —— 不静默退回启动目录,
+          // 否则用户会以为自己在看 A 项目而其实在看 B。
+          return r.json().catch(function(){ return null; }).then(function(p){
+            var d=FabricScope.describeError(r.status,p);
+            throw Object.assign(new Error(d.body),{ shown:d });
+          });
+        }
+        return r.json();
+      })
+      .then(function(d){
+        document.getElementById('main').innerHTML=
+          d.scope==='machine' ? renderMachine(d) : renderProject(d);
+        wire();
+      })
+      .catch(function(e){
+        // 失败也要说清是什么失败了。一片空白读起来是「坏了」,不是「读不到」。
+        if(e.shown) fail(e.shown.title, e.shown.body);
+        else fail('读取状态失败', esc(e.message)+
+          '<br>控制台只连本机,通常是服务已停止 —— 回终端看 <code>fabric preview</code> 还在不在跑。');
+      });
+  }
+
+  function wire(){
+    var btn=document.getElementById('scan');
+    if(!btn) return;
+    btn.addEventListener('click',function(){
+      btn.disabled=true;
+      btn.innerHTML=FabricIcon.svg('loader','fx-spin')+'正在扫描…';
+      var out=document.getElementById('scan-out');
+      // 请求体是空的:扫哪儿由服务端决定。页面能指定扫描根 = 网页能让本机遍历任意
+      // 目录,这是整个控制台唯一不接受请求给路径的那条线。
+      fetch('/api/scan',{method:'POST',cache:'no-store',
+        headers:{'content-type':'application/json'},body:'{}'})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+      .then(function(res){
+        if(!res.ok) throw new Error(res.body&&res.body.error?res.body.error:'HTTP error');
+        var b=res.body;
+        var msg=b.added
+          ? '找到 '+b.found+' 个项目,新登记 '+b.added+' 个。'
+          : '找到 '+b.found+' 个项目,都已经登记过了。';
+        // 两种「没扫完」给的是两种建议,所以分开说:目录太多 → 结果不全但再点也一样;
+        // 时间到了 → 这台机器读目录慢,再点一次能往前走一段。
+        if(b.stoppedBy==='dirs') msg+=' （目录太多,扫到 '+b.visitedDirs+' 个就停了 —— 结果可能不全。）';
+        else if(b.stoppedBy==='time') msg+=' （超时停在 '+b.visitedDirs+' 个目录 —— 这台机器读目录较慢,再点一次可以继续往下找。）';
+        // 卡住的目录和「没扫完」是两件事:扫完了也可能有目录读不动。
+        if(b.stuckDirs) msg+=' 有 '+b.stuckDirs+' 个目录读不动已跳过（网络盘或云同步目录常见）。';
+        FabricField.toast(msg);
+        return load().then(function(){
+          var o=document.getElementById('scan-out');
+          if(o) o.textContent=msg;
+        });
+      })
+      .catch(function(e){
+        out.textContent='扫描失败：'+e.message;
+        btn.disabled=false;
+        btn.innerHTML=FabricIcon.svg('scan')+'扫描本机';
+      });
+    });
+  }
+
+  load();
+})();
+</script>
+</body></html>

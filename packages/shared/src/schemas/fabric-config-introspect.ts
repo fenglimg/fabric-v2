@@ -5,6 +5,7 @@ import {
   defaultLayerFilterSchema,
   fabricConfigSchema,
   fabricLanguageSchema,
+  hintDismissSignalSchema,
   nudgeModeSchema,
 } from "./fabric-config.js";
 
@@ -79,9 +80,17 @@ export interface PanelFieldMeta {
    * `fabric config --get/--set/--list` coercion + display; orthogonal to
    * `widget` (UI presentation) and `enum_values` (allowed set).
    */
-  readonly type: "boolean" | "number" | "string";
-  /** Clack widget hint — `select` for enums, `text` for free-form numbers. */
-  readonly widget: "select" | "text";
+  readonly type: "boolean" | "number" | "string" | "string[]";
+  /**
+   * Widget hint — `select` for enums, `text` for free-form numbers,
+   * `multiselect` for a SET drawn from `enum_values`.
+   *
+   * `multiselect` values cross the `validate` / `format_for_display` boundary as
+   * a comma-joined string, because that boundary is `(raw: string) => value` for
+   * every field and a second shape there would fork every caller. The stored
+   * value is still the array the schema declares — `validate` returns it.
+   */
+  readonly widget: "select" | "text" | "multiselect";
   /** i18n key for the field label; strings landed in TASK-006. */
   readonly label_i18n_key: string;
   /** i18n key for the field's description / help text. */
@@ -200,6 +209,54 @@ function makeBooleanField(key: keyof FabricConfigSchemaShape, defaultValue: bool
       if (typeof value === "boolean") return String(value);
       if (value === undefined || value === null) return String(defaultValue);
       return String(value);
+    },
+  };
+}
+
+/**
+ * A field holding a SET of enum values (currently only `hint_dismiss_signals`).
+ *
+ * The wire form across `validate` / `format_for_display` is a comma-joined
+ * string — the panel boundary is `(raw: string) => value` for every field, and
+ * a second shape there would fork every caller for one field's benefit. What
+ * gets STORED is the array the schema declares.
+ *
+ * `default` is the empty string rather than `[]`: `PanelFieldMeta.default` is
+ * the DISPLAY default (`--get` / `--list` fall back to it), and it is typed to
+ * the scalar the field renders as. An empty set renders as nothing selected.
+ */
+function makeMultiSelectField(
+  key: keyof FabricConfigSchemaShape,
+  group: PanelFieldGroup,
+  allowed: readonly string[],
+): PanelFieldMeta {
+  return {
+    key,
+    group,
+    home: "preference",
+    type: "string[]",
+    widget: "multiselect",
+    label_i18n_key: `cli.config.fields.${key}.label`,
+    description_i18n_key: `cli.config.fields.${key}.description`,
+    default: "",
+    enum_values: allowed,
+    validate(raw: string): ValidateResult {
+      // An empty input is "select nothing", a legitimate value — not an error.
+      // Refusing it would leave no way back from a dismissal except a reset.
+      const parts = raw
+        .split(",")
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+      const unknown = parts.filter((p) => !allowed.includes(p));
+      if (unknown.length > 0) {
+        return { ok: false, error: `Unknown value(s): ${unknown.join(", ")}.` };
+      }
+      // De-duplicated and ordered by the enum, so the stored array is a set and
+      // two equivalent selections cannot produce two different files.
+      return { ok: true, value: allowed.filter((a) => parts.includes(a)) };
+    },
+    format_for_display(value: unknown): string {
+      return Array.isArray(value) ? value.map(String).join(",") : "";
     },
   };
 }
@@ -379,4 +436,10 @@ const PANEL_FIELDS: readonly PanelFieldMeta[] = [
   // panel-editable so it sits next to embed_enabled (the two go together — rrf
   // only pays off when embeddings are on). 'auto' is the safe adaptive default.
   makeEnumField("fusion", "D_behavior", ["additive", "rrf", "auto"], "auto"),
+  // The escape hatch for "stop telling me about this". It was JSON-only, which
+  // is a contradiction the nudge text itself made visible: the message that
+  // offers to be silenced pointed at a file the user had to hand-edit. Options
+  // come from the schema enum rather than a copy, so a nudge surface added later
+  // becomes silenceable without a second edit here.
+  makeMultiSelectField("hint_dismiss_signals", "D_behavior", hintDismissSignalSchema.options),
 ];

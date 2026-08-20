@@ -23,6 +23,7 @@ const introMock = vi.fn();
 const outroMock = vi.fn();
 const isCancelMock = vi.fn((value: unknown) => value === Symbol.for("clack:cancel"));
 const selectMock = vi.fn();
+const multiselectMock = vi.fn();
 const textMock = vi.fn();
 const logSuccessMock = vi.fn();
 const logErrorMock = vi.fn();
@@ -34,6 +35,7 @@ vi.mock("@clack/prompts", () => ({
   outro: (...args: unknown[]) => outroMock(...args),
   isCancel: (value: unknown) => isCancelMock(value),
   select: (opts: unknown) => selectMock(opts),
+  multiselect: (opts: unknown) => multiselectMock(opts),
   text: (opts: unknown) => textMock(opts),
   log: {
     success: (...args: unknown[]) => logSuccessMock(...args),
@@ -69,6 +71,7 @@ beforeEach(() => {
   outroMock.mockReset();
   isCancelMock.mockClear();
   selectMock.mockReset();
+  multiselectMock.mockReset();
   textMock.mockReset();
   logSuccessMock.mockReset();
   logErrorMock.mockReset();
@@ -296,6 +299,80 @@ describe("rc.16 TASK-007: fabric config panel — Group B int field roundtrip", 
   });
 });
 
+describe("console-productization W2-5: multiselect field roundtrip", () => {
+  // `hint_dismiss_signals` is the panel's first SET-valued field. The bug it is
+  // written against is not "the value fails to save" — a `string[]` reaches the
+  // same writer every other key uses — but "the panel never asks as a set": the
+  // widget falls through to the free-text branch and the user is back to typing
+  // enum values from memory, which is the JSON editing this field replaces.
+  // Asserting through the shipped hook reader is what makes the write half real:
+  // this key is a PREFERENCE knob, so a copy written into the repo config would
+  // be inert and a file-content assertion would call that a pass.
+  it("prompts as a set and the shipped hook reader sees the dismissed signals", async () => {
+    const configCmd = await loadConfigCmd();
+    const dir = makeWorkspace(true);
+
+    const globalHome = mkdtempSync(join(tmpdir(), "fab-config-multi-global-"));
+    tempRoots.push(globalHome);
+    const savedFabricHome = process.env.FABRIC_HOME;
+    process.env.FABRIC_HOME = globalHome;
+    mkdirSync(join(globalHome, ".fabric"), { recursive: true });
+    writeFileSync(
+      join(globalHome, ".fabric", "fabric-global.json"),
+      JSON.stringify({ uid: "u-test", stores: [] }, null, 2),
+      "utf8",
+    );
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      selectMock
+        .mockResolvedValueOnce("hint_dismiss_signals")
+        .mockResolvedValueOnce("__exit__");
+      multiselectMock.mockResolvedValueOnce(["narrow", "review"]);
+
+      await configCmd.run!(runCtx(configCmd, { target: dir }));
+
+      // The set prompt is the one that ran. `text` staying untouched is the half
+      // that fails if the widget ever falls back to the free-text branch — the
+      // write below would still pass there, because a typed "narrow,review"
+      // validates identically.
+      expect(multiselectMock).toHaveBeenCalledTimes(1);
+      expect(textMock).not.toHaveBeenCalled();
+      const opts = multiselectMock.mock.calls[0][0] as { options: { value: string }[] };
+      // Every legal signal is offered — the point of the widget is that nothing
+      // has to be remembered.
+      expect(opts.options.map((o) => o.value)).toContain("cite-evict");
+
+      const { createRequire } = await import("node:module");
+      const require_ = createRequire(import.meta.url);
+      const cachePath = require_.resolve("../templates/hooks/lib/config-cache.cjs");
+      delete require_.cache[cachePath];
+      const configCache = require_(cachePath) as {
+        clearConfigCache(): void;
+        readPolicy(root: string): { hint_dismiss_signals?: unknown }[];
+      };
+      configCache.clearConfigCache();
+      const declared = configCache
+        .readPolicy(dir)
+        .map((layer) => layer.hint_dismiss_signals)
+        .find((list) => Array.isArray(list));
+      // Enum order, not click order: validate() rebuilds the list from the schema
+      // so two users who picked the same set produce the same bytes.
+      expect(declared).toEqual(["review", "narrow"]);
+
+      // Policy has one home — the repo config is not a second copy of it.
+      expect(readConfig(dir)).not.toHaveProperty("hint_dismiss_signals");
+    } finally {
+      stdoutSpy.mockRestore();
+      if (savedFabricHome === undefined) {
+        delete process.env.FABRIC_HOME;
+      } else {
+        process.env.FABRIC_HOME = savedFabricHome;
+      }
+    }
+  });
+});
+
 describe("rc.16 TASK-007: panel field validators reject invalid input", () => {
   it("getPanelFields() validators reject 0 / negative / NaN / empty / float for positive-integer fields", async () => {
     const { getPanelFields } = await import("@fenglimg/fabric-shared");
@@ -327,6 +404,30 @@ describe("rc.16 TASK-007: panel field validators reject invalid input", () => {
     expect(validator("zh-CN").ok).toBe(true);
     expect(validator("fr-FR").ok).toBe(false);
     expect(validator("").ok).toBe(false);
+  });
+
+  it("getPanelFields() set validator normalises the list and refuses an unknown member", async () => {
+    const { getPanelFields } = await import("@fenglimg/fabric-shared");
+    const setField = getPanelFields().find((f) => f.key === "hint_dismiss_signals");
+    expect(setField).toBeDefined();
+    expect(setField!.widget).toBe("multiselect");
+
+    const validator = setField!.validate.bind(setField!);
+
+    // The empty string is the console's "nothing checked" and the hooks' "dismiss
+    // nothing" — a legal value, not a missing one. Rejecting it would make the
+    // last checkbox impossible to uncheck.
+    const empty = validator("");
+    expect(empty.ok && empty.value).toEqual([]);
+
+    // Order comes from the schema and duplicates collapse, so the same SET always
+    // writes the same bytes no matter how it was clicked or typed.
+    const messy = validator(" narrow , review ,narrow, ");
+    expect(messy.ok && messy.value).toEqual(["review", "narrow"]);
+
+    // One bad member fails the whole write rather than being dropped: silently
+    // saving a subset would show a checkbox state the user never chose.
+    expect(validator("review,not-a-signal").ok).toBe(false);
   });
 });
 

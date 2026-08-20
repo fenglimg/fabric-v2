@@ -2,8 +2,12 @@ import type { Stage, InstallContext, StageResult } from "./types.js";
 import { stageRan, stageSkipped, stageFailedFromError } from "./pipeline.js";
 import { validateHookPaths } from "../hooks-orchestrator.js";
 import { writeInstallManifest } from "../write-install-manifest.js";
+import { loadProjectConfig } from "../../store/project-config-io.js";
+import { registerProject } from "../../store/project-registry-io.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+
+declare const __CLI_VERSION__: string | undefined;
 import { t } from "../../i18n.js";
 import { paint } from "../../colors.js";
 
@@ -86,6 +90,31 @@ export class ValidateStage implements Stage {
       if (manifestRel !== null) {
         skipped.push(join(target, ...manifestRel.split("/")));
       }
+
+      // Record WHERE Fabric now lives, so cross-project version overview has a
+      // data source at all (nothing else on the machine maps a project to its
+      // path). Twin of the deregistration in `fabric uninstall`.
+      //
+      // `target` is used verbatim — it is the root this install actually wrote
+      // into. Re-deriving it via resolveProjectRoot would short-circuit on
+      // CLAUDE_PROJECT_DIR and register the wrong repo when installing into
+      // another checkout from inside an AI session.
+      //
+      // Deliberately absent from installed[]/skipped[]: those enumerate project
+      // artifacts under `target`, and this file lives in ~/.fabric. Keeping it
+      // out also leaves the collapse heuristic's inputs untouched (KT-PIT-0030).
+      // A failed write is swallowed by registerProject — machine-level
+      // bookkeeping must never fail an otherwise-good install.
+      // project_id is OPTIONAL here on purpose: an install that binds no store
+      // leaves fabric-config.json as `{}`. Gating registration on the id would
+      // make exactly those projects invisible to the console — the failure this
+      // registry exists to prevent.
+      const projectId = loadProjectConfig(target)?.project_id;
+      await registerProject({
+        path: target,
+        ...(typeof projectId === "string" && projectId.length > 0 ? { projectId } : {}),
+        fabricVersion: typeof __CLI_VERSION__ === "string" ? __CLI_VERSION__ : "unknown",
+      });
 
       // flat-design: the success path no longer prints a separate "安装校验通过 ✓(…)"
       // narration line — the `● 安装校验 ✓` stage line already reports it. Failures

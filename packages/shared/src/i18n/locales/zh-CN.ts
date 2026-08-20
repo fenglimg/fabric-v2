@@ -42,11 +42,219 @@ export const zhCNMessages: Messages = {
   // `fabric preview` — 本地只读知识预览 web 服务(loopback-only)。
   "cli.preview.description": "启动本地只读知识预览页(浏览器里按受众分组浏览)",
   "cli.preview.arg.port": "监听端口(默认 7777)。",
-  "cli.preview.arg.host": "监听地址(默认 127.0.0.1,仅本机可访问)。",
   "cli.preview.arg.open": "启动后自动打开浏览器(默认开;传 --no-open 关闭)。",
   "cli.preview.arg.target": "覆盖项目根目录(默认取 cwd)。",
   "cli.preview.arg.all":
     "显示所有已挂载 store 的知识(越过本项目 read-set;默认只显示本项目)。",
+  // 控制台配置页的页面文案。走 `/api/config` 下发而不是硬编码进模板,这样页面和
+  // CLI 一样跟随机器级 `language`。
+  "cli.console.config.title": "配置",
+  "cli.console.config.intro": "这台机器上的 Fabric 当前按什么在跑。配置存在 ~/.fabric,与你从哪个目录打开控制台无关。",
+  "cli.console.config.machine.title": "全机器默认",
+  "cli.console.config.machine.intro": "没有单独设置的项目都用这一套。",
+  "cli.console.config.projects.title": "按项目单独设置",
+  "cli.console.config.projects.intro": "只列出各项目「与默认不同」的部分;没列出的项都继承上面的默认值。",
+  "cli.console.config.projects.empty": "这台机器还没有登记任何项目。",
+  "cli.console.config.projects.empty-hint":
+    "登记发生在 fabric install 时。早于该功能安装的仓库不会自动出现 —— 到各仓库重跑一次 fabric install 即可。",
+  "cli.console.config.projects.current": "当前所在",
+  "cli.console.config.projects.no-overrides": "全部继承默认值",
+  "cli.console.config.projects.override-count": "{count} 项与默认不同",
+  "cli.console.config.projects.add": "为此项目单独设置一项",
+  "cli.console.config.projects.add-placeholder": "选一项…",
+  "cli.console.config.projects.unbound":
+    "未绑定知识库,因此没有项目标识 —— 存不了「仅此项目」的值。先跑 fabric store bind。",
+  "cli.console.config.projects.unregistered": "未登记(可能装于旧版本,或仓库已移走)",
+  "cli.console.config.projects.stale": "登记的路径已不存在",
+  "cli.console.config.projects.inherited": "继承默认",
+  "cli.console.config.projects.forget": "注销此项目",
+  "cli.console.config.projects.forget-intro":
+    "从这台机器上抹掉它。下面逐条列出将被删掉的位置,确认前不动任何文件。",
+  "cli.console.config.projects.forget-cost":
+    "不可撤销。它归档进知识库的内容仍留在库里,但不再属于任何项目,也不会再在任何仓库里浮现。",
+  "cli.console.config.projects.forget-where-registry": "本机登记表里的这一行",
+  "cli.console.config.projects.forget-where-config": "全局配置里它的设置段",
+  "cli.console.config.projects.forget-where-bindings": "知识库绑定快照",
+  "cli.console.config.projects.forget-nothing": "这台机器上已经没有它的任何记录。",
+  "cli.console.config.projects.forget-confirm": "确认注销",
+  "cli.console.config.projects.forget-cancel": "取消",
+  "cli.console.config.projects.forget-current": "这是控制台当前所在的项目,不能注销。",
+  "cli.console.config.projects.forget-done": "已注销 {name},本机还剩 {count} 个项目",
+  "cli.console.config.projects.forget-failed": "注销失败:{error}",
+  "cli.console.config.stores.title": "按知识库",
+  "cli.console.config.stores.intro": "知识库自身的属性,跟着库走、全团队共享,不属于任何单个项目。",
+  "cli.console.config.stores.empty": "没有挂载任何知识库。",
+  "cli.console.config.stores.personal": "个人库",
+  "cli.console.config.group.A_locale": "语言与范围",
+  "cli.console.config.group.B_hint_threshold": "提醒阈值",
+  "cli.console.config.group.C_audit": "审计",
+  "cli.console.config.group.D_behavior": "行为",
+  "cli.console.config.search": "搜索设置",
+  "cli.console.config.search-empty": "没有匹配「{q}」的设置项。",
+  "cli.console.config.advanced.title": "高级",
+  "cli.console.config.advanced.intro": "改动前需要知道后果的项。默认值适用于大多数情况。",
+  "cli.console.config.advanced.count": "{count} 项",
+  "cli.console.config.modified": "已在此处设置,不再跟随下层",
+  "cli.console.config.inherited-from": "继承自{source},此处没有设置",
+  "cli.console.config.scope-note":
+    "顶栏当前选的是「{name}」。这一页是全机器的配置,换作用域不会换掉这里的值 —— 它只决定下面「按项目单独设置」先展开哪一个。",
+  // 这个按钮做的是「把这一层的这条设置删掉」,不是「把值写回默认」—— 两者的区别
+  // 在于删掉之后下层还能再决定,写回默认则钉死了。原来叫「恢复默认」,读起来像后者,
+  // 而点完之后的回执(reset-done)说的却是前者:对的话说晚了一步。
+  "cli.console.config.reset": "移除此处设置",
+  "cli.console.config.multi-hint":
+    "全都不勾再保存,意思是明确地「一个都不关」;想把这条设置整个撤掉、交回下层决定,用「移除此处设置」—— 只有这一层真设过时它才会出现。",
+  "cli.console.config.reset-done": "已从 {target} 移除,改由下层决定。",
+  "cli.console.config.preset.title": "提醒频率",
+  "cli.console.config.preset.intro":
+    "8 项提醒阈值一起设定。当前档位由这 8 项的实际取值反推,不单独存档位名。",
+  "cli.console.config.preset.custom": "自定义",
+  "cli.console.config.preset.custom-hint": "这 8 项的取值不完全等于任何一档。逐项取值见下方高级区。",
+  "cli.console.config.preset.relaxed": "低频",
+  "cli.console.config.preset.standard": "标准",
+  "cli.console.config.preset.attentive": "高频",
+  "cli.console.config.preset.applied": "已按「{name}」设置 {count} 项。",
+  "cli.console.config.preset.partial": "{count} 项未能写入:{keys}。其余已生效。",
+  "cli.console.config.save": "保存",
+  "cli.console.config.saved": "已保存到 {target}。",
+  "cli.console.config.save-failed": "保存失败:{reason}",
+  // 强断言只用于「当前所在项目」那一行 —— 那是控制台唯一真正观察到的进程环境。
+  // 别的项目由它们自己的 hook / MCP 进程读这些变量,我们看不到,所以只说"可被覆盖"。
+  "cli.console.config.env-locked":
+    "本控制台进程观察到环境变量 {name};带着同一变量的客户端会读到它,改配置文件不生效。",
+  "cli.console.config.env-available": "可被 {name} 覆盖",
+  "cli.console.config.loading": "正在读取配置…",
+  "cli.console.config.load-failed": "读取配置失败",
+  // 「已启用 · 未生效」:开关是意图,能不能算是另一回事。四种状态各说各的下一步,
+  // 其中「模型还没下载」不需要用户做任何事 —— 把它和真正的故障混成一句「没生效」,
+  // 会让一半的人去修一个自己会好的问题。
+  "cli.console.config.semantic.ready": "已生效 —— 语义通道正在参与排序。",
+  "cli.console.config.semantic.off": "已关闭 —— 只按关键词命中排序。",
+  "cli.console.config.semantic.remote": "已生效 —— 由远程嵌入服务计算，本机不需要模型。",
+  "cli.console.config.semantic.model-missing":
+    "已开启，尚未生效 —— 模型 {model} 还没下载。下次检索时自动下载到 {dir}，之后即生效，你不需要做什么。",
+  "cli.console.config.semantic.package-missing":
+    "已开启，但用不了 —— server 加载不到 fastembed，检索会退回关键词排序。重装 fabric（npm i -g @fenglimg/fabric-cli@latest）后用 fabric info recall 复查。",
+  "cli.console.config.remote.title": "远程嵌入",
+  "cli.console.config.remote.off": "未开启 —— 召回在本机排序。",
+  "cli.console.config.remote.on": "已开启 —— 嵌入在 {host} 计算。",
+  "cli.console.config.remote.key-set": "已设置 API key(此处永不显示原文)",
+  "cli.console.config.remote.key-missing": "未设置 API key —— 召回降级为纯文本排序",
+  // 这一段是「为什么这里没有输入框」的答案。三项里有一项是密钥,网页表单不做明文
+  // 密钥输入;只给状态而不说去哪儿改,等于把人留在原地。
+  "cli.console.config.remote.how":
+    "这三项要一起配齐才生效，其中 API key 是密钥 —— 网页不提供明文密钥输入框。改法：编辑 {path} 的 embed_endpoint / embed_model / embed_api_key，或设环境变量 FABRIC_EMBED_ENDPOINT / FABRIC_EMBED_MODEL / FABRIC_EMBED_API_KEY（环境变量优先）。",
+  // 集成页。这一页回答的是「Fabric 到底往这个项目里装了什么、哪些正在起作用」,
+  // 所有状态都由文件系统算出:模板目录的字节 vs 安装目录的字节。
+  "cli.console.integrations.title": "集成",
+  "cli.console.integrations.intro":
+    "Fabric 装进这个项目的物件，以及各客户端当前的接入状态。所有状态都是现读文件算出来的，不是安装时记下的。",
+  "cli.console.integrations.scope-line": "这一页说的是 {name} —— {path}",
+  "cli.console.integrations.machine-only": "集成是项目级的",
+  "cli.console.integrations.machine-only-hint":
+    "hook、skill 与托管块都装在某个仓库里。在右上角切到一个具体项目查看。",
+  "cli.console.integrations.mcp.title": "MCP 接入",
+  "cli.console.integrations.mcp.on": "已接入 —— 配置在 {path}。",
+  "cli.console.integrations.mcp.off": "未接入 —— {path} 里没有 fabric 条目。",
+  "cli.console.integrations.mcp.off-hint": "这个客户端调不到 fab_recall / fab_propose。跑 fabric install 补上。",
+  "cli.console.integrations.mcp.location.project": "项目级",
+  "cli.console.integrations.mcp.location.user": "用户级",
+  "cli.console.integrations.bootstrap.title": "规则引用",
+  "cli.console.integrations.bootstrap.ok": "已引用且是当前版本 —— {path}",
+  "cli.console.integrations.bootstrap.missing": "{path} 没有引用 Fabric 的规则文档。",
+  "cli.console.integrations.bootstrap.modified":
+    "{path} 引用的规则不是当前版本 —— AI 读到的是旧规则。跑 fabric install 重写。",
+  "cli.console.integrations.files.title": "物理文件",
+  "cli.console.integrations.files.hooks": "hook 脚本",
+  "cli.console.integrations.files.skills": "skill",
+  "cli.console.integrations.files.libs": "共享库",
+  "cli.console.integrations.files.ok": "{count} 个文件，与本版模板一致",
+  "cli.console.integrations.files.count": "{count} 个文件",
+  // 只读不是遗漏:这些文件由 fabric install 生成,手改会在下次安装被覆盖。
+  "cli.console.integrations.files.readonly":
+    "这些文件由 fabric install 写入，此处只读 —— 手改会在下次安装时被覆盖。",
+  "cli.console.integrations.state.missing": "缺失",
+  "cli.console.integrations.state.modified": "与模板不一致",
+  "cli.console.integrations.state.orphan": "多余（本版不再分发）",
+  "cli.console.integrations.behaviors.title": "运行时行为",
+  "cli.console.integrations.behaviors.intro":
+    "每一项都是一个装在项目里的 hook。文件在、且已登记进客户端配置，它才会跑；下面的设置是它的调节项。",
+  "cli.console.integrations.behaviors.active": "运行中",
+  "cli.console.integrations.behaviors.inactive": "未运行",
+  "cli.console.integrations.behaviors.unregistered": "文件在，但没登记进客户端配置 —— 不会被触发。",
+  "cli.console.integrations.behaviors.file-missing": "脚本文件不在。",
+  "cli.console.integrations.behaviors.no-keys":
+    "这一项没有调节项：它要么是其他行为赖以计算的那份记录，关掉会让它们一起失灵，要么本来就只做一件事。",
+  "cli.console.integrations.behaviors.shared": "也受「{label}」影响，控件画在「{owner}」下面。",
+  "cli.console.integrations.behaviors.goto": "跳到这个设置",
+  "cli.console.integrations.behaviors.turn-off":
+    "想少收到提醒，有三个层次：把「提示详细程度」设成 silent 是全部静音；「永久关闭的提醒类型」是按类型关；另有三个开关（引用记账、AI 主动提议归档、语义检索）在配置页。",
+  "cli.console.integrations.behaviors.turn-off-hook":
+    "把某个 hook 彻底停掉需要改客户端自己的配置文件，控制台不做这件事 —— 它只改 Fabric 的设置，不改 Claude Code / Codex 的。",
+  "cli.console.integrations.behaviors.turn-off-link": "打开配置页",
+  "cli.console.integrations.cleanup.title": "清理",
+  "cli.console.integrations.cleanup.intro":
+    "删除以后不会自己回来。下面两项都会先把要删的文件全列出来，确认之后才动手。",
+  "cli.console.integrations.cleanup.orphan": "旧版本留下的文件",
+  "cli.console.integrations.cleanup.orphan-hint":
+    "这个版本已经不再提供、但仍留在项目里的文件。安装从不删旧文件，所以它们会一直被客户端读到。删掉不影响当前版本的任何功能。",
+  "cli.console.integrations.cleanup.cache": "提醒记录缓存",
+  "cli.console.integrations.cleanup.cache-hint":
+    "记录「这条提醒给你看过了」的小文件，每个会话一份，会一直攒着。删掉只会让提醒重新计数，不影响知识库。正在跑的会话的状态文件不在其中。",
+  "cli.console.integrations.cleanup.count": "{count} 个文件",
+  "cli.console.integrations.cleanup.none": "没有可清理的。",
+  "cli.console.integrations.cleanup.button": "清理…",
+  "cli.console.integrations.cleanup.confirm-hint": "以下 {count} 个文件会被删除，不可撤销：",
+  "cli.console.integrations.cleanup.confirm": "确认删除 {count} 个",
+  "cli.console.integrations.cleanup.cancel": "取消",
+  "cli.console.integrations.cleanup.done": "已删除 {count} 个文件。",
+  "cli.console.integrations.cleanup.mismatch":
+    "确认时列出 {planned} 个，实际删除 {removed} 个 —— 其余的在这期间已经不在了，或者删不掉。",
+  "cli.console.integrations.cleanup.failed": "清理失败",
+  "cli.console.integrations.repair.title": "修复",
+  "cli.console.integrations.repair.intro":
+    "按当前版本的模板把这些文件重写一遍。手改过的内容会被覆盖，输出实时显示在下方。",
+  "cli.console.integrations.repair.install": "重新安装",
+  "cli.console.integrations.repair.install-hint": "等同于在该项目目录运行 fabric install。重写全部物件与客户端配置。",
+  "cli.console.integrations.repair.doctor": "体检并修复",
+  "cli.console.integrations.repair.doctor-hint": "等同于 fabric doctor --fix。只改能自动修好的问题，不重写没问题的文件。",
+  "cli.console.integrations.repair.running": "正在运行「{action}」，完成前不要关闭页面。",
+  "cli.console.integrations.repair.done": "「{action}」已结束，页面已重新读取文件状态。",
+  "cli.console.integrations.manifest.title": "安装记录",
+  "cli.console.integrations.manifest.ok": "{count} 个文件与安装时记录一致。",
+  "cli.console.integrations.manifest.no-manifest":
+    "这个项目没有安装记录 —— 要么从未装过，要么装它的版本还不写记录。",
+  "cli.console.integrations.manifest.unreadable": "安装记录存在但读不出来。",
+  "cli.console.integrations.manifest.drifted": "{count} / {tracked} 个文件在安装之后被改过。",
+  "cli.console.integrations.manifest.version": "安装时的版本：{version}",
+  "cli.console.integrations.problems.none": "全部一致。",
+  "cli.console.integrations.problems.count": "{count} 项需要处理",
+  "cli.console.integrations.loading": "正在检查安装状态…",
+  "cli.console.integrations.load-failed": "读取集成状态失败",
+
+  // 七个 hook 的用户可判断名称。命名口径:说它在什么时候做什么,不说它的文件名。
+  "cli.console.behavior.fabric-hint.label": "收工时提醒归档与复审",
+  "cli.console.behavior.fabric-hint.description":
+    "一轮对话结束时检查:改动量是否够归档、待审条目是否堆积、知识库是否该做维护，够条件就在回合末尾提示一次。",
+  "cli.console.behavior.knowledge-hint-broad.label": "会话开始时注入常驻知识",
+  "cli.console.behavior.knowledge-hint-broad.description":
+    "新会话启动时，把 broad 范围的知识索引写进 AI 的初始上下文，省掉每次重新检索。",
+  "cli.console.behavior.knowledge-pretooluse.label": "编辑文件前提示相关知识",
+  "cli.console.behavior.knowledge-pretooluse.description":
+    "AI 准备改某个文件时，如果有 narrow 范围命中该路径的知识，在动手前提示一次。",
+  "cli.console.behavior.knowledge-hint-subagent.label": "子代理启动时注入知识",
+  "cli.console.behavior.knowledge-hint-subagent.description":
+    "子代理不继承主会话的上下文，但同样会改代码，所以它启动时单独注入一次。",
+  "cli.console.behavior.cite-policy-evict.label": "提醒记录引用了哪条知识",
+  "cli.console.behavior.cite-policy-evict.description":
+    "长会话里定期提醒 AI 在改文件前先 recall，引用记账才有数据。",
+  "cli.console.behavior.post-tooluse-mutation.label": "记录编辑与知识读取",
+  "cli.console.behavior.post-tooluse-mutation.description":
+    "把每次编辑、每次读取知识正文记进事件账本。上面几项的触发条件都是从这本账算出来的。",
+  "cli.console.behavior.session-end-marker.label": "记录会话结束",
+  "cli.console.behavior.session-end-marker.description":
+    "会话结束时写一条标记，让下次归档知道这一段已经完整。",
+
   "cli.preview.port-fallback": "端口 {requested} 被占用,已自动改用 {actual}。",
   "cli.preview.started": "知识预览已启动:{url}",
   "cli.preview.opening": "正在打开浏览器…",
@@ -123,6 +331,16 @@ export const zhCNMessages: Messages = {
     "Scope 坐标(如 team、project:x、personal)",
   "cli.info.scope.args.json.description":
     "输出机器可读的 JSON(scope 始终输出 JSON)",
+  "cli.info.projects.description":
+    "列出本机所有装过 Fabric 的项目及其版本",
+  "cli.info.projects.args.json.description": "输出机器可读的 JSON 而非文本",
+  "cli.info.projects.empty":
+    "还没有已登记的项目。在某个项目里跑一次 `fabric install` 即可登记。",
+  "cli.info.projects.title": "已登记的项目",
+  "cli.info.projects.stale": "路径已失效",
+  "cli.info.projects.version-unknown": "安装版本未知",
+  "cli.info.projects.stale-note":
+    "标记为「路径已失效」的项目,其目录已被移动或删除;在新位置重跑 `fabric install` 可更新登记。",
 
   "cli.config.description":
     "打开 Fabric 交互式配置面板（语言、知识层、审计模式、MCP 客户端配置等）",
@@ -146,6 +364,9 @@ export const zhCNMessages: Messages = {
   "cli.config.value.default-marker": "（默认）",
   // config-single-home W6：值来自哪一层。同一个键可以在机器级、本项目级或团队
   // store 里被设置，标出来源才解释得清"为什么这个仓库读到的不一样"。
+  // env 层只对 PANEL_ENV_OVERRIDES 里的键存在；标成这一层意味着改配置文件不会
+  // 生效——这正是它值得单独标出来的原因。
+  "cli.config.source.env": "环境变量",
   "cli.config.source.project": "本项目",
   "cli.config.source.defaults": "全机器",
   "cli.config.source.store": "团队 store",
@@ -187,70 +408,75 @@ export const zhCNMessages: Messages = {
   "cli.config.errors.no-project-id":
     "本仓库还没有 project_id — 先跑 `fabric install`，或改用 --scope defaults 写到全机器默认。",
   "cli.config.errors.no-enum-options": "该字段没有可选枚举值 — 已跳过。",
-  // 11 个面板字段标签（A 组 2 个 + B 组 8 个 + C 组 1 个）。
+  // 19 个面板字段的标签与说明。语域对齐 VS Code 设置文档 / Raycast 手册：陈述句、
+  // 说清后果、给出实际取值，不用口语化修辞——这里的每一句都是用户判断「这一项要不
+  // 要动」的唯一依据。
   "cli.config.fields.fabric_language.label": "语言",
   "cli.config.fields.fabric_language.description":
-    "Fabric 的全局语言基调（界面与知识统一），保存到 ~/.fabric/fabric-global.json。",
+    "界面文案与知识渲染使用的语言。保存在 ~/.fabric/fabric-global.json，对这台机器上的所有项目生效。",
   "cli.config.fields.default_layer_filter.label": "默认检索范围",
   "cli.config.fields.default_layer_filter.description":
-    "AI 找知识时默认翻哪一层：team 只翻团队库 / personal 只翻个人库 / both 两个都翻（默认）。",
-  "cli.config.fields.archive_hint_hours.label": "归档提醒：隔多久提一次",
+    "AI 检索知识时默认覆盖的层：team 仅团队库，personal 仅个人库，both 两者都覆盖。仅改变默认值，单次检索仍可另行指定。",
+  "cli.config.fields.archive_hint_hours.label": "归档提醒间隔",
   "cli.config.fields.archive_hint_hours.description":
-    "距离上次归档超过这么多小时，就提醒你「有东西该记下来了」。调大＝更少打扰，调小＝催得更勤。",
+    "距上次归档超过该小时数后，会话结束时提示有内容待归档。数值越大，提醒越少。",
   "cli.config.fields.archive_hint_cooldown_hours.label":
-    "归档提醒：被忽略后静默多久",
+    "归档提醒冷却",
   "cli.config.fields.archive_hint_cooldown_hours.description":
-    "你没理会归档提醒后，它闭嘴这么多小时再说第二次。防止同一件事反复念。",
+    "一次归档提醒未被采纳后，该小时数内不再就同一件事重复提醒。",
   "cli.config.fields.archive_edit_threshold.label":
-    "归档提醒：改多少次文件后触发",
+    "归档提醒的编辑次数阈值",
   "cli.config.fields.archive_edit_threshold.description":
-    "累计改了这么多次文件就提醒归档（和上面的小时数是「或」的关系，谁先到算谁）。调小＝更早提醒。",
-  "cli.config.fields.underseed_node_threshold.label": "知识库「太空」的门槛",
+    "累计编辑达到该次数即提示归档，与「归档提醒间隔」取先到者。数值越小，提醒越早。",
+  "cli.config.fields.underseed_node_threshold.label": "知识库未成型阈值",
   "cli.config.fields.underseed_node_threshold.description":
-    "知识条目少于这个数，Fabric 认为知识库还没建起来，会建议你先补一批。属于知识库自身属性，写在团队 store 里、全团队共享。",
+    "条目数少于该值时，Fabric 判定知识库尚未成型并建议先补充一批。该值属于知识库本身，写入团队 store，对使用该库的所有人生效。",
   "cli.config.fields.review_hint_pending_count.label":
-    "待审提醒：积压多少条时提",
+    "待审提醒的条数阈值",
   "cli.config.fields.review_hint_pending_count.description":
-    "AI 归档的草稿要你过目才进库。攒到这么多条就提醒你去审一批。",
+    "待审草稿累计达到该条数时提示审核。AI 归档的条目须经审核才进入知识库。",
   "cli.config.fields.review_hint_pending_age_days.label":
-    "待审提醒：放多少天时提",
+    "待审提醒的天数阈值",
   "cli.config.fields.review_hint_pending_age_days.description":
-    "有草稿放了这么多天还没审，就提醒你。防止少量草稿一直被遗忘。",
+    "最早一条待审草稿存在超过该天数时提示审核，与条数阈值取先到者。",
   "cli.config.fields.review_stale_pending_days.label":
-    "待审草稿「放太久」的天数",
+    "待审草稿的过期天数",
   "cli.config.fields.review_stale_pending_days.description":
-    "审核时，超过这个天数的草稿会被单独拎出来让你「要么处理、要么丢掉」，不让长尾堆积。",
-  "cli.config.fields.maintenance_hint_days.label": "体检提醒：隔多少天提一次",
+    "审核时，存在超过该天数的草稿会被单独列出，要求处理或丢弃。",
+  "cli.config.fields.maintenance_hint_days.label": "体检提醒间隔",
   "cli.config.fields.maintenance_hint_days.description":
-    "距离上次跑 `fabric doctor` 超过这么多天，提醒你做一次知识库体检。",
+    "距上次运行 fabric doctor 超过该天数后提示做一次知识库体检。",
   "cli.config.fields.maintenance_hint_cooldown_days.label":
-    "体检提醒：被忽略后静默多少天",
+    "体检提醒冷却",
   "cli.config.fields.maintenance_hint_cooldown_days.description":
-    "你没理会体检提醒后，它闭嘴这么多天再说第二次。",
-  "cli.config.fields.audit_mode.label": "改动审计严格度",
+    "一次体检提醒未被采纳后，该天数内不再重复提醒。",
+  "cli.config.fields.audit_mode.label": "人工锁定内容的审计强度",
   "cli.config.fields.audit_mode.description":
-    "检查「人工锁定的内容被改动」时有多严：strict 严格拦 / warn 只警告（推荐）/ off 不检查。",
-  "cli.config.fields.nudge_mode.label": "提示音量",
+    "检测到人工锁定的知识被改动时：strict 阻断操作，warn 记录警告并继续，off 不检测。",
+  "cli.config.fields.nudge_mode.label": "提示详细程度",
   "cli.config.fields.nudge_mode.description":
-    "你能看到多少提示：silent 全静音 / minimal 只留关键 / normal 正常 / verbose 什么都说。只影响你看到的，不影响 AI 拿到的知识——静音也不会让 AI 变笨。",
-  "cli.config.fields.cite_policy_enabled.label": "改文件前先查知识库",
+    "命令行中显示多少 Fabric 提示：silent 不显示，minimal 仅关键提示，normal 常规，verbose 全部。只影响显示，不改变 AI 检索到的知识。",
+  "cli.config.fields.cite_policy_enabled.label": "编辑前检索提示",
   "cli.config.fields.cite_policy_enabled.description":
-    "开启后，AI 改文件前会被提醒先查一下相关知识（不阻塞，只提醒）。关掉＝完全不提。",
-  "cli.config.fields.self_archive_policy_enabled.label": "AI 自动提议归档",
+    "开启后，AI 修改文件前会收到「先检索相关知识」的提示。是提示，不阻断编辑。",
+  "cli.config.fields.self_archive_policy_enabled.label": "AI 主动提议归档",
   "cli.config.fields.self_archive_policy_enabled.description":
-    "开启后，AI 察觉到「这个决定值得记下来」时会自己发起归档（仍需你审核才进库）。关掉＝只有你主动叫它才归档。",
-  "cli.config.fields.cite_recall_nudge.label": "未查知识库时提醒",
+    "开启后，AI 判断某个决定值得留存时会自行发起归档。结果进入待审，经你审核后才入库。",
+  "cli.config.fields.cite_recall_nudge.label": "未检索即编辑的提醒",
   "cli.config.fields.cite_recall_nudge.description":
-    "AI 没查知识库就动手改文件时，给一句软提醒。嫌啰嗦可以关掉，不影响归档和检索。",
-  "cli.config.fields.fabric_event_retention_days.label": "活动日志保留天数",
+    "AI 未检索知识库就修改文件时追加一条提醒。关闭不影响检索与归档本身。",
+  "cli.config.fields.fabric_event_retention_days.label": "活动日志保留期",
   "cli.config.fields.fabric_event_retention_days.description":
-    "本机活动流水保留多久（7 精简 / 30 均衡 / 90 便于回溯）。超期的会归档到旁边的文件，不会直接删掉。",
-  "cli.config.fields.embed_enabled.label": "语义检索（按意思找，不只按词）",
+    "本机活动记录保留的天数：7 最精简，30 均衡，90 便于回溯。超期记录转存到相邻的归档文件，不删除。",
+  "cli.config.fields.embed_enabled.label": "语义检索",
   "cli.config.fields.embed_enabled.description":
-    "开启后，问法和原文用词不一样也能找到（中文尤其明显）。注意这只是意图开关：真正生效还要 server 能加载 fastembed、模型已下载（首次检索时自动下到 ~/.fabric/cache/embed）。用 `fabric info recall` 看实际状态。",
-  "cli.config.fields.fusion.label": "检索排序方式",
+    "开启后，用词与原文不同的提问也能命中（中文差异尤其明显）。这是意图开关：实际生效还需 server 能加载 fastembed 且模型已下载。下面一行是这台机器上的实际状态。",
+  "cli.config.fields.fusion.label": "检索结果排序策略",
   "cli.config.fields.fusion.description":
-    "关键词命中和语义相似怎么合成排名：auto 自动挑（默认，推荐）/ rrf 两者平权（语义更管用）/ additive 关键词主导。没把握就留 auto——它会在语义通道真的出分时才启用 rrf。",
+    "关键词命中与语义相似度的合成方式：auto 按语义通道是否出分自动选择，rrf 两者等权，additive 关键词主导。",
+  "cli.config.fields.hint_dismiss_signals.label": "永久关闭的提醒类型",
+  "cli.config.fields.hint_dismiss_signals.description":
+    "勾选的类型在所有界面都不再出现，重开会话也不恢复。archive 归档提醒 · archive_backlog 待审积压提醒 · review 审核提醒 · import 历史导入建议 · maintenance 知识库体检提醒 · narrow 编辑文件时的相关知识提示 · cite-evict 未检索就编辑的提醒。一个都不勾即不关闭任何提醒。",
 
   "cli.doctor.description":
     "运行 Fabric 目标态诊断（meta 同步、知识索引、bootstrap、events ledger、human-lock 漂移）",

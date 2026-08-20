@@ -21,6 +21,7 @@ import {
   type UninstallStepResult,
 } from "../install/uninstall-skills-and-hooks.js";
 import { unbindStoreProject } from "../install/uninstall-store.js";
+import { deregisterProjectByPath } from "../store/project-registry-io.js";
 import { HOOK_SCRIPT_DESTINATIONS, SKILL_DESTINATIONS } from "../install/distribution-targets.js";
 
 // W4 uninstall-symmetry: `fabric uninstall` is now the visual + semantic inverse
@@ -654,8 +655,26 @@ async function executeUninstallStage(
     }
     case "store":
       return executeUninstallStoreStage(plan.target);
-    case "scaffold":
-      return executeUninstallFabricPlan(plan.scaffold);
+    case "scaffold": {
+      const steps = await executeUninstallFabricPlan(plan.scaffold);
+      // Twin of the registration in the install ValidateStage. Without it, an
+      // uninstalled project lingers in the machine registry forever, shown as
+      // "installed but outdated" — and its upgrade action would reinstall
+      // Fabric behind the user's back (KT-PIT-0074: a sweeper shipped without
+      // its opposite-direction twin is a self-contradicting half-mechanism).
+      //
+      // Only when nothing errored: a partial removal leaves `.fabric` on disk,
+      // and the registry should keep reflecting that reality rather than claim
+      // a project is gone while its files remain. An all-`absent` scaffold
+      // still deregisters — that is exactly the ghost entry worth clearing.
+      //
+      // Failures inside deregisterProjectByPath are swallowed there; uninstall
+      // must not fail over bookkeeping.
+      if (!steps.some((s) => s.status === "error")) {
+        await deregisterProjectByPath(plan.target);
+      }
+      return steps;
+    }
     case "validate": {
       const bootstrapRan = priorResults.some((r) => r.name === "bootstrap" && r.disposition === "ran");
       return validateUninstallCleared(plan.target, bootstrapRan);

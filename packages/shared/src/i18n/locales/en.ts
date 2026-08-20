@@ -50,12 +50,243 @@ export const enMessages: Messages = {
   "cli.preview.description":
     "Start a local read-only knowledge preview (browse in your browser, grouped by scope)",
   "cli.preview.arg.port": "Port to listen on (default 7777).",
-  "cli.preview.arg.host": "Host to bind (default 127.0.0.1, loopback only).",
   "cli.preview.arg.open":
     "Open the browser on start (default on; use --no-open to disable).",
   "cli.preview.arg.target": "Override the project root (defaults to cwd).",
   "cli.preview.arg.all":
     "Show knowledge from every mounted store (bypass this project's read-set; default shows only this project).",
+  // Console config page chrome. Delivered through `/api/config` rather than
+  // hard-coded in the template so the page follows the machine-wide `language`
+  // the same way the CLI does.
+  "cli.console.config.title": "Configuration",
+  "cli.console.config.intro":
+    "How Fabric is configured on this machine. Settings live in ~/.fabric and do not depend on which directory you opened the console from.",
+  "cli.console.config.machine.title": "Machine defaults",
+  "cli.console.config.machine.intro": "Every project that has no setting of its own uses these.",
+  "cli.console.config.projects.title": "Per-project settings",
+  "cli.console.config.projects.intro":
+    "Only the values that DIFFER from the defaults are listed; everything else is inherited from above.",
+  "cli.console.config.projects.empty": "No projects are registered on this machine yet.",
+  "cli.console.config.projects.empty-hint":
+    "Registration happens during fabric install. Repos installed before that feature will not appear on their own — re-run fabric install in each one.",
+  "cli.console.config.projects.current": "current",
+  "cli.console.config.projects.no-overrides": "all defaults inherited",
+  "cli.console.config.projects.override-count": "{count} differ from the defaults",
+  "cli.console.config.projects.add": "Set one value for this project",
+  "cli.console.config.projects.add-placeholder": "Pick a setting…",
+  "cli.console.config.projects.unbound":
+    "No knowledge base bound, so this project has no id — a per-project value cannot be stored. Run fabric store bind first.",
+  "cli.console.config.projects.unregistered":
+    "not registered (installed by an older version, or the repo has moved)",
+  "cli.console.config.projects.stale": "the registered path no longer exists",
+  "cli.console.config.projects.inherited": "inherited",
+  "cli.console.config.projects.forget": "Forget this project",
+  "cli.console.config.projects.forget-intro":
+    "Remove it from this machine. Every location that will be deleted is listed below; nothing is touched until you confirm.",
+  "cli.console.config.projects.forget-cost":
+    "This cannot be undone. Anything it archived into a knowledge base stays there, but it belongs to no project any more and will not surface in any repo.",
+  "cli.console.config.projects.forget-where-registry": "its row in this machine's registry",
+  "cli.console.config.projects.forget-where-config": "its settings segment in the global config",
+  "cli.console.config.projects.forget-where-bindings": "knowledge-base binding snapshot",
+  "cli.console.config.projects.forget-nothing": "This machine holds no record of it any more.",
+  "cli.console.config.projects.forget-confirm": "Forget it",
+  "cli.console.config.projects.forget-cancel": "Cancel",
+  "cli.console.config.projects.forget-current":
+    "This is the project the console is running in; it cannot be forgotten from here.",
+  "cli.console.config.projects.forget-done": "Forgot {name} — {count} projects left on this machine",
+  "cli.console.config.projects.forget-failed": "Could not forget it: {error}",
+  "cli.console.config.stores.title": "Per knowledge base",
+  "cli.console.config.stores.intro":
+    "Properties of a knowledge base itself. They travel with the store and are shared by the whole team, so they belong to no single project.",
+  "cli.console.config.stores.empty": "No knowledge bases are mounted.",
+  "cli.console.config.stores.personal": "personal",
+  "cli.console.config.group.A_locale": "Language and scope",
+  "cli.console.config.group.B_hint_threshold": "Reminder thresholds",
+  "cli.console.config.group.C_audit": "Audit",
+  "cli.console.config.group.D_behavior": "Behaviour",
+  "cli.console.config.search": "Search settings",
+  "cli.console.config.search-empty": "No setting matches \u201c{q}\u201d.",
+  "cli.console.config.advanced.title": "Advanced",
+  "cli.console.config.advanced.intro":
+    "Settings whose consequences you need to know before changing them. The defaults suit most cases.",
+  "cli.console.config.advanced.count": "{count} settings",
+  "cli.console.config.modified": "Set here; no longer follows the layer below",
+  "cli.console.config.inherited-from": "Inherited from {source}; nothing set here",
+  "cli.console.config.scope-note":
+    'The switcher is on "{name}". This page is machine-wide, so changing scope does not change the values here — it only decides which row under "Per-project settings" opens first.',
+  // Removing this layer's entry, not writing the default into it — the two
+  // differ in that removal hands the decision back to the layer below while
+  // writing the default pins it. "Reset to default" read as the latter, while
+  // the receipt after clicking (reset-done) correctly described the former.
+  "cli.console.config.reset": "Remove setting here",
+  "cli.console.config.multi-hint":
+    "Saving with nothing ticked means an explicit “none of them”. To withdraw the setting entirely and hand the decision back to the layer below, use “Remove setting here” — it appears only once this layer holds a value.",
+  "cli.console.config.reset-done": "Removed from {target}; the layer below decides again.",
+  "cli.console.config.preset.title": "Reminder frequency",
+  "cli.console.config.preset.intro":
+    "Sets eight reminder thresholds together. The active option is derived from those eight values; no option name is stored.",
+  "cli.console.config.preset.custom": "Custom",
+  "cli.console.config.preset.custom-hint":
+    "These eight values do not match any option exactly. Each one is listed under Advanced below.",
+  "cli.console.config.preset.relaxed": "Relaxed",
+  "cli.console.config.preset.standard": "Standard",
+  "cli.console.config.preset.attentive": "Attentive",
+  "cli.console.config.preset.applied": "Applied {count} settings from \u201c{name}\u201d.",
+  "cli.console.config.preset.partial": "{count} settings could not be written: {keys}. The rest took effect.",
+  "cli.console.config.save": "Save",
+  "cli.console.config.saved": "Saved to {target}.",
+  "cli.console.config.save-failed": "Could not save: {reason}",
+  // The strong claim is reserved for the launch directory's own project — the one
+  // process environment the console actually observes. Other projects read these
+  // variables in their own hook / MCP processes, which we cannot see.
+  "cli.console.config.env-locked":
+    "This console process sees {name} set; a client carrying the same variable reads that value, and editing a config file will not change it.",
+  "cli.console.config.env-available": "can be overridden by {name}",
+  "cli.console.config.loading": "Reading configuration…",
+  "cli.console.config.load-failed": "Could not read configuration",
+  // "On but not in force": the switch is an intent, and whether the machine can
+  // honour it is a separate fact. Each state carries its own next step — and
+  // "the model has not downloaded yet" needs no action at all, so folding it in
+  // with a real failure would send half the readers chasing a problem that
+  // fixes itself.
+  "cli.console.config.semantic.ready": "In force — the semantic channel is contributing to ranking.",
+  "cli.console.config.semantic.off": "Off — ranking is by keyword hits only.",
+  "cli.console.config.semantic.remote":
+    "In force — computed by the remote embedder, so no local model is needed.",
+  "cli.console.config.semantic.model-missing":
+    "On, not yet in force — model {model} has not been downloaded. The next search fetches it into {dir} and it takes effect from then on; nothing for you to do.",
+  "cli.console.config.semantic.package-missing":
+    "On but unusable — the server cannot load fastembed, so search falls back to keyword ranking. Reinstall fabric (npm i -g @fenglimg/fabric-cli@latest), then re-check with fabric info recall.",
+  "cli.console.config.remote.title": "Remote embedding",
+  "cli.console.config.remote.off": "Off — recall ranks locally.",
+  "cli.console.config.remote.on": "On — embeddings are computed at {host}.",
+  "cli.console.config.remote.key-set": "API key set (never shown here)",
+  "cli.console.config.remote.key-missing":
+    "No API key — recall falls back to text-only ranking",
+  // The answer to "why is there no input box here". One of the three is a
+  // secret, and this page does not take plaintext secrets; reporting the state
+  // without saying where to change it would leave the reader stuck.
+  "cli.console.config.remote.how":
+    "All three take effect only together, and the API key is a secret — this page takes no plaintext key. To change them: edit embed_endpoint / embed_model / embed_api_key in {path}, or set FABRIC_EMBED_ENDPOINT / FABRIC_EMBED_MODEL / FABRIC_EMBED_API_KEY (the environment wins).",
+  // The integrations page. It answers "what did Fabric put in this project, and
+  // which parts are actually running" — every state is computed from the tree:
+  // template bytes against installed bytes.
+  "cli.console.integrations.title": "Integrations",
+  "cli.console.integrations.intro":
+    "What Fabric installed into this project, and how each client is wired to it. Every state is read from disk now, not recorded at install time.",
+  "cli.console.integrations.scope-line": "This page is about {name} — {path}",
+  "cli.console.integrations.machine-only": "Integrations are per project",
+  "cli.console.integrations.machine-only-hint":
+    "Hooks, skills and the managed block all live inside a repository. Switch to a project above to see them.",
+  "cli.console.integrations.mcp.title": "MCP connection",
+  "cli.console.integrations.mcp.on": "Connected — configured in {path}.",
+  "cli.console.integrations.mcp.off": "Not connected — no fabric entry in {path}.",
+  "cli.console.integrations.mcp.off-hint":
+    "This client cannot call fab_recall / fab_propose. Run fabric install to add it.",
+  "cli.console.integrations.mcp.location.project": "project scope",
+  "cli.console.integrations.mcp.location.user": "user scope",
+  "cli.console.integrations.bootstrap.title": "Rule import",
+  "cli.console.integrations.bootstrap.ok": "Imported and current — {path}",
+  "cli.console.integrations.bootstrap.missing": "{path} does not import Fabric's rules.",
+  "cli.console.integrations.bootstrap.modified":
+    "The rules {path} imports are not the current ones — the agent is reading stale text. Run fabric install to rewrite them.",
+  "cli.console.integrations.files.title": "Files on disk",
+  "cli.console.integrations.files.hooks": "Hook scripts",
+  "cli.console.integrations.files.skills": "Skills",
+  "cli.console.integrations.files.libs": "Shared libraries",
+  "cli.console.integrations.files.ok": "{count} files, all matching this version's templates",
+  "cli.console.integrations.files.count": "{count} files",
+  // Read-only is a decision, not an omission: fabric install owns these bytes,
+  // so an edit here would be overwritten by the next install.
+  "cli.console.integrations.files.readonly":
+    "These files are written by fabric install and are read-only here — an edit would be overwritten by the next install.",
+  "cli.console.integrations.state.missing": "missing",
+  "cli.console.integrations.state.modified": "differs from template",
+  "cli.console.integrations.state.orphan": "left over (no longer shipped)",
+  "cli.console.integrations.behaviors.title": "Runtime behaviour",
+  "cli.console.integrations.behaviors.intro":
+    "Each item is a hook installed in the project. It runs only when the file is present AND registered in the client's config; the settings below tune it.",
+  "cli.console.integrations.behaviors.active": "running",
+  "cli.console.integrations.behaviors.inactive": "not running",
+  "cli.console.integrations.behaviors.unregistered":
+    "The file is there but not registered in the client's config — it never fires.",
+  "cli.console.integrations.behaviors.file-missing": "The script is not installed.",
+  "cli.console.integrations.behaviors.no-keys":
+    "Nothing to tune here: this is either the record the other behaviours are computed from — switching it off would disable them too — or it simply does one thing.",
+  "cli.console.integrations.behaviors.shared":
+    "Also affected by “{label}”; the control for it is drawn under “{owner}”.",
+  "cli.console.integrations.behaviors.goto": "Jump to this setting",
+  "cli.console.integrations.behaviors.turn-off":
+    "To get fewer reminders there are three levels: setting “Prompt verbosity” to silent mutes all of them; “Reminders turned off for good” switches them off by type; and three more switches (cite accounting, AI-proposed archiving, semantic search) live on the Settings page.",
+  "cli.console.integrations.behaviors.turn-off-hook":
+    "Stopping a hook outright means editing the client's own config file, which the console does not do — it changes Fabric's settings, not Claude Code's or Codex's.",
+  "cli.console.integrations.behaviors.turn-off-link": "Open Settings",
+  "cli.console.integrations.cleanup.title": "Clean up",
+  "cli.console.integrations.cleanup.intro":
+    "Deleted files do not come back. Both entries below list every file first and only act after you confirm.",
+  "cli.console.integrations.cleanup.orphan": "Files left by an older version",
+  "cli.console.integrations.cleanup.orphan-hint":
+    "Files this release no longer ships that are still in the project. Install never removes anything, so clients keep reading them. Deleting them affects nothing in the current version.",
+  "cli.console.integrations.cleanup.cache": "Reminder bookkeeping",
+  "cli.console.integrations.cleanup.cache-hint":
+    "The small files recording “you have already seen this reminder”, one per session, which accumulate indefinitely. Deleting them only restarts the counters; your knowledge is untouched. State belonging to a running session is not included.",
+  "cli.console.integrations.cleanup.count": "{count} files",
+  "cli.console.integrations.cleanup.none": "Nothing to clean up.",
+  "cli.console.integrations.cleanup.button": "Clean up…",
+  "cli.console.integrations.cleanup.confirm-hint":
+    "These {count} files will be deleted. This cannot be undone:",
+  "cli.console.integrations.cleanup.confirm": "Delete {count} files",
+  "cli.console.integrations.cleanup.cancel": "Cancel",
+  "cli.console.integrations.cleanup.done": "Deleted {count} files.",
+  "cli.console.integrations.cleanup.mismatch":
+    "{planned} files were listed at confirmation, {removed} were deleted — the rest were already gone, or could not be removed.",
+  "cli.console.integrations.cleanup.failed": "Clean-up failed",
+  "cli.console.integrations.repair.title": "Repair",
+  "cli.console.integrations.repair.intro":
+    "Rewrite these files from this version's templates. Hand edits are overwritten; output appears below as it runs.",
+  "cli.console.integrations.repair.install": "Reinstall",
+  "cli.console.integrations.repair.install-hint":
+    "The same as running fabric install in that project. Rewrites every artifact and both client configs.",
+  "cli.console.integrations.repair.doctor": "Check and fix",
+  "cli.console.integrations.repair.doctor-hint":
+    "The same as fabric doctor --fix. Changes only what it can fix automatically; leaves intact files alone.",
+  "cli.console.integrations.repair.running": "Running “{action}” — leave this page open until it finishes.",
+  "cli.console.integrations.repair.done": "“{action}” finished; the file states above were re-read.",
+  "cli.console.integrations.manifest.title": "Install record",
+  "cli.console.integrations.manifest.ok": "{count} files match what install wrote.",
+  "cli.console.integrations.manifest.no-manifest":
+    "No install record for this project — either it was never installed, or the version that installed it predates the record.",
+  "cli.console.integrations.manifest.unreadable": "The install record exists but cannot be read.",
+  "cli.console.integrations.manifest.drifted": "{count} of {tracked} files changed since install.",
+  "cli.console.integrations.manifest.version": "Installed by version {version}",
+  "cli.console.integrations.problems.none": "Everything matches.",
+  "cli.console.integrations.problems.count": "{count} need attention",
+  "cli.console.integrations.loading": "Checking the install…",
+  "cli.console.integrations.load-failed": "Could not read integration state",
+
+  // The seven hooks, named by what they do and when — never by their filename.
+  "cli.console.behavior.fabric-hint.label": "Remind me to archive and review when I stop",
+  "cli.console.behavior.fabric-hint.description":
+    "At the end of a turn, checks whether enough changed to be worth archiving, whether pending entries are piling up, and whether the knowledge base is due for maintenance — and says so once when they are.",
+  "cli.console.behavior.knowledge-hint-broad.label": "Inject standing knowledge at session start",
+  "cli.console.behavior.knowledge-hint-broad.description":
+    "Writes the broad-scoped knowledge index into a new session's opening context, so the agent does not have to search for it first.",
+  "cli.console.behavior.knowledge-pretooluse.label": "Surface relevant knowledge before an edit",
+  "cli.console.behavior.knowledge-pretooluse.description":
+    "When the agent is about to change a file, shows the narrow-scoped entries that match that path — before the edit, not after.",
+  "cli.console.behavior.knowledge-hint-subagent.label": "Inject knowledge when a sub-agent starts",
+  "cli.console.behavior.knowledge-hint-subagent.description":
+    "A sub-agent inherits none of the dispatcher's context but edits the same repository, so it gets its own injection at start.",
+  "cli.console.behavior.cite-policy-evict.label": "Remind the agent to record what it used",
+  "cli.console.behavior.cite-policy-evict.description":
+    "Periodically reminds the agent, in a long session, to recall before editing — which is what citation accounting is computed from.",
+  "cli.console.behavior.post-tooluse-mutation.label": "Record edits and knowledge reads",
+  "cli.console.behavior.post-tooluse-mutation.description":
+    "Appends every edit and every knowledge-body read to the event ledger. The triggers for the behaviours above are all computed from it.",
+  "cli.console.behavior.session-end-marker.label": "Record when a session ends",
+  "cli.console.behavior.session-end-marker.description":
+    "Writes one marker at session end so the next archive pass knows that stretch of work is complete.",
+
   "cli.preview.port-fallback":
     "Port {requested} was busy — using {actual} instead.",
   "cli.preview.started": "Knowledge preview started: {url}",
@@ -142,6 +373,17 @@ export const enMessages: Messages = {
     "Scope coordinate (e.g. team, project:x, personal)",
   "cli.info.scope.args.json.description":
     "Emit machine-readable JSON (scope always emits JSON)",
+  "cli.info.projects.description":
+    "List every project on this machine that has Fabric installed, with its version",
+  "cli.info.projects.args.json.description":
+    "Emit machine-readable JSON instead of text",
+  "cli.info.projects.empty":
+    "No projects registered yet. Run `fabric install` inside a project to register it.",
+  "cli.info.projects.title": "Registered projects",
+  "cli.info.projects.stale": "path missing",
+  "cli.info.projects.version-unknown": "install version unknown",
+  "cli.info.projects.stale-note":
+    "Projects marked as having a missing path were moved or deleted; re-run `fabric install` at the new location to update the entry.",
 
   // v2.1 hidden-command i18n keys cleanup: approve/bootstrap/hooks/human-lint/
   // ledger-append/pre-commit/scan/sync-meta/update commands removed from CLI
@@ -173,6 +415,10 @@ export const enMessages: Messages = {
   // config-single-home W6: which layer supplied the value. The same key can be
   // set machine-wide, per-project, or by the team store — naming the source is
   // what explains "why does this repo resolve a different value".
+  // The env layer only exists for the keys in PANEL_ENV_OVERRIDES; a field
+  // tagged with it cannot be changed by editing a config file, which is the
+  // whole reason the source is worth naming.
+  "cli.config.source.env": "environment",
   "cli.config.source.project": "this project",
   "cli.config.source.defaults": "machine-wide",
   "cli.config.source.store": "team store",
@@ -222,74 +468,77 @@ export const enMessages: Messages = {
   // Per-field labels (11 total: 2 Group A + 8 Group B + 1 Group C).
   "cli.config.fields.fabric_language.label": "Language",
   "cli.config.fields.fabric_language.description":
-    "Fabric's global language base tone (UI + knowledge), saved to ~/.fabric/fabric-global.json.",
+    "Language used for interface text and knowledge rendering. Saved to ~/.fabric/fabric-global.json and applies to every project on this machine.",
   "cli.config.fields.default_layer_filter.label": "Default search scope",
   "cli.config.fields.default_layer_filter.description":
-    "Which layer the AI searches by default: team only / personal only / both (default).",
-  "cli.config.fields.archive_hint_hours.label": "Archive reminder: how often",
+    "Which layers the AI searches by default: team is the team store only, personal the personal store only, both covers each. Changes the default only; an individual search can still specify.",
+  "cli.config.fields.archive_hint_hours.label": "Archive reminder interval",
   "cli.config.fields.archive_hint_hours.description":
-    "Remind you there is something worth writing down once this many hours have passed since the last archive. Higher = fewer interruptions.",
+    "Once this many hours have passed since the last archive, the end of a session notes that there is something to archive. Higher values mean fewer reminders.",
   "cli.config.fields.archive_hint_cooldown_hours.label":
-    "Archive reminder: quiet period after being ignored",
+    "Archive reminder cooldown",
   "cli.config.fields.archive_hint_cooldown_hours.description":
-    "After you ignore an archive reminder it stays quiet for this many hours, so the same thing is not repeated at you.",
+    "After an archive reminder goes unacted on, the same subject is not raised again for this many hours.",
   "cli.config.fields.archive_edit_threshold.label":
-    "Archive reminder: edits before it fires",
+    "Archive reminder edit threshold",
   "cli.config.fields.archive_edit_threshold.description":
-    "Remind you after this many file edits (OR the hour window above — whichever comes first). Lower = reminded sooner.",
+    "Reaching this many accumulated edits prompts an archive, whichever comes first with the archive reminder interval. Lower values prompt sooner.",
   "cli.config.fields.underseed_node_threshold.label":
-    '"Knowledge base is still empty" threshold',
+    "Knowledge base seeding threshold",
   "cli.config.fields.underseed_node_threshold.description":
-    "Below this many entries, Fabric treats the knowledge base as not yet established and suggests seeding it. A property of the base itself — it lives in the team store and is shared.",
+    "Below this many entries, Fabric treats the knowledge base as not yet established and suggests seeding it. The value belongs to the knowledge base itself: it is written to the team store and applies to everyone using that store.",
   "cli.config.fields.review_hint_pending_count.label":
-    "Review reminder: backlog size",
+    "Review reminder backlog threshold",
   "cli.config.fields.review_hint_pending_count.description":
-    "Drafts the AI archives need your approval. Remind you to review once this many have piled up.",
+    "Prompts a review once this many drafts are pending. Entries the AI archives enter the knowledge base only after review.",
   "cli.config.fields.review_hint_pending_age_days.label":
-    "Review reminder: draft age (days)",
+    "Review reminder age threshold (days)",
   "cli.config.fields.review_hint_pending_age_days.description":
-    "Remind you when a draft has sat unreviewed for this many days, so a small backlog is not simply forgotten.",
+    "Prompts a review once the oldest pending draft has waited this many days, whichever comes first with the backlog threshold.",
   "cli.config.fields.review_stale_pending_days.label":
-    '"Draft has sat too long" (days)',
+    "Pending draft expiry (days)",
   "cli.config.fields.review_stale_pending_days.description":
-    "During review, drafts older than this are singled out for an explicit resolve-or-drop decision so the long tail does not accumulate.",
+    "During review, drafts older than this are listed separately for an explicit resolve-or-drop decision.",
   "cli.config.fields.maintenance_hint_days.label":
-    "Checkup reminder: how often (days)",
+    "Checkup reminder interval (days)",
   "cli.config.fields.maintenance_hint_days.description":
-    "Remind you to run `fabric doctor` once this many days have passed since the last one.",
+    "Once this many days have passed since the last fabric doctor run, prompts a checkup.",
   "cli.config.fields.maintenance_hint_cooldown_days.label":
-    "Checkup reminder: quiet period after being ignored (days)",
+    "Checkup reminder cooldown (days)",
   "cli.config.fields.maintenance_hint_cooldown_days.description":
-    "After you ignore a checkup reminder it stays quiet for this many days.",
-  "cli.config.fields.audit_mode.label": "Change-audit strictness",
+    "After a checkup reminder goes unacted on, it is not raised again for this many days.",
+  "cli.config.fields.audit_mode.label": "Human-lock audit strength",
   "cli.config.fields.audit_mode.description":
-    "How strict the check for edits to human-locked content is: strict = block / warn = warn only (recommended) / off = do not check.",
-  "cli.config.fields.nudge_mode.label": "Notification volume",
+    "What happens when human-locked knowledge is found edited: strict blocks the operation, warn records a warning and continues, off does not check.",
+  "cli.config.fields.nudge_mode.label": "Notice verbosity",
   "cli.config.fields.nudge_mode.description":
-    "How much you see: silent / minimal / normal / verbose. Affects only what YOU see — the AI receives the same knowledge either way, so muting does not make it dumber.",
+    "How many Fabric notices appear on the command line: silent shows none, minimal only critical ones, normal is standard, verbose shows all. Affects display only; the knowledge the AI retrieves is unchanged.",
   "cli.config.fields.cite_policy_enabled.label":
-    "Check the knowledge base before editing",
+    "Pre-edit recall prompt",
   "cli.config.fields.cite_policy_enabled.description":
-    "When on, the AI is reminded to look up relevant knowledge before editing a file (a nudge, never a block). Off = never mentioned.",
+    "When on, the AI is prompted to look up relevant knowledge before editing a file. A prompt, not a block on the edit.",
   "cli.config.fields.self_archive_policy_enabled.label":
-    "Let the AI propose archiving",
+    "AI-initiated archive proposals",
   "cli.config.fields.self_archive_policy_enabled.description":
-    "When on, the AI starts an archive itself once it notices a decision worth keeping (still needs your approval to land). Off = it only archives when you ask.",
+    "When on, the AI starts an archive itself once it judges a decision worth keeping. The result goes to pending and enters the knowledge base only after your review.",
   "cli.config.fields.cite_recall_nudge.label":
-    "Nudge when the knowledge base was skipped",
+    "Notice on editing without recall",
   "cli.config.fields.cite_recall_nudge.description":
-    "A soft reminder when the AI edits a file without looking anything up. Turn it off if it feels chatty — archiving and retrieval are unaffected.",
+    "Adds a notice when the AI edits a file without having searched the knowledge base. Turning it off does not affect retrieval or archiving themselves.",
   "cli.config.fields.fabric_event_retention_days.label":
-    "Activity log retention (days)",
+    "Activity log retention period (days)",
   "cli.config.fields.fabric_event_retention_days.description":
-    "How long this machine's activity log is kept (7 lean / 30 balanced / 90 good for tracing back). Older lines are moved to an archive file, not deleted.",
+    "How many days this machine's activity record is kept: 7 is leanest, 30 balanced, 90 good for tracing back. Older lines move to an adjacent archive file rather than being deleted.",
   "cli.config.fields.embed_enabled.label":
-    "Semantic search (by meaning, not just words)",
+    "Semantic search",
   "cli.config.fields.embed_enabled.description":
-    "When on, a question worded differently from the entry still finds it (especially noticeable in Chinese). This is intent only: it takes effect when the running server can load fastembed AND the model is downloaded (auto-fetched to ~/.fabric/cache/embed on first search). Check the real state with `fabric info recall`.",
-  "cli.config.fields.fusion.label": "Result ranking",
+    "When on, a question worded differently from the entry still finds it (the difference is most pronounced in Chinese). This is an intent switch: it takes effect only once the server can load fastembed and the model is downloaded. The line below reports the actual state on this machine.",
+  "cli.config.fields.fusion.label": "Result ranking strategy",
   "cli.config.fields.fusion.description":
-    "How keyword hits and semantic similarity combine into one ranking: auto (default, recommended) / rrf treats them equally (semantics count more) / additive is keyword-led. Leave it on auto — it only switches to rrf when the semantic channel is actually scoring.",
+    "How keyword hits and semantic similarity combine into one ranking: auto selects based on whether the semantic channel is scoring, rrf weights them equally, additive is keyword-led.",
+  "cli.config.fields.hint_dismiss_signals.label": "Permanently silenced notices",
+  "cli.config.fields.hint_dismiss_signals.description":
+    "A checked type stops appearing on every surface and stays silenced across sessions. archive = archive reminder · archive_backlog = pending-review backlog · review = review reminder · import = history import suggestion · maintenance = knowledge-base checkup reminder · narrow = per-edit related-knowledge hint · cite-evict = notice on editing without recall. Nothing checked silences nothing.",
 
   "cli.doctor.description":
     "Run Fabric target-state diagnostics (meta sync, knowledge index, bootstrap, events ledger, human-lock drift)",

@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="zh"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fabric 控制台 · 集成</title>
+<link rel="stylesheet" href="/assets/shell.css" />
+<script src="/assets/shell.js"></script>
+<style>
+  /* 页面专有规则。令牌 / body 基线 / .navbar / .seg / .frow / .fctl / .note /
+     .toast / fx-* 组件层来自 /assets/shell.css。.card / .tag 是每页各自一份 ——
+     lumen.html 也定义了同名类,上提会改到它。
+     颜色一律走令牌:警示色在深色模式要反过来变亮,写死十六进制就得为每处再写一条
+     [data-theme="dark"] 覆盖 —— 之前这个文件里有四条。 */
+  main{max-width:1040px;margin:0 auto;padding:22px 18px 60px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+    padding:14px 16px;margin-bottom:10px}
+  .card h3{margin:0 0 6px;font-size:var(--fs-3);font-weight:var(--fw-semibold);color:var(--foreground)}
+  .tag{display:inline-block;font-size:var(--fs-1);padding:1px 7px;border-radius:999px;
+    border:1px solid currentColor;color:var(--muted-foreground);margin-left:6px}
+  /* 「已启用」是状态不是选中 —— 用蓝会跟顶栏那条选中标签抢同一个含义,而它俩
+     在同一屏里同时出现。绿/琥珀这一对本身就说明 on/off,不用再借蓝。 */
+  .tag.on{color:var(--success)}
+  .tag.off{color:var(--warning)}
+  /* 指向别处控件的引用。长得像正文里的一个词,不像按钮 —— 它做的事是导航,
+     不是提交,给它按钮的分量会让人以为点下去会改什么。 */
+  .goto{font:inherit;color:var(--primary);background:none;border:0;padding:0;
+    cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  .goto:focus-visible{outline:2px solid var(--ring);outline-offset:2px;border-radius:3px}
+  /* 跳过去之后闪一下。只用背景色,不动尺寸 —— 高亮时改变布局会把它下面的行推走,
+     而读者的眼睛正盯着落点。 */
+  @keyframes frow-flash{from{background:var(--accent)}to{background:transparent}}
+  .frow.flash{animation:frow-flash 1.6s ease-out}
+  @media (prefers-reduced-motion:reduce){ .frow.flash{animation-duration:.01s} }
+  /* 关掉提醒的总导引。比普通卡片轻一档 —— 它是说明,不是这一段的主体。 */
+  .card.turnoff{background:var(--muted);border-style:dashed}
+  /* 「这一页在说哪个项目」。等宽字用于路径 —— 它是要被拿去比对的字面量,不是散文。 */
+  .scopeline{display:flex;align-items:center;gap:6px;margin:8px 0 0;
+    font-size:var(--fs-1);font-family:var(--mono);color:var(--muted-foreground)}
+  /* provenance —— 与配置页同义:env 是"生效且你在这里改不动",set 是"值就设在
+     你正看的这一层",继承来的保持中性灰。 */
+  .tag.env{color:var(--warning)}
+  .tag.set{color:var(--foreground);border-color:var(--muted-foreground)}
+  /* 左客户端列表 / 右详情。窄屏塌成单列 —— 两栏在 720px 以下会把路径挤成一列字。 */
+  .split{display:grid;grid-template-columns:190px 1fr;gap:14px;align-items:start}
+  @media (max-width:720px){ .split{grid-template-columns:1fr} }
+  .clist{display:flex;flex-direction:column;gap:6px}
+  .cbtn{font:inherit;text-align:left;cursor:pointer;padding:10px 12px;color:var(--foreground);
+    background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
+    transition:var(--tx)}
+  .cbtn:hover{background:var(--accent)}
+  .cbtn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+  .cbtn.on{border-color:var(--primary);color:var(--primary)}
+  .cbtn .cn{font-size:var(--fs-4);font-weight:var(--fw-medium);display:block}
+  .cbtn .cs{font-size:var(--fs-1);color:var(--muted-foreground);display:block;margin-top:3px}
+  .cbtn .cs.bad{color:var(--warning)}
+  /* 文件清单:一致的按组折行,不一致的逐条列出。全列出来是一百多行,而其中
+     一百多行说的是同一句「没问题」。 */
+  .fg{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+  .chip{font-family:var(--mono);font-size:var(--fs-1);padding:2px 7px;border-radius:var(--radius-sm);
+    background:var(--muted);color:var(--muted-foreground);border:1px solid transparent}
+  .chip.bad{border-color:var(--warning);color:var(--warning)}
+  .plist{margin:6px 0 0;padding:0;list-style:none}
+  .plist li{font-family:var(--mono);font-size:var(--fs-1);color:var(--muted-foreground);
+    padding:3px 0;word-break:break-all}
+  .plist li b{font-family:inherit;font-weight:var(--fw-medium);color:var(--warning);margin-right:6px}
+  .err{color:var(--destructive)}
+  /* 行为标题行:名字 + 状态徽标 + 一枚展开按钮。描述和触发事件收进展开区 ——
+     七个行为常驻两行说明就是十四行永远不变的字。 */
+  .bhead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 6px}
+  .bname{font-size:var(--fs-4);font-weight:var(--fw-medium);color:var(--foreground)}
+  /* 命令输出:定高可滚,不让一次 install 的几百行把整页推到看不见。 */
+  .rout{margin:12px 0 0;padding:10px 12px;max-height:260px;overflow:auto;
+    font-family:var(--mono);font-size:var(--fs-1);line-height:1.7;white-space:pre-wrap;
+    color:var(--muted-foreground);background:var(--muted);
+    border:1px solid var(--border);border-radius:var(--radius-sm)}
+  /* 确认面板。缩进 + 左侧竖线,是为了让它读起来属于上面那一行,而不是一块
+     独立的新内容 —— 用户要能一眼看出「我正在确认的是这一项」。清单定高可滚:
+     几百个路径不该把「确认删除」按钮推到屏幕外面去。 */
+  .cpanel{margin:10px 0 2px;padding:10px 12px;border-left:2px solid var(--destructive);
+    background:var(--muted);border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+  .cpanel .plist{max-height:220px;overflow:auto;margin:6px 0 0}
+  .cact{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  code{font-family:var(--mono);font-size:var(--fs-2);background:var(--muted);
+    border-radius:var(--radius-sm);padding:1px 5px}
+  .mono{font-family:var(--mono);font-size:var(--fs-2)}
+</style></head><body>
+<nav class="navbar">
+  <h1 class="nav-title">Fabric 控制台</h1>
+  <a class="seg" href="/">知识</a>
+  <a class="seg" href="/graph">关联图</a>
+  <a class="seg" href="/status">状态</a>
+  <a class="seg" href="/config">配置</a>
+  <a class="seg" href="/integrations">集成</a>
+  <span class="spacer"></span>
+  <button class="seg" id="shellThemeBtn" title="切换主题">☀</button>
+</nav>
+<main id="main"><div class="fx-empty"><div class="fx-empty-body">…</div></div></main>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+    return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':'&quot;'; }); }
+  function fmt(tpl,vars){ return String(tpl).replace(/\{(\w+)\}/g,function(m,k){
+    return vars[k]==null?m:vars[k]; }); }
+
+  var DATA=null;
+  var SEL=null;   // 当前选中的客户端 id
+  var ROUT='';    // 最近一次修复的输出,跨重绘保留
+  // 当前展开确认面板的清理动作(null = 都没展开)。确认清单本身不另存 ——
+  // 它就是 DATA.cleanup 里那一份,页面显示的和服务端要删的是同一个来源。
+  var CONFIRM=null;
+  var toast=FabricField.toast;
+
+  function S(k){ return (DATA&&DATA.strings&&DATA.strings[k])||k; }
+
+  // ---- 运行时行为 ---------------------------------------------------------
+  // 排在文件清单之前:用户要判断的是「编辑前会不会提示我」,不是
+  // `knowledge-pretooluse.cjs` 在不在盘上。文件是这个判断的证据,不是它的单位。
+  function presenceNote(b){
+    if(b.active) return '';
+    // 两种「没运行」的下一步不一样:文件不在要重装,文件在但没登记是客户端配置
+    // 被别的东西覆盖了。合成一句「未运行」会让一半的人修错地方。
+    var anyFile=b.presence.some(function(p){ return p.file!=='missing'; });
+    return '<div class="note warn">'+esc(anyFile?S('behaviors.unregistered'):S('behaviors.file-missing'))+'</div>';
+  }
+
+  // 展开区共用一个自增 id。折叠不是删内容 —— 描述和触发事件仍在 DOM 里,
+  // 只是从「七个行为常驻十四行说明」变成「想看哪个点哪个」。
+  var discSeq=0;
+  function disclosure(inner,label){
+    var id='x'+(++discSeq);
+    return {
+      btn:'<button class="fx-disclose" data-desc="'+id+'" aria-expanded="false" '+
+        'aria-controls="'+id+'" aria-label="'+esc(label)+'">'+
+        FabricIcon.svg('info','fx-ico-sm')+'</button>',
+      box:'<div class="fexp" id="'+id+'" data-open="false">'+inner+'</div>',
+    };
+  }
+
+  function behaviorRow(b){
+    var badge='<span class="tag '+(b.active?'on':'off')+'">'+
+      esc(b.active?S('behaviors.active'):S('behaviors.inactive'))+'</span>';
+    var events=b.events.length
+      ? '<div class="fkey">'+esc(b.events.join(' · '))+'</div>' : '';
+    var d=disclosure('<div class="fdesc">'+esc(b.description)+'</div>'+events,'说明');
+    // 调节项走 shell.js 的同一个控件渲染器,写入走的也是配置页那条
+    // POST /api/config/set —— 这一页没有第二条写通道。
+    // 写到哪一层由服务端指定 —— 值是按项目层解析出来的,存到机器层就是悄悄把
+    // 这项设置挪了一层。
+    var target=DATA.writeTarget;
+    var keys=b.keys.length
+      ? b.keys.map(function(f){
+          var fd=disclosure('<div class="fdesc">'+esc(f.description)+'</div>','说明');
+          // 出处标签与配置页共用一个渲染器。这一页原先完全不画它,于是一个从
+          // 全机器层继承下来的值,在这里和项目自己设的值长得一模一样 —— 而它们
+          // 的「移除」按钮做的事完全不同。
+          // 每个 key 全页只画一次控件(owners 表保证),所以 key 就是这一行的唯一
+          // 锚点 —— 下面那些「控件画在别处」的引用靠它跳过来。
+          return '<div class="frow'+(f.modified?' mod':'')+'" id="k-'+esc(f.key)+'">'+
+            '<div class="fmain">'+
+            '<span class="flabel">'+esc(f.label)+'</span>'+
+            '<span class="fkey">'+esc(f.key)+'</span>'+
+            FabricField.sourceTag(f,DATA.strings)+fd.btn+'</div>'+
+            FabricField.control(f,target,DATA.strings)+fd.box+'</div>';
+        }).join('')
+      : '';
+    // 被多个 hook 读的 key 只画一次控件(在第一个读它的行为下),这里出一条指回去的
+    // 引用 —— 同一个值画三个控件,存了一个另外两个就还显示旧值。
+    var shared=b.shared.map(function(s){
+      // 「在上面的 X 里调整」说了六遍,却从来没法点 —— 读者得自己在七张卡里找那个
+      // 名字。控件的位置是页面自己知道的事,让它带路,而不是描述路。
+      // 模板文本本身不含 HTML,所以先整体转义、再把两个占位符换成成品片段。
+      var link='<button type="button" class="goto" data-goto="'+esc(s.key)+'" title="'+
+        esc(S('behaviors.goto'))+'">'+esc(s.owner)+'</button>';
+      return '<div class="note">'+esc(S('behaviors.shared'))
+        .replace('{label}',esc(s.label)).replace('{owner}',link)+'</div>';
+    }).join('');
+    if(!keys&&!shared) keys='<div class="note">'+esc(S('behaviors.no-keys'))+'</div>';
+    // 标题就是行为名。原本每张卡的标题都是同一句「调节项」—— 七个一模一样的
+    // 小标题,搜索、目录、屏幕阅读器都没法用它定位,而卡片正上方已经写着这是
+    // 哪个行为。让标题去命名它所统领的东西,重复的那一句就不必存在。
+    return '<div class="card">'+
+      '<h3 class="bhead"><span class="bname">'+esc(b.label)+'</span>'+badge+d.btn+'</h3>'+
+      d.box+presenceNote(b)+keys+shared+'</div>';
+  }
+
+  // ---- 客户端详情 ---------------------------------------------------------
+  function mcpBlock(c){
+    var s=c.mcp.connected
+      ? fmt(S('mcp.on'),{path:esc(c.mcp.path||'')})
+      : fmt(S('mcp.off'),{path:esc(c.mcp.path||'')});
+    var loc=c.mcp.location?'<span class="tag">'+esc(S('mcp.location.'+c.mcp.location))+'</span>':'';
+    var hint=c.mcp.connected?'':'<div class="note warn">'+esc(S('mcp.off-hint'))+'</div>';
+    return '<div class="card"><h3>'+esc(S('mcp.title'))+'</h3>'+
+      '<div class="fdesc">'+s+loc+'</div>'+hint+'</div>';
+  }
+
+  function bootstrapBlock(c){
+    // 三态各自的文案里已经带了下一步(缺失 → 去装;陈旧 → 重跑 install),所以这里
+    // 不再另加一句提示 —— 只把不正常的那两态染成警示色。
+    var text=fmt(S('bootstrap.'+c.bootstrap.state),{path:esc(c.bootstrap.path)});
+    var cls=c.bootstrap.state==='ok'?'fdesc':'note warn';
+    return '<div class="card"><h3>'+esc(S('bootstrap.title'))+'</h3>'+
+      '<div class="'+cls+'">'+text+'</div></div>';
+  }
+
+  function groupList(title,groups){
+    if(!groups.length) return '';
+    var bad=groups.filter(function(g){ return g.state!=='ok'; });
+    var chips=groups.map(function(g){
+      return '<span class="chip'+(g.state==='ok'?'':' bad')+'">'+esc(g.id)+'</span>';
+    }).join('');
+    var files=groups.reduce(function(n,g){ return n+g.fileCount; },0);
+    var summary=bad.length
+      ? fmt(S('problems.count'),{count:bad.length})
+      : fmt(S('files.ok'),{count:files});
+    var problems=bad.length
+      ? '<ul class="plist">'+bad.map(function(g){
+          return g.problems.map(function(p){
+            return '<li><b>'+esc(S('state.'+p.state))+'</b>'+esc(p.path)+'</li>';
+          }).join('');
+        }).join('')+'</ul>'
+      : '';
+    return '<div class="card"><h3>'+esc(title)+'</h3>'+
+      '<div class="fdesc">'+esc(summary)+'</div>'+
+      '<div class="fg">'+chips+'</div>'+problems+'</div>';
+  }
+
+  function clientDetail(c){
+    return mcpBlock(c)+bootstrapBlock(c)+
+      groupList(S('files.hooks'),c.hooks)+
+      groupList(S('files.skills'),c.skills)+
+      groupList(S('files.libs'),c.libs)+
+      // 只读不是遗漏。放在文件清单末尾而不是每张卡上 —— 说一次就够,重复三遍
+      // 反而像是在为不能改而道歉。
+      '<div class="note">'+esc(S('files.readonly'))+'</div>';
+  }
+
+  function clientList(){
+    return '<div class="clist">'+DATA.clients.map(function(c){
+      var sub=c.problems
+        ? '<span class="cs bad">'+esc(fmt(S('problems.count'),{count:c.problems}))+'</span>'
+        : '<span class="cs">'+esc(S('problems.none'))+'</span>';
+      return '<button class="cbtn'+(c.id===SEL?' on':'')+'" data-client="'+esc(c.id)+'">'+
+        '<span class="cn">'+esc(c.name)+'</span>'+sub+'</button>';
+    }).join('')+'</div>';
+  }
+
+  // 修复区。两个按钮就是页面文案里让你去跑的那两条命令 —— 动作名是枚举,路径由
+  // 服务端从作用域推出来,请求体里没有任何路径。
+  function repairBlock(){
+    function btn(action,label,hint){
+      return '<div class="frow"><div class="fmain" style="display:block">'+
+        '<span class="flabel">'+esc(label)+'</span>'+
+        '<div class="fdesc">'+esc(hint)+'</div></div>'+
+        '<div class="fctl"><button class="fx-btn sm" data-repair="'+action+'">'+
+        FabricIcon.svg('wrench','fx-ico-sm')+esc(label)+'</button></div></div>';
+    }
+    return sectionHead('wrench',S('repair.title'))+
+      '<div class="card"><div class="fdesc">'+esc(S('repair.intro'))+'</div>'+
+      btn('install',S('repair.install'),S('repair.install-hint'))+
+      btn('doctor-fix',S('repair.doctor'),S('repair.doctor-hint'))+
+      // 输出流在跑之前不占位置 —— 一个空的黑框会让人以为有东西没加载出来。
+      // 跑完要重新拉数据(文件状态变了),重绘会把这个节点换掉,所以正文存在 ROUT
+      // 里再画回来 —— 否则命令刚说完什么,页面就把它擦了。
+      '<pre class="rout" id="rout"'+(ROUT?'':' hidden')+'>'+esc(ROUT)+'</pre></div></section>';
+  }
+
+  // 清理区。这是整个控制台唯一一个删文件的地方,所以它做两件别处不做的事:
+  // ① 删什么先全列出来(不是「共 12 个」而是 12 行路径),确认才发请求;
+  // ② 请求体里只有动作名和范围 id —— 清单由服务端自己重算。页面这份清单是拿来
+  // 给人看的,不是拿来给服务端照着删的,否则一个被改过的页面就能点名删任意文件。
+  function cleanupBlock(){
+    function entry(action,label,hint,paths){
+      var n=paths.length;
+      var count=n?fmt(S('cleanup.count'),{count:n}):S('cleanup.none');
+      var open=CONFIRM===action;
+      var btn=n
+        ? '<button class="fx-btn sm" data-clean="'+action+'"'+(open?' disabled':'')+'>'+
+          FabricIcon.svg('trash','fx-ico-sm')+esc(S('cleanup.button'))+'</button>'
+        : '';
+      // 确认面板整份清单都画出来,不截断也不折叠:「还有 37 个未显示」正好把
+      // 用户最该看的那部分藏起来,而这个动作没有第二次机会。
+      var panel=open
+        ? '<div class="cpanel"><div class="fdesc">'+esc(fmt(S('cleanup.confirm-hint'),{count:n}))+'</div>'+
+          '<ul class="plist">'+paths.map(function(p){
+            return '<li>'+esc(p)+'</li>'; }).join('')+'</ul>'+
+          '<div class="cact"><button class="fx-btn sm danger" data-clean-go="'+action+'">'+
+          esc(fmt(S('cleanup.confirm'),{count:n}))+'</button>'+
+          '<button class="fx-btn sm ghost" data-clean-cancel="1">'+esc(S('cleanup.cancel'))+'</button></div></div>'
+        : '';
+      return '<div class="frow"><div class="fmain" style="display:block">'+
+        '<span class="flabel">'+esc(label)+'</span>'+
+        '<div class="fdesc">'+esc(hint)+'</div>'+
+        '<div class="note">'+esc(count)+'</div>'+panel+
+        '</div><div class="fctl">'+btn+'</div></div>';
+    }
+    var c=DATA.cleanup;
+    return sectionHead('trash',S('cleanup.title'))+
+      '<div class="card"><div class="fdesc">'+esc(S('cleanup.intro'))+'</div>'+
+      entry('orphan-artifacts',S('cleanup.orphan'),S('cleanup.orphan-hint'),c.orphans)+
+      entry('hint-cache',S('cleanup.cache'),S('cleanup.cache-hint'),
+        c.cache.map(function(x){ return x.path; }))+
+      '</div></section>';
+  }
+
+  function manifestBlock(){
+    var m=DATA.manifest;
+    var text=m.status==='ok' ? fmt(S('manifest.ok'),{count:m.tracked})
+      : m.status==='drifted' ? fmt(S('manifest.drifted'),{count:m.driftCount,tracked:m.tracked})
+      : m.status==='manifest-unreadable' ? S('manifest.unreadable')
+      : S('manifest.no-manifest');
+    var version=m.fabricVersion
+      ? '<div class="note">'+esc(fmt(S('manifest.version'),{version:m.fabricVersion}))+'</div>' : '';
+    return sectionHead('file',S('manifest.title'))+
+      '<div class="card"><div class="fdesc">'+esc(text)+'</div>'+version+'</div></section>';
+  }
+
+  // 段标题:图标 + 名字 + 可选副标题。开标签在这里出,闭标签由调用方补 ——
+  // 段落内容各不相同,包成一个函数反而要传五种拼好的字符串进来。
+  function sectionHead(icon,title,sub){
+    return '<section class="fx-section"><h2 class="fx-section-title">'+
+      FabricIcon.svg(icon)+esc(title)+'</h2>'+
+      (sub?'<p class="fx-section-desc">'+esc(sub)+'</p>':'');
+  }
+
+  function pageHead(){
+    // 这一页的每一句话都只对一个项目成立,而选的是哪个项目只写在顶栏那个下拉里。
+    // 切到另一个项目后如果两边碰巧一模一样(常见 —— 装出来的东西本就该一样),
+    // 页面就没有任何地方能证明切换生效了,读起来就是「点了没反应」。
+    var s=DATA.scope;
+    var line=s.kind==='project'
+      ? '<p class="scopeline">'+FabricIcon.svg('folder','fx-ico-sm')+
+        esc(fmt(S('scope-line'),{name:(s.path||'').split('/').pop()||s.projectId||'',
+          path:s.path||''}))+'</p>'
+      : '';
+    return '<div class="fx-page-head"><h1 class="fx-page-title"><b>'+esc(S('title'))+'</b></h1>'+
+      '<p class="fx-page-sub">'+esc(S('intro'))+'</p>'+line+'</div>';
+  }
+
+  function render(){
+    if(DATA.scope.kind==='machine'){
+      document.getElementById('main').innerHTML=pageHead()+
+        '<div class="fx-empty"><div class="fx-empty-ico">'+FabricIcon.svg('plug','fx-ico-xl')+'</div>'+
+        '<div class="fx-empty-title">'+esc(S('machine-only'))+'</div>'+
+        '<div class="fx-empty-body">'+esc(S('machine-only-hint'))+'</div></div>';
+      return;
+    }
+    if(SEL===null||!DATA.clients.some(function(c){ return c.id===SEL; }))
+      SEL=DATA.clients.length?DATA.clients[0].id:null;
+    var current=DATA.clients.filter(function(c){ return c.id===SEL; })[0];
+
+    // 「我想关掉某个提醒」是进这一页最常见的意图,而开关分散在三处、两页 ——
+    // 卡片逐张说「在别处调整」,却从没有一处说清那三处是什么。这一条把它说完,
+    // 并顺带承认控制台做不到的那件事(彻底停 hook 要改客户端配置),
+    // 免得读者在页面上找一个不存在的开关。
+    var turnOff='<div class="card turnoff">'+
+      '<div class="fdesc">'+esc(S('behaviors.turn-off'))+
+      ' <a class="goto" href="'+FabricScope.href('/config')+'">'+
+      esc(S('behaviors.turn-off-link'))+'</a></div>'+
+      '<div class="note">'+esc(S('behaviors.turn-off-hook'))+'</div></div>';
+
+    document.getElementById('main').innerHTML=pageHead()+
+      sectionHead('activity',S('behaviors.title'),S('behaviors.intro'))+turnOff+
+      DATA.behaviors.map(behaviorRow).join('')+'</section>'+
+      sectionHead('folder',S('files.title'))+
+      '<div class="split">'+clientList()+
+      '<div>'+(current?clientDetail(current):'')+'</div></div></section>'+
+      repairBlock()+cleanupBlock()+manifestBlock();
+    wire();
+  }
+
+  function wire(){
+    document.querySelectorAll('[data-client]').forEach(function(btn){
+      btn.addEventListener('click',function(){ SEL=btn.getAttribute('data-client'); render(); });
+    });
+    // 展开/收起就地改属性,不重绘 —— 重绘会把用户刚展开的另一项也合上。
+    document.querySelectorAll('[data-desc]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var box=document.getElementById(btn.getAttribute('data-desc'));
+        if(!box) return;
+        var open=box.getAttribute('data-open')!=='true';
+        box.setAttribute('data-open',open?'true':'false');
+        btn.setAttribute('aria-expanded',open?'true':'false');
+      });
+    });
+    document.querySelectorAll('[data-repair]').forEach(function(btn){
+      btn.addEventListener('click',function(){ repair(btn); });
+    });
+    // 跳过去还要能认出来。滚动到位但不闪一下,读者落在一屏参数中间,还是得自己
+    // 数是哪一行 —— 引用指的是「那一个」,不是「那一带」。
+    document.querySelectorAll('[data-goto]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var row=document.getElementById('k-'+btn.getAttribute('data-goto'));
+        if(!row) return;
+        row.scrollIntoView({behavior:'smooth',block:'center'});
+        row.classList.remove('flash');
+        // 强制回流,否则同一行连点两次不会重放动画。
+        void row.offsetWidth;
+        row.classList.add('flash');
+      });
+    });
+    // 第一次点只展开清单,不发请求 —— 两步之间没有服务端状态,第二步是一个
+    // 完整的、自带动作名的请求,所以刷新页面就等于取消。
+    document.querySelectorAll('[data-clean]').forEach(function(b){
+      b.addEventListener('click',function(){ CONFIRM=b.getAttribute('data-clean'); render(); });
+    });
+    document.querySelectorAll('[data-clean-cancel]').forEach(function(b){
+      b.addEventListener('click',function(){ CONFIRM=null; render(); });
+    });
+    document.querySelectorAll('[data-clean-go]').forEach(function(b){
+      b.addEventListener('click',function(){ cleanup(b); });
+    });
+    FabricField.bind(document,{
+      post:post,
+      saved:function(target){ return fmt(DATA.strings.saved,{target:target}); },
+      reset:function(target){ return fmt(DATA.strings['reset-done'],{target:target}); },
+    });
+  }
+
+  // 边跑边显示。这两条命令要跑几十秒并且会重写用户正在看的文件 —— 转个圈然后
+  // 说「完成」,他没法区分「跑成功了」和「打了六条警告」。
+  function repair(btn){
+    var action=btn.getAttribute('data-repair');
+    var label=btn.textContent;
+    var out=document.getElementById('rout');
+    ROUT=''; out.hidden=false; out.textContent='';
+    document.querySelectorAll('[data-repair]').forEach(function(b){ b.disabled=true; });
+    toast(fmt(S('repair.running'),{action:label}));
+
+    fetch('/api/repair',{method:'POST',cache:'no-store',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:action,scope:FabricScope.current()})})
+    .then(function(r){
+      // 拒绝走的是普通 JSON,只有确定要跑了才会开流 —— 所以这里不必从文本流里
+      // 抠错误码出来。
+      if(!r.ok) return r.json().catch(function(){ return null; }).then(function(p){
+        throw new Error(p&&p.error?p.error:'HTTP '+r.status);
+      });
+      var dec=new TextDecoder();
+      var reader=r.body.getReader();
+      return (function pump(){
+        return reader.read().then(function(res){
+          if(res.done) return;
+          ROUT+=dec.decode(res.value,{stream:true});
+          out.textContent=ROUT;
+          out.scrollTop=out.scrollHeight;
+          return pump();
+        });
+      })();
+    })
+    .then(function(){
+      toast(fmt(S('repair.done'),{action:label}));
+      return load();
+    })
+    .catch(function(e){ toast(e.message,true); })
+    .then(function(){
+      document.querySelectorAll('[data-repair]').forEach(function(b){ b.disabled=false; });
+    });
+  }
+
+  // 确认之后真的删。服务端会按当前磁盘重算一遍要删的集合,所以它和用户几秒前
+  // 确认的那份清单之间有一个窗口 —— 我们不拿锁去消掉这个窗口(代价不匹配),
+  // 而是把差异照实说出来:「确认时 15 个,实际删了 14 个」。报告读的是服务端
+  // 实际删掉的列表,不是页面以为会删掉的那份。
+  function cleanup(btn){
+    var action=btn.getAttribute('data-clean-go');
+    var planned=(action==='orphan-artifacts'?DATA.cleanup.orphans:DATA.cleanup.cache).length;
+    btn.disabled=true;
+    fetch('/api/cleanup',{method:'POST',cache:'no-store',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:action,scope:FabricScope.current()})})
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+    .then(function(res){
+      if(!res.ok) throw new Error(res.body&&res.body.error?res.body.error:'HTTP '+res.status);
+      var n=res.body.removed.length;
+      toast(n===planned
+        ? fmt(S('cleanup.done'),{count:n})
+        : fmt(S('cleanup.mismatch'),{planned:planned,removed:n}), n!==planned);
+      CONFIRM=null;
+      return load();
+    })
+    .catch(function(e){ toast(S('cleanup.failed')+'：'+e.message,true); btn.disabled=false; });
+  }
+
+  // 写入用配置页那条通道,成功后重新拉数据 —— 一个键改完可能让某个行为的
+  // 「运行中」判断也变了,乐观更新会显示一个我们没验证过的状态。
+  function post(url,body,btn,ok){
+    btn.disabled=true;
+    fetch(url,{method:'POST',cache:'no-store',
+      headers:{'content-type':'application/json'},body:JSON.stringify(body)})
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+    .then(function(res){
+      if(!res.ok) throw new Error(res.body&&res.body.error?res.body.error:'HTTP error');
+      toast(ok(res.body));
+      return load();
+    })
+    .catch(function(e){ toast(e.message,true); btn.disabled=false; });
+  }
+
+  function fail(title,body){
+    document.getElementById('main').innerHTML=
+      '<div class="fx-empty"><div class="fx-empty-ico">'+FabricIcon.svg('alert','fx-ico-xl')+'</div>'+
+      '<div class="fx-empty-title err">'+title+'</div>'+
+      '<div class="fx-empty-body">'+body+'</div></div>';
+  }
+
+  function load(){
+    return fetch('/api/integrations'+FabricScope.param(),{cache:'no-store'})
+      .then(function(r){
+        if(!r.ok){
+          return r.json().catch(function(){ return null; }).then(function(p){
+            var d=FabricScope.describeError(r.status,p);
+            throw Object.assign(new Error(d.body),{ shown:d });
+          });
+        }
+        return r.json();
+      })
+      .then(function(d){ DATA=d; render(); })
+      .catch(function(e){
+        if(e.shown) fail(e.shown.title,e.shown.body);
+        else fail(esc(DATA&&DATA.strings?DATA.strings['load-failed']:'读取集成状态失败'),
+          esc(e.message)+'<br>控制台只连本机,通常是服务已停止 —— 回终端看 '+
+          '<code>fabric preview</code> 还在不在跑。');
+      });
+  }
+
+  load();
+})();
+</script>
+</body></html>

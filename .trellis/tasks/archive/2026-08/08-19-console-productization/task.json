@@ -1,0 +1,30 @@
+{
+  "id": "console-productization",
+  "name": "console-productization",
+  "title": "控制台产品化：全局视角 + 配置面板重构",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "fenglimg",
+  "assignee": "fenglimg",
+  "createdAt": "2026-08-19",
+  "completedAt": "2026-08-20",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": "87625fd3",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-19-console-interface-quality",
+    "08-20-console-actionability-and-polish",
+    "08-20-console-project-cleanup-and-config-revert"
+  ],
+  "parent": "08-17-fabric-console",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

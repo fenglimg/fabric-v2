@@ -20,9 +20,12 @@ import { describe, expect, it } from "vitest";
 
 import { ACTIVE_SESSION_FILE_PREFIX, ACTIVE_SESSION_FILE_SUFFIX } from "./active-session.js";
 import {
+  LIVE_SESSION_FAMILY_PREFIX,
   matchStaleSweepFamily,
+  ON_DEMAND_SWEEP_FAMILIES,
   SESSION_HINTS_FILE_PREFIX,
   SESSION_HINTS_FILE_SUFFIX,
+  STALE_SWEEP_FAMILIES,
 } from "./doctor/doctor-session-hints-stale.js";
 
 const require_ = createRequire(import.meta.url);
@@ -109,6 +112,27 @@ describe("per-session cache filename parity (writer hooks ↔ reader server)", (
     // it. Prefix AND suffix are checked together — `maintenance-hint-last-emit-*`
     // has no extension, and a shared `.json` gate silently skipped it.
     expect(matchStaleSweepFamily(name)).not.toBeNull();
+  });
+
+  it("the on-demand sweep excludes a family that actually exists", () => {
+    // The exclusion is by string prefix, so a rename of the family would turn it
+    // into a no-op that still reads like a guard. Assert it still hits.
+    expect(STALE_SWEEP_FAMILIES.some((f) => f.prefix === LIVE_SESSION_FAMILY_PREFIX)).toBe(true);
+    expect(ON_DEMAND_SWEEP_FAMILIES.length).toBe(STALE_SWEEP_FAMILIES.length - 1);
+  });
+
+  it("the on-demand sweep does not claim a LIVE session's own file", () => {
+    // Round-trip against the real writer, not the constant: this is the exact
+    // name a running session has on disk right now. Doctor may take it once it
+    // is a week old; the console button, which has no age floor, never may.
+    const live = stateStore.activeSessionFileName(ROUND_TRIP_SESSION);
+    expect(matchStaleSweepFamily(live)).not.toBeNull();
+    expect(matchStaleSweepFamily(live, ON_DEMAND_SWEEP_FAMILIES)).toBeNull();
+    // ...and it narrows ONLY that family — every other sidecar is still swept,
+    // or the exclusion would be indistinguishable from disabling the button.
+    for (const name of WRITTEN_SIDECAR_NAMES.filter((n) => n !== live)) {
+      expect(matchStaleSweepFamily(name, ON_DEMAND_SWEEP_FAMILIES)).not.toBeNull();
+    }
   });
 
   it("the sweep does not claim the legacy shared slots those families grew out of", () => {

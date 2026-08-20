@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { platform } from "node:os";
 import { dirname, join, parse, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,25 @@ import {
 } from "@fenglimg/fabric-server";
 
 import { paint } from "../colors.js";
+import { applyCleanup, type CleanupRequest } from "../console/cleanup.js";
+import {
+  applyProjectDeregister,
+  type DeregisterRequest,
+} from "../console/project-deregister.js";
+import { collectGlobalConfigView } from "../console/global-config-view.js";
+import {
+  applyGlobalConfigEdit,
+  applyGlobalConfigPreset,
+  type ConfigPresetRequest,
+  type ConfigWriteRequest,
+} from "../console/global-config-write.js";
+import { collectIntegrations } from "../console/integrations-view.js";
+import { planRepair, runRepair, type RepairRequest } from "../console/integrations-repair.js";
+import { backfillProjectRegistry } from "../store/project-discovery.js";
+import { openKnowledgeEntry, type Opener } from "../console/open-entry.js";
+import { listScopes, resolveScope, type ResolvedScope } from "../console/scope.js";
+import { isSameOriginLoopback } from "../console/security.js";
+import { collectConsoleStatus, collectMachineStatus } from "../console/status.js";
 import { t } from "../i18n.js";
 import { loadProjectConfig } from "../store/project-config-io.js";
 
@@ -40,6 +59,41 @@ import { loadProjectConfig } from "../store/project-config-io.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
 const DEFAULT_PORT = 7777;
+
+// The ONLY addresses this server may bind. Enforced in startPreviewServer, and
+// deliberately not reachable from the CLI at all — there is no `--host` flag.
+//
+// There used to be one. The file header and the listen() call both asserted
+// "binds 127.0.0.1 ONLY (never 0.0.0.0)" while `--host 0.0.0.0` sat in the same
+// file and did exactly that. Comments are not a gate; the console-shell task
+// added a write channel, at which point the flag would have meant "any machine
+// on the LAN can rewrite this machine's Fabric config".
+//
+// `host` survives as an internal option so tests can exercise the guard. Bad
+// values THROW rather than silently falling back to 127.0.0.1 — a silent
+// downgrade lets a misconfigured caller believe it succeeded.
+const ALLOWED_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+// Every mutating route, in one place. Membership is what turns on the POST-only
+// + loopback-Origin guard in the request dispatcher.
+// Note the write path is `/api/config/set`, NOT `/api/config`. Membership here
+// means "every method other than POST is refused", so a read and a write cannot
+// share one path without carving an exception into the guard — and an exception
+// is precisely what makes a table-driven guard stop being a guarantee.
+const WRITE_ROUTES = new Set([
+  "/api/open",
+  "/api/config/set",
+  "/api/config/preset",
+  "/api/repair",
+  "/api/scan",
+  "/api/cleanup",
+  "/api/projects/deregister",
+]);
+
+const STATIC_ASSETS: Record<string, { file: string; type: string }> = {
+  "/assets/shell.css": { file: "console/shell.css", type: "text/css; charset=utf-8" },
+  "/assets/shell.js": { file: "console/shell.js", type: "text/javascript; charset=utf-8" },
+};
 
 export interface PreviewEntry {
   id: string;
@@ -170,287 +224,12 @@ function findTemplatePath(relativePath: string): string {
 
 
 // ---------------------------------------------------------------------------
-// Relationship graph module (`/graph`). A self-contained view — NOT a style
-// variant — so the graph feature lives in ONE place (no 7-template churn) and
-// the variants stay pure browse surfaces. It fetches /api/knowledge (honoring
-// the ?all= source selection), builds nodes (entries) + edges (each entry's
-// `related` ids resolved WITHIN its store — same-store by the KT→KP privacy
-// law), runs a small dependency-free force simulation, and renders an
-// interactive SVG (pan / wheel-zoom / node drag / hover-highlight neighbours).
-// Nodes are coloured by scope (team/project/personal) and deprecated entries
-// are dimmed. Client JS deliberately avoids template literals / ${} so it nests
-// cleanly inside this server-side template literal.
+// The relationship graph (`/graph`) is a self-contained page: templates/console/
+// graph.html, served like every other page. It used to be a 270-line template
+// literal inside this file with its own hand-copied palette — the second copy of
+// tokens that also live in lumen.html, with nothing to notice when they drifted.
+// Pages are files; this file routes to them.
 // ---------------------------------------------------------------------------
-function renderGraphView(): string {
-  return `<!doctype html>
-<html lang="zh"><head><meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Fabric 预览 · 关联图</title>
-<style>
-  :root{--bg:#f6f6f4;--surface:#fff;--border:#e5e3de;--text:#1f1e1c;--text2:#6b6862;--edge:rgba(120,120,120,.34);}
-  @media (prefers-color-scheme:dark){:root{--bg:#161512;--surface:#232220;--border:#383632;--text:#ecebe8;--text2:#a8a49c;--edge:rgba(160,160,160,.26);}}
-  *{box-sizing:border-box}
-  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
-  .bar{position:fixed;top:0;left:0;right:0;height:52px;display:flex;align-items:center;gap:16px;
-    padding:0 18px;background:var(--surface);border-bottom:1px solid var(--border);z-index:10}
-  .bar h1{font-size:15px;font-weight:600;margin:0;white-space:nowrap}
-  .bar .sp{flex:1}
-  .bar a,.seg{text-decoration:none;color:var(--text2);font-size:13px;cursor:pointer;padding:5px 10px;border-radius:6px;white-space:nowrap}
-  .seg.active{color:var(--text);background:rgba(127,127,127,.16)}
-  .legend{display:flex;gap:12px;font-size:12px;color:var(--text2);align-items:center;white-space:nowrap;overflow:hidden}
-  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:middle}
-  #stat{font-size:12px;color:var(--text2);white-space:nowrap}
-  svg{position:fixed;top:52px;left:0;width:100vw;height:calc(100vh - 52px);cursor:grab;display:block}
-  svg.pan{cursor:grabbing}
-  .nodelabel{pointer-events:none;user-select:none}
-  .tip{position:fixed;pointer-events:none;z-index:20;max-width:340px;padding:8px 11px;border-radius:8px;
-    background:var(--surface);border:1px solid var(--border);box-shadow:0 4px 18px rgba(0,0,0,.2);
-    font-size:12px;line-height:1.55;opacity:0;transition:opacity .1s}
-  .tip b{display:block;font-size:12px;margin-bottom:3px}
-  .tip .m{color:var(--text2)}
-  .empty{position:fixed;top:55%;left:0;right:0;text-align:center;color:var(--text2)}
-  /* 点击节点/孤点清单的右侧滑出面板 */
-  #panel{position:fixed;top:52px;right:0;bottom:0;width:320px;background:var(--surface);
-    border-left:1px solid var(--border);transform:translateX(100%);transition:transform .18s ease;
-    z-index:15;overflow-y:auto;padding:16px}
-  #panel.open{transform:translateX(0)}
-  #panel h2{font-size:14px;margin:0 0 8px;line-height:1.5}
-  #panel .meta{font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.7}
-  #panel .sum{font-size:12px;line-height:1.7;color:var(--text);background:var(--bg);border-radius:8px;padding:10px;margin-bottom:10px}
-  #panel .tags{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px}
-  #panel .tag{font-size:11px;border:1px solid var(--border);border-radius:6px;padding:1px 6px;color:var(--text2)}
-  #panel a.go{font-size:12px;display:inline-block;margin-top:4px}
-  #panel .row{display:block;padding:6px 8px;border-radius:6px;font-size:12px;color:var(--text);text-decoration:none;line-height:1.5}
-  #panel .row:hover{background:rgba(127,127,127,.12)}
-  #panel .row .m{color:var(--text2);font-size:11px;display:block}
-  #panel .close{float:right;cursor:pointer;color:var(--text2);font-size:14px;padding:2px 6px}
-</style></head><body>
-<div class="bar">
-  <h1>知识关联图</h1>
-  <span class="legend" id="legend"></span>
-  <span id="stat"></span>
-  <span class="sp"></span>
-  <span class="seg" id="orphanBtn"></span>
-  <span class="seg" id="sProj">本项目</span><span class="seg" id="sAll">全部</span>
-  <a href="/">← 返回列表</a>
-</div>
-<svg id="g"><g id="view"></g></svg><div class="tip" id="tip"></div>
-<aside id="panel"></aside>
-<script>
-(function(){
-  var params=new URLSearchParams(location.search);
-  var all=params.get('all')==='1';
-  try{ if(params.get('all')!==null) sessionStorage.setItem('fabricPreviewAllStores', all?'1':'0'); }catch(e){}
-  var sp=document.getElementById('sProj'), sa=document.getElementById('sAll');
-  sp.className='seg'+(all?'':' active'); sa.className='seg'+(all?' active':'');
-  sp.onclick=function(){location.href='/graph?all=0'}; sa.onclick=function(){location.href='/graph?all=1'};
-
-  var SVGNS='http://www.w3.org/2000/svg';
-  var svg=document.getElementById('g'), view=document.getElementById('view'), tip=document.getElementById('tip');
-  var panel=document.getElementById('panel');
-  function cssVar(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
-  // 按 store 分簇着色:store 名稳定哈希取 6 色环(弃用统一灰),图例按实际 store 动态生成
-  var STORE_COLORS=['#0d9488','#2563eb','#7c3aed','#ea580c','#db2777','#65a30d'];
-  var storeColorCache={};
-  function storeColor(store){
-    if(storeColorCache[store])return storeColorCache[store];
-    var h=0; for(var i=0;i<store.length;i++){ h=(h*31+store.charCodeAt(i))>>>0; }
-    var c=STORE_COLORS[h%STORE_COLORS.length];
-    // 撞色时线性探测,尽量让不同 store 拿不同色
-    var used={}; for(var k in storeColorCache) used[storeColorCache[k]]=1;
-    for(var j=0;j<STORE_COLORS.length&&used[c];j++){ c=STORE_COLORS[(h+j)%STORE_COLORS.length]; }
-    storeColorCache[store]=c; return c;
-  }
-  var EDGE=cssVar('--edge'), BG=cssVar('--bg'), TEXT2=cssVar('--text2');
-  var VW=1400, VH=900, vb={x:0,y:0,w:VW,h:VH};
-  function applyVB(){ svg.setAttribute('viewBox', vb.x+' '+vb.y+' '+vb.w+' '+vb.h); }
-  function clientToUser(cx,cy){ var pt=svg.createSVGPoint(); pt.x=cx; pt.y=cy; var m=svg.getScreenCTM(); return m?pt.matrixTransform(m.inverse()):{x:cx,y:cy}; }
-  function truncate14(s){ s=String(s||''); return s.length>14?s.slice(0,14)+'…':s; }
-
-  fetch('/api/knowledge?all='+(all?'1':'0'),{cache:'no-store'})
-    .then(function(r){return r.json()})
-    .then(function(d){ build(d.entries||[]); })
-    .catch(function(e){ document.body.insertAdjacentHTML('beforeend','<div class="empty">加载失败: '+e.message+'</div>'); });
-
-  var nodes=[], edges=[], conn=[], orphans=[];
-  function build(entries){
-    nodes=entries.map(function(e,i){
-      var ang=i*2.399963, rad=Math.min(VW,VH)*0.44*Math.sqrt((i+1)/entries.length);
-      return {id:e.qualifiedId, local:e.id, title:e.title||e.id, summary:e.summary||'', tags:e.tags||[],
-        maturity:e.maturity||'', store:e.store, scope:e.scope||'team',
-        dep:!!e.deprecated, deg:0, x:VW/2+Math.cos(ang)*rad, y:VH/2+Math.sin(ang)*rad, vx:0, vy:0};
-    });
-    // 边源:frontmatter related,仅同 store 解析(KT→KP 隐私铁律)。不引入新边源。
-    var byKey={}; nodes.forEach(function(n){ byKey[n.store+'|'+n.local]=n; });
-    var seen={};
-    entries.forEach(function(e){
-      var s=byKey[e.store+'|'+e.id]; if(!s) return;
-      (e.related||[]).forEach(function(rid){
-        var t=byKey[e.store+'|'+rid]; if(!t||t===s) return;
-        var key=[s.id,t.id].sort().join('::'); if(seen[key]) return; seen[key]=1;
-        edges.push({s:s,t:t}); s.deg++; t.deg++;
-      });
-    });
-    // 有边子图为主画面;孤点折叠进清单(不静默隐藏,KT-DEC-0028 完整性)
-    conn=nodes.filter(function(n){return n.deg>0;});
-    orphans=nodes.filter(function(n){return n.deg===0;});
-    document.getElementById('stat').textContent=nodes.length+' 条 · '+edges.length+' 关联';
-    document.getElementById('orphanBtn').textContent='未关联条目 '+orphans.length+' 条';
-    // 图例:实际出现的 store + 弃用
-    var stores=[]; conn.forEach(function(n){ if(stores.indexOf(n.store)===-1) stores.push(n.store); });
-    var lg=document.getElementById('legend');
-    lg.innerHTML=stores.map(function(st){
-      return '<span><i style="background:'+storeColor(st)+'"></i>'+esc(st)+'</span>';
-    }).join('')+'<span style="opacity:.5"><i style="background:#9aa"></i>已弃用</span>';
-    if(!nodes.length){ document.body.insertAdjacentHTML('beforeend','<div class="empty">该视角下暂无知识条目</div>'); return; }
-    if(!conn.length){ document.body.insertAdjacentHTML('beforeend','<div class="empty">暂无 related 关联边 — 打开「未关联条目」清单浏览全部条目</div>'); }
-    simulate(); paint(); fit(); wire();
-  }
-
-  function simulate(){
-    if(!conn.length) return;
-    var k=Math.min(VW,VH)/Math.sqrt(conn.length)*0.9;
-    for(var it=0; it<300; it++){
-      for(var a=0;a<conn.length;a++){ var na=conn[a];
-        for(var b=a+1;b<conn.length;b++){ var nb=conn[b];
-          var dx=na.x-nb.x, dy=na.y-nb.y, dist=Math.sqrt(dx*dx+dy*dy)||0.01;
-          var f=k*k/(dist*dist)*9, fx=dx/dist*f, fy=dy/dist*f;
-          na.vx+=fx; na.vy+=fy; nb.vx-=fx; nb.vy-=fy;
-        }
-      }
-      for(var e=0;e<edges.length;e++){ var ed=edges[e];
-        var dx=ed.t.x-ed.s.x, dy=ed.t.y-ed.s.y, dist=Math.sqrt(dx*dx+dy*dy)||0.01;
-        var f=(dist-k)*0.02, fx=dx/dist*f, fy=dy/dist*f;
-        ed.s.vx+=fx; ed.s.vy+=fy; ed.t.vx-=fx; ed.t.vy-=fy;
-      }
-      for(var n=0;n<conn.length;n++){ var nd=conn[n];
-        nd.vx+=(VW/2-nd.x)*0.004; nd.vy+=(VH/2-nd.y)*0.004;
-        nd.vx*=0.82; nd.vy*=0.82;
-        nd.x+=Math.max(-22,Math.min(22,nd.vx)); nd.y+=Math.max(-22,Math.min(22,nd.vy));
-      }
-    }
-  }
-
-  function nodeR(nd){ return 5+Math.min(11,nd.deg*1.4); }
-  function paint(){
-    var frag=document.createDocumentFragment();
-    edges.forEach(function(ed){
-      var l=document.createElementNS(SVGNS,'line');
-      l.setAttribute('stroke',EDGE); l.setAttribute('stroke-width','1.2'); l.setAttribute('stroke-linecap','round');
-      ed.el=l; frag.appendChild(l);
-    });
-    conn.forEach(function(nd){
-      var c=document.createElementNS(SVGNS,'circle');
-      c.setAttribute('r', String(nodeR(nd)));
-      c.setAttribute('fill', nd.dep?'#9aa0a6':storeColor(nd.store));
-      c.setAttribute('opacity', nd.dep?'0.4':'0.92');
-      c.setAttribute('stroke',BG); c.setAttribute('stroke-width','2');
-      c.style.cursor='pointer'; c.__n=nd; nd.el=c; frag.appendChild(c);
-      // 常驻短标签:标题截 14 字,置于节点下方
-      var t=document.createElementNS(SVGNS,'text');
-      t.setAttribute('class','nodelabel'); t.setAttribute('text-anchor','middle');
-      t.setAttribute('font-size','10'); t.setAttribute('fill',TEXT2);
-      t.textContent=truncate14(nd.title);
-      nd.label=t; frag.appendChild(t);
-    });
-    view.appendChild(frag);
-    position();
-  }
-  function position(){
-    edges.forEach(function(ed){ ed.el.setAttribute('x1',ed.s.x);ed.el.setAttribute('y1',ed.s.y);ed.el.setAttribute('x2',ed.t.x);ed.el.setAttribute('y2',ed.t.y); });
-    conn.forEach(function(nd){
-      nd.el.setAttribute('cx',nd.x); nd.el.setAttribute('cy',nd.y);
-      nd.label.setAttribute('x',nd.x); nd.label.setAttribute('y',nd.y+nodeR(nd)+11);
-    });
-  }
-
-  function fit(){
-    if(!conn.length) return;
-    var minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
-    conn.forEach(function(n){ minx=Math.min(minx,n.x); miny=Math.min(miny,n.y); maxx=Math.max(maxx,n.x); maxy=Math.max(maxy,n.y); });
-    var pad=Math.max(50,(maxx-minx)*0.08);
-    vb={x:minx-pad, y:miny-pad, w:Math.max(50,(maxx-minx)+pad*2), h:Math.max(50,(maxy-miny)+pad*2)};
-    applyVB();
-  }
-
-  var adj={}, locked=null;
-  function highlight(nd){
-    conn.forEach(function(o){ o.el.setAttribute('opacity', (o===nd||adj[nd.id][o.id])?'1':'0.12'); o.label.setAttribute('opacity',(o===nd||adj[nd.id][o.id])?'1':'0.15'); });
-    edges.forEach(function(ed){ var on=(ed.s===nd||ed.t===nd); ed.el.setAttribute('stroke', on?storeColor(nd.store):EDGE); ed.el.setAttribute('stroke-width', on?'2.4':'0.6'); ed.el.setAttribute('opacity', on?'0.9':'0.15'); });
-  }
-  function clearHighlight(){
-    conn.forEach(function(o){ o.el.setAttribute('opacity', o.dep?'0.4':'0.92'); o.label.setAttribute('opacity','1'); });
-    edges.forEach(function(ed){ ed.el.setAttribute('stroke',EDGE); ed.el.setAttribute('stroke-width','1.2'); ed.el.setAttribute('opacity','1'); });
-  }
-  function showPanel(nd){
-    var html='<span class="close" id="pclose">✕</span>';
-    html+='<h2>'+esc(nd.title)+(nd.dep?' <span style="font-size:11px;color:var(--text2)">已弃用</span>':'')+'</h2>';
-    html+='<div class="meta">'+esc(nd.local)+' · '+esc(nd.store)+'<br>'+esc(nd.scope)+(nd.maturity?' · 成熟度 '+esc(nd.maturity):'')+' · '+nd.deg+' 条关联</div>';
-    if(nd.summary) html+='<div class="sum">'+esc(nd.summary)+'</div>';
-    if(nd.tags.length) html+='<div class="tags">'+nd.tags.map(function(tg){return '<span class="tag">#'+esc(tg)+'</span>';}).join('')+'</div>';
-    html+='<a class="go" href="/?entry='+encodeURIComponent(nd.id)+'">查看详情 →</a>';
-    panel.innerHTML=html; panel.classList.add('open');
-    document.getElementById('pclose').onclick=closePanel;
-  }
-  function showOrphans(){
-    var html='<span class="close" id="pclose">✕</span><h2>未关联条目 '+orphans.length+' 条</h2>';
-    html+='<div class="meta">这些条目还没有 related 关联边 — 用 fabric-review 的 relate 子流程建边后会进入图中。</div>';
-    html+=orphans.map(function(n){
-      return '<a class="row" href="/?entry='+encodeURIComponent(n.id)+'">'+esc(truncate14(n.title))+'<span class="m">'+esc(n.local)+' · '+esc(n.store)+'</span></a>';
-    }).join('');
-    panel.innerHTML=html; panel.classList.add('open');
-    document.getElementById('pclose').onclick=closePanel;
-  }
-  function closePanel(){ panel.classList.remove('open'); locked=null; clearHighlight(); }
-  document.getElementById('orphanBtn').onclick=showOrphans;
-
-  function wire(){
-    var drag=null, pan=null, moved=false;
-    svg.addEventListener('mousedown',function(ev){
-      moved=false;
-      if(ev.target&&ev.target.__n){ drag=ev.target.__n; }
-      else { pan={cx:ev.clientX,cy:ev.clientY,x:vb.x,y:vb.y}; }
-      svg.classList.add('pan');
-    });
-    window.addEventListener('mousemove',function(ev){
-      if(drag){ moved=true; var u=clientToUser(ev.clientX,ev.clientY); drag.x=u.x; drag.y=u.y; position(); }
-      else if(pan){ moved=true; var r=svg.getBoundingClientRect(); vb.x=pan.x-(ev.clientX-pan.cx)*(vb.w/r.width); vb.y=pan.y-(ev.clientY-pan.cy)*(vb.h/r.height); applyVB(); }
-    });
-    window.addEventListener('mouseup',function(){ drag=null; pan=null; svg.classList.remove('pan'); });
-    svg.addEventListener('wheel',function(ev){
-      ev.preventDefault();
-      var u=clientToUser(ev.clientX,ev.clientY), f=ev.deltaY<0?0.88:1.14;
-      vb.x=u.x-(u.x-vb.x)*f; vb.y=u.y-(u.y-vb.y)*f; vb.w*=f; vb.h*=f; applyVB();
-    },{passive:false});
-    // 点空白解除锁定;点节点锁定高亮 + 滑出条目卡片
-    svg.addEventListener('click',function(ev){
-      if(moved) return;
-      if(ev.target&&ev.target.__n){ locked=ev.target.__n; highlight(locked); showPanel(locked); }
-      else closePanel();
-    });
-
-    conn.forEach(function(n){adj[n.id]={}});
-    edges.forEach(function(ed){ adj[ed.s.id][ed.t.id]=1; adj[ed.t.id][ed.s.id]=1; });
-    conn.forEach(function(nd){
-      nd.el.addEventListener('mouseenter',function(ev){
-        tip.innerHTML='<b>'+esc(nd.title)+'</b><span class="m">'+esc(nd.local)+' · '+esc(nd.store)+' · '+esc(nd.scope)+(nd.dep?' · 已弃用':'')+' · '+nd.deg+' 关联</span>';
-        tip.style.opacity='1'; moveTip(ev);
-        if(!locked) highlight(nd);
-      });
-      nd.el.addEventListener('mousemove',moveTip);
-      nd.el.addEventListener('mouseleave',function(){
-        tip.style.opacity='0';
-        if(!locked) clearHighlight(); else highlight(locked);
-      });
-    });
-    function moveTip(ev){ tip.style.left=Math.min(ev.clientX+14,window.innerWidth-350)+'px'; tip.style.top=(ev.clientY+14)+'px'; }
-  }
-  function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':c==='>'?'&gt;':'&quot;'}); }
-})();
-</script>
-</body></html>`;
-}
 
 // Best-effort browser open — failure is non-fatal (the URL is always printed).
 function openBrowser(url: string): void {
@@ -467,6 +246,28 @@ function openBrowser(url: string): void {
   }
 }
 
+// Read a small JSON request body. Capped because an unbounded read on a
+// long-lived local server is a trivial memory sink, and every console payload is
+// a handful of fields. A malformed or oversized body yields null; callers treat
+// that as a missing field rather than crashing the request.
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const MAX_BYTES = 64 * 1024;
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    size += buf.length;
+    if (size > MAX_BYTES) return null;
+    chunks.push(buf);
+  }
+  if (chunks.length === 0) return null;
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 function sendJson(res: ServerResponse, status: number, data: unknown): void {
   const payload = JSON.stringify(data);
   res.writeHead(status, {
@@ -477,6 +278,8 @@ function sendJson(res: ServerResponse, status: number, data: unknown): void {
 }
 
 export interface RunPreviewOptions {
+  // Internal only — NOT exposed as a CLI flag. Must be one of ALLOWED_HOSTS or
+  // startPreviewServer throws. Exists so tests can exercise that guard.
   host?: string;
   port?: number;
   target?: string;
@@ -484,6 +287,9 @@ export interface RunPreviewOptions {
   // (bypassing the project read-set) instead of only this project's read-set.
   // Per request, `?all=1` / `?all=0` overrides this default without a restart.
   allStores?: boolean;
+  // Injectable so tests can assert POST /api/open dispatches without launching a
+  // real program. Production leaves it undefined and gets the OS opener.
+  opener?: Opener;
 }
 
 export interface PreviewServerHandle {
@@ -501,18 +307,158 @@ export interface PreviewServerHandle {
 export async function startPreviewServer(options: RunPreviewOptions = {}): Promise<PreviewServerHandle> {
   const projectRoot = options.target ? resolve(options.target) : process.cwd();
   const host = options.host ?? LOOPBACK_HOST;
+  if (!ALLOWED_HOSTS.has(host)) {
+    throw new Error(
+      `refusing to bind ${host}: fabric preview is loopback-only (allowed: ${[...ALLOWED_HOSTS].join(", ")})`,
+    );
+  }
   const port = options.port ?? DEFAULT_PORT;
   const defaultAllStores = options.allStores === true;
+  // Filled in after listen(): the Origin check compares against the port that
+  // was actually bound, which differs from `port` whenever 7777 was busy and we
+  // fell back. Comparing against the requested port would reject every genuine
+  // request on a fallback port.
+  let boundPort = port;
 
   const server = createServer((req, res) => {
     void (async () => {
       try {
-        if (req.method !== "GET") {
+        const method = req.method ?? "GET";
+        const reqUrl = new URL(req.url ?? "/", `http://${host}`);
+        const pathname = reqUrl.pathname;
+
+        // Write routes are declared in one table and guarded HERE, before any
+        // handler runs. The alternative — each handler calling the guard on its
+        // own first line — makes "forgot to guard the new endpoint" a silent,
+        // type-checking, test-passing, lint-clean defect. Unreachable-by-default
+        // beats remembering.
+        if (WRITE_ROUTES.has(pathname)) {
+          if (method !== "POST") {
+            sendJson(res, 405, { error: "method not allowed: write endpoints are POST" });
+            return;
+          }
+          const verdict = isSameOriginLoopback(
+            { origin: req.headers.origin, host: req.headers.host },
+            boundPort,
+          );
+          if (!verdict.ok) {
+            sendJson(res, 403, { error: `refused: ${verdict.reason}` });
+            return;
+          }
+          if (pathname === "/api/open") {
+            const body = await readJsonBody(req);
+            const result = await openKnowledgeEntry(
+              projectRoot,
+              (body as { qualifiedId?: unknown } | null)?.qualifiedId,
+              options.opener,
+            );
+            if (result.ok) sendJson(res, 200, { ok: true });
+            else sendJson(res, result.status, { error: result.error });
+            return;
+          }
+          if (pathname === "/api/config/set") {
+            const body = (await readJsonBody(req)) as ConfigWriteRequest | null;
+            // The write target is named by the request and validated against the
+            // server's own enumerated sets; `projectRoot` does NOT select the
+            // target. It is passed for one reason only — the set it is validated
+            // against must be the same set `/api/config` rendered, and that set
+            // includes the synthesized row for an unregistered current project.
+            // See global-config-write.ts.
+            const result = await applyGlobalConfigEdit(body, projectRoot);
+            if (result.ok) sendJson(res, 200, { ok: true, target: result.target });
+            else sendJson(res, result.status, { error: result.error });
+            return;
+          }
+          if (pathname === "/api/config/preset") {
+            const body = (await readJsonBody(req)) as ConfigPresetRequest | null;
+            const result = await applyGlobalConfigPreset(body, projectRoot);
+            if (result.ok) {
+              sendJson(res, 200, { ok: true, target: result.target, applied: result.applied });
+            } else {
+              // `applied` / `failed` ride along on a partial failure. Reporting
+              // only the error would tell the user nothing changed while some of
+              // the eight keys already did.
+              sendJson(res, result.status, {
+                error: result.error,
+                ...(result.applied === undefined ? {} : { applied: result.applied }),
+                ...(result.failed === undefined ? {} : { failed: result.failed }),
+              });
+            }
+            return;
+          }
+          if (pathname === "/api/scan") {
+            // No request body at all. The roots are the user's home directory,
+            // decided here — a browser-supplied root would be an arbitrary
+            // filesystem walk triggered by a page, and the one thing this
+            // console never accepts from a request is a path.
+            const result = await backfillProjectRegistry();
+            sendJson(res, 200, {
+              ok: true,
+              added: result.added.length,
+              found: result.projects.length,
+              alreadyKnown: result.alreadyKnown,
+              visitedDirs: result.visitedDirs,
+              stoppedBy: result.stoppedBy,
+              stuckDirs: result.stuckDirs,
+            });
+            return;
+          }
+          if (pathname === "/api/cleanup") {
+            // The body names an ACTION and a scope id. It never names a path —
+            // the same rule `/api/scan` follows, and the reason this is the only
+            // irreversible endpoint the console has without also being an
+            // arbitrary-file remover. The set to delete is computed server-side
+            // by the same collectors the page rendered from.
+            const result = await applyCleanup(
+              (await readJsonBody(req)) as CleanupRequest | null,
+              projectRoot,
+            );
+            if (result.ok) sendJson(res, 200, result);
+            else sendJson(res, result.status, { error: result.error });
+            return;
+          }
+          if (pathname === "/api/projects/deregister") {
+            // The body names a ROW, not a directory, and an unconfirmed call
+            // writes nothing — it returns the plan the user is about to approve.
+            // See project-deregister.ts.
+            const result = await applyProjectDeregister(
+              (await readJsonBody(req)) as DeregisterRequest | null,
+              projectRoot,
+            );
+            if (result.ok) sendJson(res, 200, result);
+            else sendJson(res, result.status, { error: result.error });
+            return;
+          }
+          if (pathname === "/api/repair") {
+            // Plan first, spawn second. Every refusal is ordinary JSON; the
+            // streaming response only begins once a child is certain to run,
+            // so the page never has to parse a 400 out of a text stream.
+            const plan = await planRepair(
+              (await readJsonBody(req)) as RepairRequest | null,
+              projectRoot,
+            );
+            if (!plan.ok) sendJson(res, plan.status, { error: plan.error });
+            else runRepair(plan, res);
+            return;
+          }
+        }
+
+        if (method !== "GET") {
           sendJson(res, 405, { error: "method not allowed" });
           return;
         }
-        const reqUrl = new URL(req.url ?? "/", `http://${host}`);
-        const pathname = reqUrl.pathname;
+
+        // Shared shell assets. A fixed whitelist rather than "serve anything
+        // under templates/console/" — a directory-backed static handler is one
+        // missing path check away from serving the whole repo, and this console
+        // has exactly two shared assets.
+        const asset = STATIC_ASSETS[pathname];
+        if (asset !== undefined) {
+          const body = readFileSync(findTemplatePath(asset.file), "utf8");
+          res.writeHead(200, { "content-type": asset.type, "cache-control": "no-store" });
+          res.end(body);
+          return;
+        }
 
         if (pathname === "/" || pathname === "/index.html") {
           // The single template (templates/preview/lumen.html) — read per
@@ -525,26 +471,123 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
         // /graph — the relationship graph module (self-contained view). It reads
         // /api/knowledge?all= client-side, so no server data is inlined here.
         if (pathname === "/graph") {
+          const html = readFileSync(findTemplatePath("console/graph.html"), "utf8");
           res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-          res.end(renderGraphView());
+          res.end(html);
           return;
         }
+        if (pathname === "/status") {
+          const html = readFileSync(findTemplatePath("console/status.html"), "utf8");
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+          res.end(html);
+          return;
+        }
+        if (pathname === "/config") {
+          const html = readFileSync(findTemplatePath("console/config.html"), "utf8");
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+          res.end(html);
+          return;
+        }
+        if (pathname === "/integrations") {
+          const html = readFileSync(findTemplatePath("console/integrations.html"), "utf8");
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+          res.end(html);
+          return;
+        }
+
+        if (pathname === "/api/scopes") {
+          sendJson(res, 200, await listScopes(projectRoot));
+          return;
+        }
+
+        // Every scoped API endpoint resolves the SAME way, once, here. A
+        // per-handler resolution would let one page fall back to the launch
+        // directory while its neighbour refused — and a console whose four pages
+        // disagree about which project they show is worse than one that only
+        // ever showed the launch directory.
+        //
+        // Deliberately BELOW the HTML page routes: a bad `?scope=` must still
+        // serve the page, because the page is what renders the reason and the
+        // next step. Refusing the document would leave a blank tab.
+        const scoped = await resolveScope(reqUrl.searchParams.get("scope"), projectRoot);
+        if (!scoped.ok) {
+          sendJson(res, scoped.status, { error: scoped.error, reason: scoped.reason });
+          return;
+        }
+        const scope: ResolvedScope = scoped.scope;
+
         if (pathname === "/api/knowledge") {
           // Source selection: `?all=1` walks every mounted store, `?all=0` forces
           // the project read-set, absent falls back to the server's default (the
           // --all flag). Lets a future UI toggle switch source without a restart.
-          const allParam = new URL(req.url ?? "/", `http://${host}`).searchParams.get("all");
+          //
+          // Machine scope IS the all-stores view (KT-DEC-0079 semantics reused
+          // rather than a third aggregate invented), so it pins allStores on
+          // regardless of `?all=`.
+          const allParam = reqUrl.searchParams.get("all");
           const allStores =
-            allParam === null ? defaultAllStores : allParam === "1" || allParam === "true";
-          const entries = await collectStoreCanonicalEntries(projectRoot, { allStores });
+            scope.kind === "machine"
+              ? true
+              : allParam === null
+                ? defaultAllStores
+                : allParam === "1" || allParam === "true";
+          const root = scope.kind === "machine" ? projectRoot : scope.projectRoot;
+          const entries = await collectStoreCanonicalEntries(root, { allStores });
           // writeStore lets the sidebar order the current project's write-target
-          // store group first. Read live (cheap) so a switch-write shows on refresh.
-          const writeStore = loadProjectConfig(projectRoot)?.active_write_store ?? null;
+          // store group first. Read live (cheap) so a switch-write shows on
+          // refresh. Machine scope has no write target — a per-project setting.
+          const writeStore =
+            scope.kind === "machine"
+              ? null
+              : (loadProjectConfig(scope.projectRoot)?.active_write_store ?? null);
           sendJson(res, 200, { entries: entries.map(toPreviewEntry), writeStore });
           return;
         }
         if (pathname === "/api/revision") {
-          sendJson(res, 200, { revision: await computeReadSetRevision(projectRoot) });
+          // Fingerprints the set the page is actually showing — polling the
+          // read-set while rendering all stores would leave machine scope
+          // silently stale for every store this project does not read.
+          const revision =
+            scope.kind === "machine"
+              ? await computeReadSetRevision(projectRoot, { allStores: true })
+              : await computeReadSetRevision(scope.projectRoot);
+          sendJson(res, 200, { revision });
+          return;
+        }
+        if (pathname === "/api/config") {
+          // Intentionally NOT re-rooted by `?scope=`. This page is machine-scoped
+          // by construction — it lists every project on the machine, and the
+          // scope selection only decides which row the client expands first,
+          // which the client can do from the URL without the server changing
+          // anything.
+          //
+          // Re-rooting would also make the payload dishonest: `loadPanelContext`
+          // sets `applyEnv: true`, which is only true for the console's OWN
+          // process environment. Pointing it at another project would report this
+          // shell's `FABRIC_*` variables as that project's effective values,
+          // which is the "the value you see is not the value in effect" failure
+          // KT-MOD-0004 exists to prevent.
+          sendJson(res, 200, await collectGlobalConfigView(projectRoot));
+          return;
+        }
+
+        if (pathname === "/api/integrations") {
+          // Scoped like every other data endpoint. Machine scope is answered by
+          // the collector itself (with an empty payload and a reason), NOT by a
+          // 4xx here: "there is nothing to install machine-wide" is a state the
+          // page renders, not an error the page failed at.
+          sendJson(res, 200, await collectIntegrations(scope));
+          return;
+        }
+
+        if (pathname === "/api/status") {
+          sendJson(
+            res,
+            200,
+            scope.kind === "machine"
+              ? await collectMachineStatus(projectRoot)
+              : await collectConsoleStatus(scope.projectRoot),
+          );
           return;
         }
         sendJson(res, 404, { error: "not found" });
@@ -582,7 +625,7 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
   }
 
   const address = server.address();
-  const boundPort = typeof address === "object" && address !== null ? address.port : port;
+  boundPort = typeof address === "object" && address !== null ? address.port : port;
   return {
     url: `http://${host}:${boundPort}/`,
     port: boundPort,
@@ -600,10 +643,6 @@ export const previewCommand = defineCommand({
     port: {
       type: "string",
       description: t("cli.preview.arg.port"),
-    },
-    host: {
-      type: "string",
-      description: t("cli.preview.arg.host"),
     },
     open: {
       type: "boolean",
@@ -623,7 +662,7 @@ export const previewCommand = defineCommand({
   async run({
     args,
   }: {
-    args: { port?: string; host?: string; open?: boolean; target?: string; all?: boolean };
+    args: { port?: string; open?: boolean; target?: string; all?: boolean };
   }) {
     try {
       const port = args.port === undefined ? DEFAULT_PORT : Number.parseInt(args.port, 10);
@@ -631,7 +670,6 @@ export const previewCommand = defineCommand({
         throw new Error(`invalid port: ${String(args.port)}`);
       }
       const handle = await startPreviewServer({
-        host: typeof args.host === "string" && args.host.length > 0 ? args.host : undefined,
         port,
         target: typeof args.target === "string" ? args.target : undefined,
         allStores: args.all === true,

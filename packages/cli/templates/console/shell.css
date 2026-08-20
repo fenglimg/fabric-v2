@@ -1,0 +1,1410 @@
+/* ---------------------------------------------------------------------------
+ * Fabric console — shared shell stylesheet.
+ *
+ * Served at GET /assets/shell.css, read from disk per request (edit + refresh,
+ * no restart). This is the SINGLE source for design tokens and page chrome.
+ *
+ * Why it exists: /graph used to carry a hand-copied `:root{--bg…}` block lifted
+ * from lumen.html. Two copies of the same palette, and nothing to tell you when
+ * you changed one and forgot the other.
+ *
+ * TWO HARD RULES for anything added here — both because this file also reaches
+ * lumen.html, which is 2220 lines of its own styles and is a zero-regression
+ * protected file:
+ *
+ *   1. NO bare tag selectors (`h1{}`, `table{}`). `body` is grandfathered.
+ *   2. New component classes are prefixed `fx-`. lumen defines 91 class names
+ *      of its own (`.card` `.pill` `.status` `.brand` `.stat-card` …); `fx-`
+ *      was checked against all of them and against graph.html — zero overlap.
+ *
+ * Scope note: lumen.html is deliberately NOT migrated onto these tokens. It has
+ * its own full palette and only takes `.navbar` from here. It does, however,
+ * consume the LEGACY token names — which is why the alias block at the bottom
+ * of :root is load-bearing, not leftovers. See "legacy aliases" below.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* --- semantic colour tokens -------------------------------------------
+   * Adopted from the shadcn/ui token contract, which the reference product
+   * (credit.linux.do) uses. The point of copying it is not someone's taste —
+   * it is that the contract is written down, so "which grey is this" has one
+   * answer instead of a judgement call per page.
+   *
+   * ONE deliberate change from our old palette: text drops from three greys to
+   * TWO. The old third level (--text-tertiary) was the most-used text colour on
+   * /config at 48% of all text, which is the palette inverted — the faintest
+   * colour should be the rarest. Two levels make that mistake unrepresentable. */
+  --background: #ffffff;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #2563eb;
+  --primary-foreground: #fafafa;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+  --success: #059669;
+  --warning: #d97706;
+  --border: #e4e4e7;
+  --input: #d4d4d8;
+  /* The focus ring is the SELECTED colour, not a darker grey. It used to be
+   * #a1a1aa, one step from --input (#d4d4d8) and --border (#e4e4e7) — so a
+   * keyboard user tabbing through a row of selects saw the border go very
+   * slightly darker and had to hunt for which control was live. Every use of
+   * this token is a `:focus-visible` outline (nothing else reads it), so moving
+   * it onto --primary also puts focus into the same vocabulary as the active nav
+   * tab and the "set here" row mark: blue means "this one". */
+  --ring: #2563eb;
+
+  /* The page canvas is one step off pure white so that --card (pure white) and
+   * --muted (#f4f4f5) both read as distinct layers against it without needing a
+   * border. Separation by colour costs nothing; separation by border+shadow is
+   * what made the old pages look busy. */
+  --canvas: #fafafa;
+
+  /* --- type scale --------------------------------------------------------
+   * Seven steps, used by name. Hierarchy is carried on TWO axes, not one:
+   * SIZE separates level 1 (page title 30px vs section 16px), WEIGHT separates
+   * level 2 (14px/700 tab vs 14px/500 card title). Our pages previously had a
+   * single axis — bigger AND bolder together — which meant that once you were
+   * inside a section there was no way left to say "this one matters more". */
+  --fs-1: 11px;
+  --fs-2: 12px;
+  --fs-3: 13px;
+  --fs-4: 14px;
+  --fs-5: 16px;
+  --fs-6: 20px;
+  --fs-7: 30px;
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  --lh-tight: 1.3;
+  --lh-normal: 1.5;
+  --lh-loose: 1.65;
+
+  /* --- shape -------------------------------------------------------------
+   * One base radius, three derived. Previously 6/12/16 were three unrelated
+   * numbers, so a 6px control inside a 12px card inside a 16px panel read as
+   * three separate design systems stacked. */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+
+  /* --- elevation ---------------------------------------------------------
+   * Shadows are ONLY legal on floating layers (toast, menu, dialog). Content
+   * gets none. The old --shadow was `0 4px 20px -2px` — a 20px-blur glow, which
+   * is the direct source of the "soft, cheap" look: a large blur at low opacity
+   * reads as haze, not as depth. These two are tight enough to read as an edge. */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+
+  /* --- motion ------------------------------------------------------------
+   * Four durations, each owning ONE class of event. This is not decoration:
+   * the user learns which kind of thing just happened without reading it.
+   *   .15s  I pressed / hovered something
+   *   .2s   the content was replaced
+   *   .3s   the layout resized
+   *   .4s   the system is telling me something
+   * Transitions are only ever attached to COLOUR properties. `transition: all`
+   * is banned — it silently animates layout on every reflow. */
+  --dur-1: 0.15s;
+  --dur-2: 0.2s;
+  --dur-3: 0.3s;
+  --dur-4: 0.4s;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --tx: color var(--dur-1) var(--ease), background-color var(--dur-1) var(--ease),
+    border-color var(--dur-1) var(--ease), outline-color var(--dur-1) var(--ease),
+    fill var(--dur-1) var(--ease), stroke var(--dur-1) var(--ease),
+    box-shadow var(--dur-1) var(--ease), opacity var(--dur-1) var(--ease);
+
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --mono: "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
+
+  /* Scope colours are semantic (they name a knowledge audience, not a mood), so
+   * they stay as their own tokens rather than folding into --primary. */
+  --scope-team-color: #0d9488;
+  --scope-project-color: #2563eb;
+  --scope-personal-color: #7c3aed;
+
+  /* --- chrome tokens (fx-) -----------------------------------------------
+   * The tokens the SHARED CHROME reads. Everything in this file resolves its
+   * colours, radii and fonts through these six names and no others.
+   *
+   * They exist because a token name is only as private as the pages that load
+   * this file. lumen.html declares its own `:root` AFTER the `<link>` to this
+   * stylesheet, so any name it happens to reuse silently wins here — and it
+   * reuses `--accent`, which it means as "brand blue" while this file means it
+   * as "the pale grey a row goes when you hover it". The nav tab strip is
+   * shared chrome, so on the knowledge page alone `.seg:hover` was painted
+   * solid #2563eb: an unselected tab louder than the selected one. Nothing in
+   * lumen's stylesheet mentions `.seg`; the collision was one level below the
+   * selector, at the token.
+   *
+   * These MUST hold literal values, never `var(--accent)`. An alias would just
+   * re-inherit the page's override one hop later and restore the bug.
+   *
+   * The un-prefixed names below stay declared: the four console pages read
+   * them from their own inline styles, and none of those pages redefines them,
+   * so they are not part of the collision. `console-chrome-tokens.test.ts`
+   * asserts the two sets stay disjoint. */
+  --fx-accent: #f4f4f5;
+  --fx-border: #e4e4e7;
+  --fx-radius: 10px;
+  --fx-radius-sm: 6px;
+  --fx-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --fx-mono: "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas,
+    monospace;
+
+  /* --- where blue is allowed --------------------------------------------
+   * `--primary` had grown four jobs at once — focus, selected, modified-here,
+   * and primary action — and a colour carrying four meanings indicates none of
+   * them. It now means SELECTED (the active nav tab, a checked box) and FOCUSED
+   * (`--ring`) and nothing else, which is what gives it back its pointing
+   * power.
+   *
+   * The primary action goes neutral near-black: it is still unmistakably the
+   * heaviest control on the page — weight is what marks a primary action, not
+   * hue — without competing with the one colour that means "this one".
+   *
+   * It inverts in dark mode rather than lightening, for the same reason the
+   * light value is near-black: what makes a solid button read as primary is
+   * maximum contrast against the page, and in dark mode that is the light end. */
+  --fx-btn-solid-bg: #18181b;
+  --fx-btn-solid-fg: #fafafa;
+  /* The "set at this layer" rail. Deliberately translucent rather than a picked
+   * grey-blue: it then sits correctly on the row's own background whether that
+   * row is plain, hovered or inside a card. At 45% it still reads as blue at a
+   * glance while dropping out of the foreground competition entirely. */
+  --fx-mod-mark: rgba(37, 99, 235, 0.45);
+
+  /* --- legacy aliases ----------------------------------------------------
+   * lumen.html (zero-regression protected, cannot be edited) and graph.html
+   * consume these names. They are NOT dead — they are the reason those two
+   * files re-skin without a single line changing.
+   *
+   * Renaming instead of aliasing would have meant editing lumen, i.e. touching
+   * the one file the parent task exists to protect. The cost of the alias is
+   * one block of indirection; the cost of the rename is a 2220-line diff whose
+   * regressions are invisible in review. */
+  --bg: var(--canvas);
+  --surface: var(--card);
+  --surface-2: var(--muted);
+  --surface-hover: var(--fx-accent);
+  --border-strong: var(--input);
+  --text: var(--foreground);
+  --text-secondary: var(--muted-foreground);
+  --text-tertiary: var(--muted-foreground);
+  --text2: var(--muted-foreground);
+  --accent-light: rgba(37, 99, 235, 0.08);
+  --edge: rgba(120, 120, 120, 0.34);
+  --ok: var(--success);
+  --warn: var(--warning);
+  --danger: var(--destructive);
+  --shadow: var(--shadow-sm);
+}
+
+[data-theme="dark"] {
+  --background: #09090b;
+  --foreground: #fafafa;
+  /* Cards are LIGHTER than the page in dark mode, not darker. A darker card on
+   * a dark page needs a border to exist at all; a lighter one is its own
+   * separation. This is the same "separate by colour, not by outline" rule as
+   * light mode, applied in the direction dark mode actually allows. */
+  --card: #18181b;
+  --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --primary: #60a5fa;
+  --primary-foreground: #09090b;
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+  --destructive: #f87171;
+  --destructive-foreground: #09090b;
+  --success: #34d399;
+  --warning: #fbbf24;
+  /* Borders are translucent white rather than a hand-picked grey: they then sit
+   * correctly on every surface (page, card, popover) instead of only on the one
+   * they were sampled against. */
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.15);
+  /* Dark's --primary, for the reason given beside the light token. A grey ring
+   * is even weaker here: on #09090b the old #71717a barely separated from the
+   * translucent-white borders around it. */
+  --ring: #60a5fa;
+  --canvas: #09090b;
+
+  /* Chrome tokens, dark. Only the two that actually differ; radii and fonts
+   * are theme-invariant, so re-declaring them here would just be a second
+   * place to forget. */
+  --fx-accent: #27272a;
+  --fx-border: rgba(255, 255, 255, 0.1);
+  --fx-btn-solid-bg: #fafafa;
+  --fx-btn-solid-fg: #18181b;
+  --fx-mod-mark: rgba(96, 165, 250, 0.5);
+
+  --accent-light: rgba(96, 165, 250, 0.14);
+  --edge: rgba(160, 160, 160, 0.26);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--foreground);
+  font-family: var(--fx-sans);
+  font-size: var(--fs-4);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Motion is an affordance, not a requirement. Users who asked the OS to stop
+ * animating get the end state immediately — every rule below degrades to "the
+ * colour is just different now", which was the whole message anyway. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0.01ms;
+    --dur-2: 0.01ms;
+    --dur-3: 0.01ms;
+    --dur-4: 0.01ms;
+  }
+}
+
+/* --- icons ----------------------------------------------------------------
+ * The reference product writes its icon contract into every component:
+ *   [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4
+ * i.e. an icon with no size class is 16px, never shrinks, never eats a click.
+ * That single rule is why their icons are "right everywhere" — nobody decides
+ * per icon. This is the plain-CSS transcription. */
+
+.fx-ico {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  pointer-events: none;
+  /* stroke:currentColor is set on the element by FabricIcon so that an icon
+   * inherits whatever colour its container resolved to — including on hover,
+   * including in dark mode, with no second rule to keep in sync. */
+}
+
+.fx-ico-sm {
+  width: 12px;
+  height: 12px;
+}
+
+.fx-ico-lg {
+  width: 20px;
+  height: 20px;
+}
+
+.fx-ico-xl {
+  width: 28px;
+  height: 28px;
+}
+
+/* --- navbar ---------------------------------------------------------------
+ * The six lines of navbar markup are still copied into each page, but they are
+ * now UPGRADED in place by shell.js (icons, aria-current, action group) rather
+ * than being the finished article.
+ *
+ * This reverses the note that used to live here ("the CSS is shared because CSS
+ * keeps changing; the structure is not because it does not"). The structure DID
+ * change this round — and one of the five copies lives in lumen.html, which may
+ * not be edited. A structure with five producers, one of them read-only, cannot
+ * be changed by editing the producers. So it gained a single upgrader instead. */
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  /* 6px, not 2px. Hover paints the whole tab box, and at 2px the two fills read
+   * as one band sliding sideways under the cursor rather than as five separate
+   * targets — the gap has to be wide enough to survive being filled on both
+   * sides, which 2px is not. 6px is still tighter than the 8px between the tab
+   * group and the scope switcher, so the group still reads as a group. */
+  gap: 6px;
+  height: 52px;
+  padding: 0 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--fx-border);
+}
+
+.navbar .nav-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  font-size: var(--fs-4);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
+  margin: 0 16px 0 0;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+
+.navbar .spacer {
+  flex: 1;
+}
+
+/* The bar is a fixed set of controls in a fixed order, so the only honest way
+ * to fit a narrow window is to drop the least load-bearing text — never to let
+ * a control get squeezed to 16px, which is what flexbox does by default and
+ * what it did to the theme button before these rules existed. */
+@media (max-width: 960px) {
+  .navbar .nav-title span {
+    display: none;
+  }
+
+  .navbar .scope-select {
+    max-width: 180px;
+  }
+}
+
+@media (max-width: 760px) {
+  .navbar .seg span {
+    display: none;
+  }
+
+  .navbar .seg {
+    padding: 0 8px;
+  }
+}
+
+.navbar .extra {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-2);
+  color: var(--muted-foreground);
+}
+
+/* A nav link and the current page must differ on a DIFFERENT axis than hover
+ * does. The reference does exactly this — hover paints a background, "current"
+ * changes colour and weight — so hovering the page you are already on still
+ * gives feedback. Using one axis for both is why so many navbars feel dead
+ * under the cursor on the active tab. */
+.seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  position: relative;
+  text-decoration: none;
+  color: var(--muted-foreground);
+  font-size: var(--fs-3);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  padding: 0 10px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  transition: var(--tx);
+}
+
+.seg:hover {
+  background: var(--fx-accent);
+  color: var(--foreground);
+}
+
+.seg:active {
+  background: var(--secondary);
+}
+
+.seg:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.seg.active {
+  color: var(--primary);
+  font-weight: var(--fw-semibold);
+  background: transparent;
+}
+
+/* The indicator sits FLUSH with the navbar's bottom edge, spans the whole tab,
+ * and is 3px thick.
+ *
+ * It used to be a 2px hairline at `bottom: -11px` — half a pixel past the bar,
+ * straddling the 1px border it was drawn over. Two lines a fraction apart do not
+ * read as "this tab is selected"; they read as one line that failed to align.
+ * On top of that it was inset to the text width, so what survived visually was
+ * almost entirely the colour change, and colour alone is exactly what AC10 says
+ * is not enough (and what a red-green reader cannot use at all).
+ *
+ * The offset is deliberately deep enough to COVER the navbar's 1px bottom border
+ * rather than stop just short of it: the tab is centred in a 51px content box,
+ * so any offset that tries to land exactly on the border leaves a half-pixel of
+ * grey under the indicator — the very "two lines that failed to align" this is
+ * replacing. Overshooting is invisible; stopping short is not. */
+.seg.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -11px;
+  height: 4px;
+  border-radius: 2px 2px 0 0;
+  background: var(--primary);
+}
+
+.seg.active:hover {
+  background: var(--fx-accent);
+}
+
+.seg[disabled],
+.seg:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* --- scope switcher ------------------------------------------------------ */
+/* Injected into the navbar by shell.js, so it is chrome on every page. A native
+ * <select> rather than a custom menu: it is keyboard-accessible, closes
+ * correctly on every platform, and needs no open/close state — none of which a
+ * hand-rolled dropdown gets for free, and the control is one line of the UI. */
+
+.scope-select {
+  font-family: inherit;
+  font-size: var(--fs-3);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+  background: var(--muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  height: 32px;
+  padding: 0 8px;
+  margin-left: 8px;
+  flex: 0 1 auto;
+  min-width: 96px;
+  max-width: 260px;
+  cursor: pointer;
+  transition: var(--tx);
+}
+
+.scope-select:hover {
+  border-color: var(--fx-border);
+  background: var(--fx-accent);
+}
+
+.scope-select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* --- buttons --------------------------------------------------------------
+ * Four states on every variant, and hover is always "add an accent layer" or
+ * "drop opacity" — never a second hand-picked colour. A hand-picked hover is a
+ * colour that has to be re-picked for dark mode and re-picked again when the
+ * base changes; a derived one cannot drift. */
+
+.fx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  font-family: inherit;
+  font-size: var(--fs-3);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--fx-btn-solid-fg);
+  background: var(--fx-btn-solid-bg);
+  transition: var(--tx);
+}
+
+.fx-btn:hover {
+  opacity: 0.9;
+}
+
+.fx-btn:active {
+  opacity: 0.8;
+}
+
+.fx-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.fx-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* The secondary action must not look as clickable as the primary one — the
+ * pair "confirm / restore default" sitting at equal weight is how a restore
+ * gets clicked by mistake. */
+.fx-btn.ghost {
+  color: var(--foreground);
+  background: transparent;
+  border-color: var(--fx-border);
+}
+
+.fx-btn.ghost:hover {
+  background: var(--fx-accent);
+  opacity: 1;
+}
+
+.fx-btn.quiet {
+  color: var(--muted-foreground);
+  background: transparent;
+  border-color: transparent;
+}
+
+.fx-btn.quiet:hover {
+  background: var(--fx-accent);
+  color: var(--foreground);
+  opacity: 1;
+}
+
+.fx-btn.danger {
+  color: var(--destructive-foreground);
+  background: var(--destructive);
+}
+
+.fx-btn.sm {
+  height: 26px;
+  padding: 0 8px;
+  font-size: var(--fs-2);
+}
+
+.fx-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  font-family: inherit;
+  transition: var(--tx);
+}
+
+.fx-icon-btn:hover {
+  background: var(--fx-accent);
+  color: var(--foreground);
+}
+
+.fx-icon-btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.fx-icon-btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* --- page header ----------------------------------------------------------
+ * Every page gets ONE thing at 30px, and it is the page's subject — never the
+ * product name. Before this, the largest text on /config was "Fabric 控制台" in
+ * the navbar, so the eye landed on chrome and then had nowhere to go.
+ *
+ * Mixed weight inside one line (noun semibold, value normal) is how the
+ * reference keeps a 30px line from shouting: the size carries the level, the
+ * weight carries which half of it you are meant to read first. */
+
+.fx-page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--fx-border);
+}
+
+.fx-page-title {
+  margin: 0;
+  font-size: var(--fs-7);
+  font-weight: var(--fw-normal);
+  letter-spacing: -0.02em;
+  line-height: var(--lh-tight);
+  color: var(--foreground);
+}
+
+.fx-page-title b {
+  font-weight: var(--fw-semibold);
+}
+
+.fx-page-sub {
+  font-size: var(--fs-3);
+  color: var(--muted-foreground);
+}
+
+.fx-page-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fx-section {
+  margin: 0 0 26px;
+}
+
+.fx-section-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 4px;
+  font-size: var(--fs-5);
+  font-weight: var(--fw-semibold);
+  color: var(--foreground);
+}
+
+.fx-section-title .fx-ico {
+  color: var(--muted-foreground);
+}
+
+.fx-section-desc {
+  margin: 0 0 12px;
+  font-size: var(--fs-2);
+  line-height: var(--lh-loose);
+  color: var(--muted-foreground);
+}
+
+/* --- surfaces -------------------------------------------------------------
+ * A card is for "several things that belong together". A single number does
+ * not need one — that was 16 of the 17 shadows on the old /config. No shadow
+ * here at all: content separates by border and background, floating layers
+ * separate by shadow, and nothing does both. */
+
+.fx-card {
+  background: var(--card);
+  border: 1px solid var(--fx-border);
+  border-radius: var(--fx-radius);
+  padding: 14px 16px;
+  box-shadow: none;
+}
+
+.fx-card.flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.fx-grid {
+  display: grid;
+  gap: 12px;
+  /* auto-fit + minmax leaves an orphan when the item count is not a multiple of
+   * the column count. Explicit breakpoints do not: 4 stats become 4/2/1 across
+   * the three widths and never 3+1. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.fx-grid.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* The step sequence per column count is chosen so the item count is always
+ * divisible by the columns: 4 → 2 → 1 and 3 → 1. Going 3 → 2 would leave one
+ * card alone on the second row with a hole beside it, which is the orphan this
+ * grid exists to prevent. */
+@media (max-width: 1100px) {
+  .fx-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .fx-grid,
+  .fx-grid.cols-3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fx-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--fx-border);
+  border-radius: var(--fx-radius);
+}
+
+.fx-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-2);
+  font-weight: var(--fw-medium);
+  color: var(--muted-foreground);
+}
+
+.fx-stat-value {
+  font-size: var(--fs-6);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--foreground);
+  word-break: break-all;
+}
+
+.fx-stat-value.mono {
+  font-family: var(--fx-mono);
+  font-size: var(--fs-5);
+}
+
+/* --- key/value rows ------------------------------------------------------- */
+
+.fx-kv {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 9px 0;
+  font-size: var(--fs-3);
+  line-height: var(--lh-normal);
+  border-bottom: 1px solid var(--fx-border);
+}
+
+.fx-kv:last-child {
+  border-bottom: none;
+}
+
+.fx-kv-k {
+  color: var(--muted-foreground);
+  font-weight: var(--fw-medium);
+}
+
+.fx-kv-v {
+  color: var(--foreground);
+  min-width: 0;
+  word-break: break-word;
+}
+
+/* --- badges ---------------------------------------------------------------
+ * 11px/500 in a pill. The border is transparent on the tinted variants so the
+ * pill has the same box size whether or not it is outlined — a badge that
+ * changes width when its state changes drags the whole row with it. */
+
+.fx-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  font-size: var(--fs-1);
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid var(--fx-border);
+  color: var(--muted-foreground);
+  background: transparent;
+  vertical-align: middle;
+}
+
+.fx-badge .fx-ico {
+  width: 11px;
+  height: 11px;
+}
+
+/* Outlined rather than a solid fill. It marks "this is the current one", which
+ * is a fact about a row, not an action to take — and a filled block is the
+ * loudest thing a table can contain, so a dozen rows each carrying one made the
+ * badges compete with the data they annotate. */
+.fx-badge.primary {
+  color: var(--foreground);
+  background: transparent;
+  border-color: var(--muted-foreground);
+}
+
+.fx-badge.ok {
+  color: var(--success);
+  border-color: currentColor;
+}
+
+.fx-badge.warn {
+  color: var(--warning);
+  border-color: currentColor;
+}
+
+.fx-badge.bad {
+  color: var(--destructive);
+  border-color: currentColor;
+}
+
+/* --- tables ---------------------------------------------------------------
+ * The reference runs table bodies at 11px and they do not read as cheap. Two
+ * reasons, both copied here: body cells are weight 500 (not 400), and the
+ * header is FULL foreground colour (not grey). Small text fails when it is also
+ * thin and also faint; fix either one and the size stops being the problem. */
+
+.fx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-2);
+}
+
+.fx-table th {
+  height: 34px;
+  padding: 0 10px;
+  text-align: left;
+  font-size: var(--fs-3);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--fx-border);
+}
+
+.fx-table td {
+  padding: 8px 10px;
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+  border-bottom: 1px dashed var(--fx-border);
+  vertical-align: middle;
+}
+
+.fx-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fx-table tbody tr {
+  transition: var(--tx);
+}
+
+.fx-table tbody tr:hover {
+  background: var(--muted);
+}
+
+.fx-table td.muted {
+  color: var(--muted-foreground);
+  font-weight: var(--fw-normal);
+}
+
+/* --- tabs -----------------------------------------------------------------
+ * Selected and unselected share a font-weight so switching tabs does not
+ * change any label's width — otherwise the whole strip twitches on every
+ * click, which reads as a rendering bug rather than as a selection. */
+
+.fx-tabs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 34px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--fx-border);
+  overflow-x: auto;
+}
+
+.fx-tab {
+  flex: none;
+  height: 34px;
+  padding: 0;
+  margin-bottom: -1px;
+  font-family: inherit;
+  font-size: var(--fs-4);
+  font-weight: var(--fw-semibold);
+  color: var(--muted-foreground);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: var(--tx);
+}
+
+.fx-tab:hover {
+  color: var(--foreground);
+}
+
+.fx-tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.fx-tab[aria-selected="true"] {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* --- empty / guide states -------------------------------------------------
+ * Centred icon, one sentence of what happened, one of what to do. No
+ * illustration, no border, no big empty box — the reference's own empty state
+ * is exactly this, and its lightest variant is a single grey line. */
+
+.fx-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 34px 20px;
+  text-align: center;
+}
+
+.fx-empty-ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  margin-bottom: 2px;
+}
+
+.fx-empty-title {
+  font-size: var(--fs-4);
+  font-weight: var(--fw-semibold);
+  color: var(--foreground);
+}
+
+.fx-empty-body {
+  max-width: 520px;
+  font-size: var(--fs-3);
+  line-height: var(--lh-loose);
+  color: var(--muted-foreground);
+}
+
+.fx-empty-body code,
+.fx-code {
+  font-family: var(--fx-mono);
+  font-size: var(--fs-2);
+  background: var(--muted);
+  color: var(--foreground);
+  border-radius: var(--fx-radius-sm);
+  padding: 1px 5px;
+}
+
+.fx-note {
+  font-size: var(--fs-2);
+  line-height: var(--lh-loose);
+  color: var(--muted-foreground);
+}
+
+.fx-note.warn {
+  color: var(--warning);
+}
+
+.fx-muted {
+  color: var(--muted-foreground);
+}
+
+.fx-mono {
+  font-family: var(--fx-mono);
+}
+
+/* --- truncated identifiers ------------------------------------------------
+ * A sha256, a uuid and an absolute path are all longer than any column we have.
+ * Printed raw they wrap and get clipped, which loses the tail — the half that
+ * actually distinguishes one from another. So: show head+tail, keep the full
+ * value one click away, and always offer copy, because the reason anyone reads
+ * one of these is to paste it somewhere. */
+
+.fx-ident {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.fx-ident-text {
+  font-family: var(--fx-mono);
+  font-size: var(--fs-2);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fx-ident[data-expanded="true"] .fx-ident-text {
+  white-space: normal;
+  word-break: break-all;
+}
+
+/* --- disclosure ----------------------------------------------------------- */
+
+.fx-disclose {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--fs-2);
+  font-weight: var(--fw-medium);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: var(--tx);
+}
+
+.fx-disclose:hover {
+  color: var(--foreground);
+}
+
+.fx-disclose:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.fx-disclose .fx-ico {
+  transition: transform var(--dur-2) var(--ease);
+}
+
+.fx-disclose[aria-expanded="true"] .fx-ico {
+  transform: rotate(90deg);
+}
+
+.fx-details {
+  display: none;
+  padding: 8px 0 2px;
+  animation: fx-fade var(--dur-2) var(--ease);
+}
+
+.fx-details[data-open="true"] {
+  display: block;
+}
+
+@keyframes fx-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fx-spin {
+  animation: fx-spin 1s linear infinite;
+}
+
+@keyframes fx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- kbd ------------------------------------------------------------------ */
+
+.fx-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-family: var(--fx-mono);
+  font-size: var(--fs-2);
+  font-weight: var(--fw-medium);
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-radius: var(--fx-radius-sm);
+}
+
+/* --- config field control ------------------------------------------------
+ * Promoted from config.html on its second consumer (the integrations page's
+ * behaviour rows). The markup that uses these classes is generated by exactly
+ * one function — FabricField.control in shell.js — so the styles belong next to
+ * it rather than in whichever page happened to be written first.
+ *
+ * Row height target is ≤48px. It used to be 98–140px because every row carried
+ * its full description inline; nine settings then needed 2709px of page, which
+ * is four screens to see nine switches. The description is still there, one
+ * disclosure away — moved, not deleted. */
+
+.frow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 14px;
+  align-items: center;
+  /* The 14px left inset is unconditional so that marking a row cannot shift it
+   * sideways. It used to be `3px transparent border + 11px padding`; it is now
+   * all padding, because the mark became a positioned bar rather than a border
+   * — see `.frow.mod::before`. */
+  position: relative;
+  padding: 7px 0 7px 14px;
+  border-bottom: 1px solid var(--fx-border);
+  transition: var(--tx);
+}
+
+.frow:last-child {
+  border-bottom: none;
+}
+
+/* The mark is inset from the row's top and bottom and rounded on its open side,
+ * so three marked rows in a row read as three marks. As a `border-left` it could
+ * be neither: a border runs the full height by definition, so consecutive marked
+ * rows fused into one unbroken line down the card and the count stopped being
+ * legible — the same "one continuous band" failure the navbar had, one level
+ * down. Square-ended and full-bleed, it also read as a container edge rather
+ * than as a mark ON the row. */
+.frow.mod::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: var(--fx-mod-mark);
+}
+
+.frow:hover {
+  background: var(--muted);
+}
+
+/* One line when collapsed: label, key, provenance tag, and the disclosure that
+ * holds the explanation. The description used to sit inline under every row,
+ * which is what turned nine settings into 2709px of page — four screens to see
+ * nine switches. It is one click away now, not gone. */
+.fmain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.fexp {
+  grid-column: 1 / -1;
+  display: none;
+  padding: 2px 0 6px;
+  animation: fx-fade var(--dur-2) var(--ease);
+}
+
+.fexp[data-open="true"] {
+  display: block;
+}
+
+.fkey {
+  font-family: var(--fx-mono);
+  font-size: var(--fs-1);
+  color: var(--muted-foreground);
+}
+
+.flabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: var(--fs-3);
+  font-weight: var(--fw-medium);
+  color: var(--foreground);
+}
+
+.fdesc {
+  font-size: var(--fs-2);
+  color: var(--muted-foreground);
+  line-height: var(--lh-loose);
+}
+
+.fctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+}
+
+.fctl input,
+.fctl select {
+  font: inherit;
+  font-size: var(--fs-2);
+  height: 28px;
+  padding: 0 8px;
+  min-width: 132px;
+  color: var(--foreground);
+  background: var(--card);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  transition: var(--tx);
+}
+
+.fctl input:hover,
+.fctl select:hover {
+  border-color: var(--muted-foreground);
+}
+
+.fctl input:focus-visible,
+.fctl select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-color: var(--ring);
+}
+
+/* Error styling is driven by aria-invalid rather than by a class, so the thing
+ * that makes it look wrong is the same thing that tells a screen reader it is
+ * wrong. A class can be applied without the aria attribute; this cannot. */
+.fctl input[aria-invalid="true"],
+.fctl select[aria-invalid="true"] {
+  border-color: var(--destructive);
+  outline-color: var(--destructive);
+}
+
+.fctl input:disabled,
+.fctl select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* The two write actions sit side by side but appear for opposite reasons, so
+ * they are gated separately. `.fx-row` is only the shared layout; it carries no
+ * visibility rule of its own.
+ *
+ * Save exists in the DOM at all times but is only shown once the control's
+ * value differs from what it loaded with. Sixteen permanently-lit Save buttons
+ * on a page where nothing has been edited is sixteen invitations to press
+ * something that would do nothing. Hiding rather than re-rendering keeps focus
+ * and scroll position intact while you type.
+ *
+ * `.fx-revert` is NOT gated on dirty. Withdrawing a setting so the layer below
+ * decides again is the one gesture that does not change the control's value, so
+ * gating it on dirty made it unreachable — it is rendered only where this layer
+ * holds a value, and that condition is already the right one. */
+.fx-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fx-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fctl[data-dirty="false"] .fx-actions {
+  display: none;
+}
+
+/* Set-valued fields get checkboxes, not a comma-separated text box: not having
+ * to type enum values from memory is the entire reason the control exists.
+ * Stacked because the option names have to be readable, and a row of them
+ * truncates exactly the part that carries the meaning. */
+.fctl.multi {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  justify-self: end;
+  min-width: 200px;
+}
+
+/* Wraps rather than stacks. A one-per-line list of eight signal names made the
+   row 229px tall — five times every other row on the page, so the eye reads it
+   as a section rather than as one setting among nine. Wrapping puts the same
+   eight choices in two lines and nothing is hidden. */
+.chk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  justify-content: flex-end;
+}
+
+.chk label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-2);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: var(--tx);
+}
+
+.chk label:hover {
+  color: var(--foreground);
+}
+
+.chk input[type="checkbox"] {
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+/* Bounded so `.chk` actually wraps: in the `auto` grid column an unbounded
+   flex row just grows and squeezes the label column instead of folding. */
+.fctl.multi {
+  align-items: flex-end;
+  max-width: 380px;
+}
+
+.fctl.multi .fx-row {
+  justify-content: flex-end;
+}
+
+.note {
+  font-size: var(--fs-1);
+  color: var(--muted-foreground);
+  margin-top: 4px;
+  line-height: var(--lh-loose);
+}
+
+.note.warn {
+  color: var(--warning);
+}
+
+/* --- toast ----------------------------------------------------------------
+ * The only element in the console that is allowed a shadow besides nothing —
+ * it floats over the page, so depth is literally what it is expressing.
+ * Duration is the .4s tier: "the system is telling you something" is a
+ * different class of event from "you pressed a button", and the timing is what
+ * says so before you have read a word of it. */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(560px, calc(100vw - 40px));
+  font-size: var(--fs-3);
+  line-height: var(--lh-normal);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: translateX(-50%) translateY(10px);
+  pointer-events: none;
+  transition: opacity var(--dur-4) var(--ease), transform var(--dur-4) var(--ease);
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.bad {
+  color: var(--destructive-foreground);
+  background: var(--destructive);
+}
