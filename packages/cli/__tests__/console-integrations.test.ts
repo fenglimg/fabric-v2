@@ -211,7 +211,7 @@ describe("the listing is computed from the tree, not from a list of booleans", (
     const group = groupsOf(view, "claudeCode").find((g) => g.id === "fabric-archive");
 
     expect(group?.state).toBe("missing");
-    expect(group?.problems).toContainEqual({ path: rel, state: "missing" });
+    expect(group?.problems).toContainEqual({ path: rel, state: "missing", removable: false });
     // The sibling client still has its copy: the two trees are read separately.
     expect(groupsOf(view, "codex").find((g) => g.id === "fabric-archive")?.state).toBe("ok");
   });
@@ -225,7 +225,7 @@ describe("the listing is computed from the tree, not from a list of booleans", (
       (g) => g.id === "fabric-hint.cjs",
     );
     expect(group?.state).toBe("modified");
-    expect(group?.problems).toEqual([{ path: rel, state: "modified" }]);
+    expect(group?.problems).toEqual([{ path: rel, state: "modified", removable: false }]);
   });
 
   it("shows a companion file no template ships as left over", async () => {
@@ -238,7 +238,12 @@ describe("the listing is computed from the tree, not from a list of booleans", (
     );
     // `orphan`, not `modified`: install never prunes, so this file is still
     // being read by the client even though nothing ships it any more.
-    expect(group?.problems).toEqual([{ path: rel, state: "orphan" }]);
+    //
+    // `removable: true` is the OTHER half of the row and the only place the two
+    // fields disagree. It is what the cleanup button acts on, and it is true
+    // here for a reason the label cannot express: no template ships this path,
+    // as opposed to a template that ships it and cannot be read.
+    expect(group?.problems).toEqual([{ path: rel, state: "orphan", removable: true }]);
     expect(group?.state).toBe("orphan");
   });
 

@@ -245,8 +245,20 @@ describe("i18n locale parity census", () => {
   // 另有 `cli.console.config.reset` 改了**值**没改 key(「恢复默认」→「移除此处设置」:
   // 它做的是删掉这一层的条目、把决定交回下层,不是把默认值写进来钉死),值变更不进 census。
   // 纯增量,按上面的豁免不重跑 dead-key scan。
+  // 2026-08-20 (控制台可操作性 W3): 1018 → 1033。净 +15,全部是新增,全在
+  // `cli.console.integrations.cleanup.*`。控制台第一个删文件的能力,文案比别处多的
+  // 原因也在这里:删除没有第二次机会,所以每一项都要写清「删的是什么」「删了会
+  // 怎样」「什么不在删除范围里」,而不是只给一个按钮名。
+  // 2 条区级:`title` / `intro`(先列清单再动手这条规矩本身)。
+  // 4 条项级:`orphan` / `orphan-hint`(安装从不删旧文件,所以它们会一直被读到)、
+  // `cache` / `cache-hint`(删掉只重置提醒计数,不动知识;正在跑的会话不在其中)。
+  // 4 条计数与两步确认:`count` / `none` / `button` / `confirm-hint`。
+  // 2 条第二步:`confirm` / `cancel`。
+  // 3 条结果:`done` / `mismatch`(确认时 N 个、实际删了 M 个 —— 服务端按当前磁盘
+  // 重算,这个窗口不用锁去消除,而是照实报出来)/ `failed`。
+  // 纯增量,按上面的豁免不重跑 dead-key scan。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(1018);
+    expect(enKeys.length).toBe(1033);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

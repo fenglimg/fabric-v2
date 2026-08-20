@@ -70,6 +70,13 @@
     font-family:var(--mono);font-size:var(--fs-1);line-height:1.7;white-space:pre-wrap;
     color:var(--muted-foreground);background:var(--muted);
     border:1px solid var(--border);border-radius:var(--radius-sm)}
+  /* 确认面板。缩进 + 左侧竖线,是为了让它读起来属于上面那一行,而不是一块
+     独立的新内容 —— 用户要能一眼看出「我正在确认的是这一项」。清单定高可滚:
+     几百个路径不该把「确认删除」按钮推到屏幕外面去。 */
+  .cpanel{margin:10px 0 2px;padding:10px 12px;border-left:2px solid var(--destructive);
+    background:var(--muted);border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+  .cpanel .plist{max-height:220px;overflow:auto;margin:6px 0 0}
+  .cact{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
   code{font-family:var(--mono);font-size:var(--fs-2);background:var(--muted);
     border-radius:var(--radius-sm);padding:1px 5px}
   .mono{font-family:var(--mono);font-size:var(--fs-2)}
@@ -96,6 +103,9 @@
   var DATA=null;
   var SEL=null;   // 当前选中的客户端 id
   var ROUT='';    // 最近一次修复的输出,跨重绘保留
+  // 当前展开确认面板的清理动作(null = 都没展开)。确认清单本身不另存 ——
+  // 它就是 DATA.cleanup 里那一份,页面显示的和服务端要删的是同一个来源。
+  var CONFIRM=null;
   var toast=FabricField.toast;
 
   function S(k){ return (DATA&&DATA.strings&&DATA.strings[k])||k; }
@@ -253,6 +263,44 @@
       '<pre class="rout" id="rout"'+(ROUT?'':' hidden')+'>'+esc(ROUT)+'</pre></div></section>';
   }
 
+  // 清理区。这是整个控制台唯一一个删文件的地方,所以它做两件别处不做的事:
+  // ① 删什么先全列出来(不是「共 12 个」而是 12 行路径),确认才发请求;
+  // ② 请求体里只有动作名和范围 id —— 清单由服务端自己重算。页面这份清单是拿来
+  // 给人看的,不是拿来给服务端照着删的,否则一个被改过的页面就能点名删任意文件。
+  function cleanupBlock(){
+    function entry(action,label,hint,paths){
+      var n=paths.length;
+      var count=n?fmt(S('cleanup.count'),{count:n}):S('cleanup.none');
+      var open=CONFIRM===action;
+      var btn=n
+        ? '<button class="fx-btn sm" data-clean="'+action+'"'+(open?' disabled':'')+'>'+
+          FabricIcon.svg('trash','fx-ico-sm')+esc(S('cleanup.button'))+'</button>'
+        : '';
+      // 确认面板整份清单都画出来,不截断也不折叠:「还有 37 个未显示」正好把
+      // 用户最该看的那部分藏起来,而这个动作没有第二次机会。
+      var panel=open
+        ? '<div class="cpanel"><div class="fdesc">'+esc(fmt(S('cleanup.confirm-hint'),{count:n}))+'</div>'+
+          '<ul class="plist">'+paths.map(function(p){
+            return '<li>'+esc(p)+'</li>'; }).join('')+'</ul>'+
+          '<div class="cact"><button class="fx-btn sm danger" data-clean-go="'+action+'">'+
+          esc(fmt(S('cleanup.confirm'),{count:n}))+'</button>'+
+          '<button class="fx-btn sm ghost" data-clean-cancel="1">'+esc(S('cleanup.cancel'))+'</button></div></div>'
+        : '';
+      return '<div class="frow"><div class="fmain" style="display:block">'+
+        '<span class="flabel">'+esc(label)+'</span>'+
+        '<div class="fdesc">'+esc(hint)+'</div>'+
+        '<div class="note">'+esc(count)+'</div>'+panel+
+        '</div><div class="fctl">'+btn+'</div></div>';
+    }
+    var c=DATA.cleanup;
+    return sectionHead('trash',S('cleanup.title'))+
+      '<div class="card"><div class="fdesc">'+esc(S('cleanup.intro'))+'</div>'+
+      entry('orphan-artifacts',S('cleanup.orphan'),S('cleanup.orphan-hint'),c.orphans)+
+      entry('hint-cache',S('cleanup.cache'),S('cleanup.cache-hint'),
+        c.cache.map(function(x){ return x.path; }))+
+      '</div></section>';
+  }
+
   function manifestBlock(){
     var m=DATA.manifest;
     var text=m.status==='ok' ? fmt(S('manifest.ok'),{count:m.tracked})
@@ -315,7 +363,7 @@
       sectionHead('folder',S('files.title'))+
       '<div class="split">'+clientList()+
       '<div>'+(current?clientDetail(current):'')+'</div></div></section>'+
-      repairBlock()+manifestBlock();
+      repairBlock()+cleanupBlock()+manifestBlock();
     wire();
   }
 
@@ -348,6 +396,17 @@
         void row.offsetWidth;
         row.classList.add('flash');
       });
+    });
+    // 第一次点只展开清单,不发请求 —— 两步之间没有服务端状态,第二步是一个
+    // 完整的、自带动作名的请求,所以刷新页面就等于取消。
+    document.querySelectorAll('[data-clean]').forEach(function(b){
+      b.addEventListener('click',function(){ CONFIRM=b.getAttribute('data-clean'); render(); });
+    });
+    document.querySelectorAll('[data-clean-cancel]').forEach(function(b){
+      b.addEventListener('click',function(){ CONFIRM=null; render(); });
+    });
+    document.querySelectorAll('[data-clean-go]').forEach(function(b){
+      b.addEventListener('click',function(){ cleanup(b); });
     });
     FabricField.bind(document,{
       post:post,
@@ -395,6 +454,30 @@
     .then(function(){
       document.querySelectorAll('[data-repair]').forEach(function(b){ b.disabled=false; });
     });
+  }
+
+  // 确认之后真的删。服务端会按当前磁盘重算一遍要删的集合,所以它和用户几秒前
+  // 确认的那份清单之间有一个窗口 —— 我们不拿锁去消掉这个窗口(代价不匹配),
+  // 而是把差异照实说出来:「确认时 15 个,实际删了 14 个」。报告读的是服务端
+  // 实际删掉的列表,不是页面以为会删掉的那份。
+  function cleanup(btn){
+    var action=btn.getAttribute('data-clean-go');
+    var planned=(action==='orphan-artifacts'?DATA.cleanup.orphans:DATA.cleanup.cache).length;
+    btn.disabled=true;
+    fetch('/api/cleanup',{method:'POST',cache:'no-store',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({action:action,scope:FabricScope.current()})})
+    .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+    .then(function(res){
+      if(!res.ok) throw new Error(res.body&&res.body.error?res.body.error:'HTTP '+res.status);
+      var n=res.body.removed.length;
+      toast(n===planned
+        ? fmt(S('cleanup.done'),{count:n})
+        : fmt(S('cleanup.mismatch'),{planned:planned,removed:n}), n!==planned);
+      CONFIRM=null;
+      return load();
+    })
+    .catch(function(e){ toast(S('cleanup.failed')+'：'+e.message,true); btn.disabled=false; });
   }
 
   // 写入用配置页那条通道,成功后重新拉数据 —— 一个键改完可能让某个行为的

@@ -206,6 +206,26 @@ export const enMessages: Messages = {
   "cli.console.integrations.behaviors.turn-off-hook":
     "Stopping a hook outright means editing the client's own config file, which the console does not do — it changes Fabric's settings, not Claude Code's or Codex's.",
   "cli.console.integrations.behaviors.turn-off-link": "Open Settings",
+  "cli.console.integrations.cleanup.title": "Clean up",
+  "cli.console.integrations.cleanup.intro":
+    "Deleted files do not come back. Both entries below list every file first and only act after you confirm.",
+  "cli.console.integrations.cleanup.orphan": "Files left by an older version",
+  "cli.console.integrations.cleanup.orphan-hint":
+    "Files this release no longer ships that are still in the project. Install never removes anything, so clients keep reading them. Deleting them affects nothing in the current version.",
+  "cli.console.integrations.cleanup.cache": "Reminder bookkeeping",
+  "cli.console.integrations.cleanup.cache-hint":
+    "The small files recording “you have already seen this reminder”, one per session, which accumulate indefinitely. Deleting them only restarts the counters; your knowledge is untouched. State belonging to a running session is not included.",
+  "cli.console.integrations.cleanup.count": "{count} files",
+  "cli.console.integrations.cleanup.none": "Nothing to clean up.",
+  "cli.console.integrations.cleanup.button": "Clean up…",
+  "cli.console.integrations.cleanup.confirm-hint":
+    "These {count} files will be deleted. This cannot be undone:",
+  "cli.console.integrations.cleanup.confirm": "Delete {count} files",
+  "cli.console.integrations.cleanup.cancel": "Cancel",
+  "cli.console.integrations.cleanup.done": "Deleted {count} files.",
+  "cli.console.integrations.cleanup.mismatch":
+    "{planned} files were listed at confirmation, {removed} were deleted — the rest were already gone, or could not be removed.",
+  "cli.console.integrations.cleanup.failed": "Clean-up failed",
   "cli.console.integrations.repair.title": "Repair",
   "cli.console.integrations.repair.intro":
     "Rewrite these files from this version's templates. Hand edits are overwritten; output appears below as it runs.",

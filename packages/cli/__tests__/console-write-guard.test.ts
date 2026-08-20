@@ -224,6 +224,59 @@ describe("write endpoints over HTTP", () => {
   // reaching it through the server here would make the suite mutate the machine
   // running it.
 
+  // The SIXTH route, and the only one that DELETES. Same table, same treatment —
+  // asserted alongside a read endpoint in one test so a table typo that took the
+  // whole dispatcher down cannot masquerade as "the guard works".
+  it("refuses GET on /api/cleanup (405) while /api/integrations stays readable", async () => {
+    const { base } = await start();
+    expect((await fetch(`${base}/api/integrations`, { method: "GET" })).status).toBe(200);
+    expect((await fetch(`${base}/api/cleanup`, { method: "GET" })).status).toBe(405);
+
+    const res = await fetch(`${base}/api/cleanup`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ action: "hint-cache" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses an unknown cleanup action from a legitimate Origin, deleting nothing", async () => {
+    const { base, port } = await start();
+    // Every one of these must be refused BEFORE a scope is resolved — the
+    // legitimate-Origin path runs against the real launch directory, so a
+    // handler that computed its plan first and validated after would be
+    // deleting this repo's files to prove itself wrong.
+    for (const action of ["orphan_artifacts", "", null, { action: "hint-cache" }]) {
+      const res = await fetch(`${base}/api/cleanup`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: `http://127.0.0.1:${String(port)}` },
+        body: JSON.stringify({ action }),
+      });
+      // 400, not 403: the guard passed it and the closed action set refused.
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toContain("unknown cleanup action");
+    }
+  });
+
+  it("refuses a cleanup aimed at machine scope", async () => {
+    // Neither list exists machine-wide. The alternative — falling back to the
+    // launch directory — would delete files in a project the page was not
+    // showing, which is the one failure a delete cannot take back.
+    const { base, port } = await start();
+    const res = await fetch(`${base}/api/cleanup`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: `http://127.0.0.1:${String(port)}` },
+      body: JSON.stringify({ action: "hint-cache", scope: "machine" }),
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toContain("project scope");
+  });
+
+  // No happy-path HTTP test for /api/cleanup, for the same reason /api/scan has
+  // none: a legitimate-Origin POST resolves to the real launch directory and
+  // would delete this repo's own cache files. The deleting behaviour is covered
+  // against a temp tree in console-cleanup.test.ts.
+
   it("refuses a config POST carrying a foreign Origin (403)", async () => {
     const { base } = await start();
     const res = await fetch(`${base}/api/config/set`, {

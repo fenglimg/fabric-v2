@@ -178,6 +178,25 @@ export const zhCNMessages: Messages = {
   "cli.console.integrations.behaviors.turn-off-hook":
     "把某个 hook 彻底停掉需要改客户端自己的配置文件，控制台不做这件事 —— 它只改 Fabric 的设置，不改 Claude Code / Codex 的。",
   "cli.console.integrations.behaviors.turn-off-link": "打开配置页",
+  "cli.console.integrations.cleanup.title": "清理",
+  "cli.console.integrations.cleanup.intro":
+    "删除以后不会自己回来。下面两项都会先把要删的文件全列出来，确认之后才动手。",
+  "cli.console.integrations.cleanup.orphan": "旧版本留下的文件",
+  "cli.console.integrations.cleanup.orphan-hint":
+    "这个版本已经不再提供、但仍留在项目里的文件。安装从不删旧文件，所以它们会一直被客户端读到。删掉不影响当前版本的任何功能。",
+  "cli.console.integrations.cleanup.cache": "提醒记录缓存",
+  "cli.console.integrations.cleanup.cache-hint":
+    "记录「这条提醒给你看过了」的小文件，每个会话一份，会一直攒着。删掉只会让提醒重新计数，不影响知识库。正在跑的会话的状态文件不在其中。",
+  "cli.console.integrations.cleanup.count": "{count} 个文件",
+  "cli.console.integrations.cleanup.none": "没有可清理的。",
+  "cli.console.integrations.cleanup.button": "清理…",
+  "cli.console.integrations.cleanup.confirm-hint": "以下 {count} 个文件会被删除，不可撤销：",
+  "cli.console.integrations.cleanup.confirm": "确认删除 {count} 个",
+  "cli.console.integrations.cleanup.cancel": "取消",
+  "cli.console.integrations.cleanup.done": "已删除 {count} 个文件。",
+  "cli.console.integrations.cleanup.mismatch":
+    "确认时列出 {planned} 个，实际删除 {removed} 个 —— 其余的在这期间已经不在了，或者删不掉。",
+  "cli.console.integrations.cleanup.failed": "清理失败",
   "cli.console.integrations.repair.title": "修复",
   "cli.console.integrations.repair.intro":
     "按当前版本的模板把这些文件重写一遍。手改过的内容会被覆盖，输出实时显示在下方。",

@@ -38,9 +38,18 @@ export const STALE_SWEEP_FAMILIES: readonly StaleSweepFamily[] = [
 // truncated `session-hints-.json` out of a DELETE arm — see KT-PIT-0051.
 const SESSION_ID_TOKEN_RE = /^[A-Za-z0-9_.-]+$/;
 
-/** The family a cache filename belongs to, or null if the sweep must not touch it. */
-export function matchStaleSweepFamily(name: string): StaleSweepFamily | null {
-  for (const family of STALE_SWEEP_FAMILIES) {
+/**
+ * The family a cache filename belongs to, or null if the sweep must not touch it.
+ *
+ * @param families narrows the set considered. Defaults to all of them; the
+ * console passes {@link ON_DEMAND_SWEEP_FAMILIES} so a live session's file
+ * cannot match at all, rather than matching and then being filtered later.
+ */
+export function matchStaleSweepFamily(
+  name: string,
+  families: readonly StaleSweepFamily[] = STALE_SWEEP_FAMILIES,
+): StaleSweepFamily | null {
+  for (const family of families) {
     if (!name.startsWith(family.prefix)) continue;
     if (family.suffix.length > 0 && !name.endsWith(family.suffix)) continue;
     const token = name.slice(family.prefix.length, name.length - family.suffix.length);
@@ -65,10 +74,42 @@ export type SessionHintsStaleInspection = {
   candidates: SessionHintsStaleCandidate[];
 };
 
+/**
+ * The prefix of the one family a sweep must NOT clear on demand.
+ *
+ * `active-session-*` is live state for a session that may be running right now,
+ * and people routinely have several client windows open on one repo. Doctor is
+ * safe from this by construction — it only ever deletes files past
+ * {@link SESSION_HINTS_STALE_DAYS}, and a running session's file is minutes old
+ * — but a console button that clears the cache NOW has no such floor, so it has
+ * to exclude the family by name.
+ *
+ * Named here rather than in the console so the exclusion sits beside the list it
+ * excludes from; `session-cache-prefix-parity` asserts it still matches a real
+ * family, which is what turns a rename into a red test instead of an exclusion
+ * that silently stops excluding.
+ */
+export const LIVE_SESSION_FAMILY_PREFIX = "active-session-";
+
+/** Every sweepable family except the live-session one. @see LIVE_SESSION_FAMILY_PREFIX */
+export const ON_DEMAND_SWEEP_FAMILIES: readonly StaleSweepFamily[] =
+  STALE_SWEEP_FAMILIES.filter((f) => f.prefix !== LIVE_SESSION_FAMILY_PREFIX);
+
+/**
+ * @param now epoch ms to measure age against.
+ * @param options.minAgeDays how old a file must be to count. Defaults to
+ * {@link SESSION_HINTS_STALE_DAYS} — doctor's threshold, unchanged. The console
+ * passes 0 to enumerate the whole accumulation, which is a different question
+ * ("what is piling up here") from doctor's ("what is safe to reap unattended").
+ * @param options.families which families to consider. Defaults to all of them.
+ */
 export async function inspectSessionHintsStale(
   projectRoot: string,
   now: number,
+  options?: { minAgeDays?: number; families?: readonly StaleSweepFamily[] },
 ): Promise<SessionHintsStaleInspection> {
+  const minAgeDays = options?.minAgeDays ?? SESSION_HINTS_STALE_DAYS;
+  const families = options?.families ?? STALE_SWEEP_FAMILIES;
   const cacheDir = join(projectRoot, ".fabric", ".cache");
   let entries;
   try {
@@ -79,7 +120,7 @@ export async function inspectSessionHintsStale(
   const candidates: SessionHintsStaleCandidate[] = [];
   for (const entry of entries) {
     if (!entry.isFile()) continue;
-    if (matchStaleSweepFamily(entry.name) === null) continue;
+    if (matchStaleSweepFamily(entry.name, families) === null) continue;
     const absPath = join(cacheDir, entry.name);
     let mtimeMs = 0;
     try {
@@ -89,8 +130,16 @@ export async function inspectSessionHintsStale(
       // run will retry (or the OS will reap a corrupted entry).
       continue;
     }
-    const ageDays = Math.floor((now - mtimeMs) / MS_PER_DAY);
-    if (ageDays < SESSION_HINTS_STALE_DAYS) continue;
+    // Clamped at zero. `mtimeMs` carries sub-millisecond precision on APFS while
+    // `Date.now()` is whole milliseconds, so a file written moments ago is
+    // routinely stamped a fraction of a millisecond AFTER `now` — and
+    // `Math.floor` turns that fraction into -1, not 0. Under doctor's seven-day
+    // floor that was invisible (-1 and 0 are both "too new"). Under the
+    // console's zero floor it meant the newest files were silently skipped about
+    // four times in five: "clear the cache" would leave behind exactly the files
+    // the user had just generated.
+    const ageDays = Math.max(0, Math.floor((now - mtimeMs) / MS_PER_DAY));
+    if (ageDays < minAgeDays) continue;
     candidates.push({
       path: posixJoin(".fabric", ".cache", entry.name),
       age_days: ageDays,

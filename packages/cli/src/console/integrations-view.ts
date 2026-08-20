@@ -31,7 +31,13 @@ import {
   type HookClient,
 } from "@fenglimg/fabric-shared";
 import { BOOTSTRAP_REGEX } from "@fenglimg/fabric-shared/templates/bootstrap-canonical";
-import { inspectInstallCopyDrift, type InstallDriftStatus } from "@fenglimg/fabric-server";
+import {
+  ON_DEMAND_SWEEP_FAMILIES,
+  inspectInstallCopyDrift,
+  inspectSessionHintsStale,
+  type InstallDriftStatus,
+  type SessionHintsStaleCandidate,
+} from "@fenglimg/fabric-server";
 
 import { t } from "../i18n.js";
 import { buildManagedBlockBody } from "../install/bootstrap-propagation.js";
@@ -68,6 +74,30 @@ export interface ArtifactFile {
   /** Project-root-relative, POSIX-shaped so it reads the same on every OS. */
   path: string;
   state: ArtifactState;
+  /**
+   * Safe to DELETE — true only when no template ships this path at all.
+   *
+   * `orphan` is reached two ways and they need opposite handling. Either no
+   * template ships the path (a companion dropped from a later release, which is
+   * the case the label describes), or a template DOES ship it but this CLI could
+   * not read the template file — a packaging fault, where the installed file is
+   * the one thing that is still right. Both read as `orphan` because from the
+   * page's point of view neither can be judged against a template, and that was
+   * fine while the page could only look.
+   *
+   * The second cause has a directory-level twin that is easier to miss: the two
+   * set-comparing callers decide "no template ships this" by LISTING a template
+   * directory, and a failed listing looks exactly like an empty one — so a
+   * broken package would mark every installed lib and ref file removable at
+   * once. Both are gated on the templates root being readable.
+   *
+   * It stops being fine the moment a button offers to remove them: filtering a
+   * delete set on `state === "orphan"` would, on a broken package, delete every
+   * skill and hook it ships. So the delete set keys off this flag instead of the
+   * label, and the two causes are separated where they are DERIVED rather than
+   * re-derived later from a string that cannot tell them apart.
+   */
+  removable: boolean;
 }
 
 export interface ArtifactGroup {
@@ -174,6 +204,23 @@ export interface IntegrationsView {
   writeTarget: { scope: "machine" } | { scope: "project"; projectId: string };
   clients: ClientIntegration[];
   behaviors: BehaviorView[];
+  /**
+   * Exactly what `POST /api/cleanup` would delete, per action.
+   *
+   * Shipped with the page rather than computed by the browser or fetched from a
+   * second endpoint, because the delete arm reads these SAME two arrays off this
+   * SAME collector. The user confirms against a list, and the list they confirm
+   * against is the list that gets deleted — not a re-derivation of it that could
+   * disagree (KT-PIT-0106). The server still recomputes at delete time (the page
+   * may be minutes stale), and the response reports what actually went, so the
+   * remaining gap is a visible discrepancy rather than a silent one.
+   */
+  cleanup: {
+    /** Project-relative paths, `removable` only. @see ArtifactFile.removable */
+    orphans: string[];
+    /** Per-session cache sidecars, live-session state excluded by family. */
+    cache: SessionHintsStaleCandidate[];
+  };
   /** The one fact bytes cannot carry: which CLI version wrote this install. */
   manifest: {
     status: InstallDriftStatus;
@@ -227,15 +274,71 @@ async function compareFile(
   const path = toPosix(destRel);
   const installed = await readTextOrNull(join(projectRoot, ...destRel.split("/")));
   if (templateRel === null) {
-    return { path, state: installed === null ? "missing" : "orphan" };
+    // The only removable case: nothing in this release ships this path, so the
+    // file on disk is a leftover and deleting it loses nothing a reinstall
+    // could not restore.
+    //
+    // Gated on the templates tree being READABLE, because the two directory
+    // callers decide `templateRel === null` by listing a template directory —
+    // and a listing that FAILED is indistinguishable from one that came back
+    // empty. Without this gate, a CLI that cannot see its own templates would
+    // report every installed lib and ref file as a leftover and offer to delete
+    // the lot. The per-file branch below is the same hazard one level down.
+    return installed === null
+      ? { path, state: "missing", removable: false }
+      : { path, state: "orphan", removable: templatesRootReadable() };
   }
-  if (installed === null) return { path, state: "missing" };
+  if (installed === null) return { path, state: "missing", removable: false };
   const template = await readTextOrNull(findTemplatePathOrNull(templateRel) ?? "");
   // A template this CLI cannot resolve is a packaging fault, not a user's
   // problem — report the installed file as unjudgeable rather than accusing it
   // of drift. `orphan` is the honest label: nothing ships this path.
-  if (template === null) return { path, state: "orphan" };
-  return { path, state: installed === template ? "ok" : "modified" };
+  //
+  // NOT removable, though, and the distinction is load-bearing now that a button
+  // acts on this. A template ships this path; we merely cannot read it. The
+  // installed file is the last good copy, and deleting it would turn a packaging
+  // fault into data loss across every skill and hook at once.
+  if (template === null) return { path, state: "orphan", removable: false };
+  return { path, state: installed === template ? "ok" : "modified", removable: false };
+}
+
+/**
+ * How the console enumerates the cache sweep, in ONE place both the page's count
+ * and the delete arm read.
+ *
+ * `minAgeDays: 0` because the button's question is "what is piling up here",
+ * not doctor's "what is safe to reap unattended". That removes the age floor
+ * that made doctor safe around live sessions, so the live family is excluded by
+ * NAME instead — a running session's file is minutes old, and no floor this
+ * button could set would protect it.
+ */
+const CACHE_SWEEP_OPTIONS = { minAgeDays: 0, families: ON_DEMAND_SWEEP_FAMILIES } as const;
+
+/** Every artifact file across every client that is safe to delete. */
+function removableArtifactPaths(clients: ClientIntegration[]): string[] {
+  const out = new Set<string>();
+  for (const client of clients) {
+    for (const group of [...client.hooks, ...client.skills, ...client.libs]) {
+      // `removable`, NOT `state === "orphan"`. The label cannot tell "no template
+      // ships this" from "the template could not be read", and on a broken
+      // package the second case is every skill and hook at once.
+      for (const file of group.problems) if (file.removable) out.add(file.path);
+    }
+  }
+  return [...out].sort();
+}
+
+/**
+ * Whether this CLI can see its own `templates/` tree at all.
+ *
+ * The discriminator between "this release genuinely ships nothing under that
+ * directory" (a real orphan) and "the package is broken" (every path looks like
+ * an orphan). The empty relative path resolves the templates root itself, so it
+ * answers the question directly rather than by proxy through some file that
+ * happens to ship today.
+ */
+function templatesRootReadable(): boolean {
+  return findTemplatePathOrNull("") !== null;
 }
 
 function findTemplatePathOrNull(relativePath: string): string | null {
@@ -571,6 +674,21 @@ function chromeStrings(): Record<string, string> {
     "behaviors.turn-off",
     "behaviors.turn-off-hook",
     "behaviors.turn-off-link",
+    "cleanup.title",
+    "cleanup.intro",
+    "cleanup.orphan",
+    "cleanup.orphan-hint",
+    "cleanup.cache",
+    "cleanup.cache-hint",
+    "cleanup.count",
+    "cleanup.none",
+    "cleanup.button",
+    "cleanup.confirm-hint",
+    "cleanup.confirm",
+    "cleanup.cancel",
+    "cleanup.done",
+    "cleanup.mismatch",
+    "cleanup.failed",
     "repair.title",
     "repair.intro",
     "repair.install",
@@ -630,6 +748,7 @@ export async function collectIntegrations(scope: ResolvedScope): Promise<Integra
       writeTarget: { scope: "machine" },
       clients: [],
       behaviors: [],
+      cleanup: { orphans: [], cache: [] },
       manifest: { status: "no-manifest", fabricVersion: null, tracked: 0, driftCount: 0 },
       strings,
     };
@@ -654,6 +773,11 @@ export async function collectIntegrations(scope: ResolvedScope): Promise<Integra
         : { scope: "project", projectId: scope.projectId },
     clients,
     behaviors: await collectBehaviors(projectRoot, clients, scope.projectId),
+    cleanup: {
+      orphans: removableArtifactPaths(clients),
+      cache: (await inspectSessionHintsStale(projectRoot, Date.now(), CACHE_SWEEP_OPTIONS))
+        .candidates,
+    },
     manifest: {
       status: drift.status,
       fabricVersion: drift.fabricVersion,

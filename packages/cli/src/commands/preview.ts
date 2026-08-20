@@ -14,6 +14,7 @@ import {
 } from "@fenglimg/fabric-server";
 
 import { paint } from "../colors.js";
+import { applyCleanup, type CleanupRequest } from "../console/cleanup.js";
 import { collectGlobalConfigView } from "../console/global-config-view.js";
 import {
   applyGlobalConfigEdit,
@@ -81,6 +82,7 @@ const WRITE_ROUTES = new Set([
   "/api/config/preset",
   "/api/repair",
   "/api/scan",
+  "/api/cleanup",
 ]);
 
 const STATIC_ASSETS: Record<string, { file: string; type: string }> = {
@@ -394,6 +396,20 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
               stoppedBy: result.stoppedBy,
               stuckDirs: result.stuckDirs,
             });
+            return;
+          }
+          if (pathname === "/api/cleanup") {
+            // The body names an ACTION and a scope id. It never names a path —
+            // the same rule `/api/scan` follows, and the reason this is the only
+            // irreversible endpoint the console has without also being an
+            // arbitrary-file remover. The set to delete is computed server-side
+            // by the same collectors the page rendered from.
+            const result = await applyCleanup(
+              (await readJsonBody(req)) as CleanupRequest | null,
+              projectRoot,
+            );
+            if (result.ok) sendJson(res, 200, result);
+            else sendJson(res, result.status, { error: result.error });
             return;
           }
           if (pathname === "/api/repair") {
