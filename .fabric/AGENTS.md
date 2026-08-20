@@ -37,7 +37,7 @@
 - **Scope 三轴(为什么没浮现)** (KT-MOD-0001):一条知识是否浮现由三个**正交**轴决定 —— ① `semantic_scope` 受众(`team` / `project:<id>` / `personal`;绑错项目则不显)② `relevance_scope` 时机(`broad` 常驻 / `narrow` 仅编辑匹配文件时浮现)③ `store` 物理库(没 `fabric store bind` 就不读)。三轴名字会撞("team" 既是受众值也可是 store 别名),所以困惑"为什么这条没浮现"时跑 `fabric audit why-not-surfaced <id>` 逐因诊断(store 没绑 / scope 不匹配 / narrow 时机)。
 - **Usage**:走单步 `fab_recall(paths=[...])` 一次拿回相关 KB 的描述 + 读取路径;需要某条正文时对其 `entries[].read_path` 做原生 Read 取回(不再走 MCP 二次取正文)。
 - **session_id**: 调用 `fab_recall` 时, 务必把当前 client session id 作为 `session_id` 参数传入(Claude Code 的 session id 在 stdin payload 中, Codex 的对应 identifier 同理)。这能让 `fabric doctor --archive-history` 与 `fabric-hint.cjs` Stop hook 准确识别跨会话 debt 状态。
-- **Skills (4)**:写流程 `fabric-archive`(含 source mode 冷启动从 git/docs 回灌)/ `fabric-review`(含 retire 语义淘汰 + relate 关联建边 子流程);store 运维 `fabric-store` / `fabric-sync`。
+- **Skills (6)**:写流程 `fabric-archive`(含 source mode 冷启动从 git/docs 回灌)/ `fabric-review`(含 retire 语义淘汰 + relate 关联建边 子流程);检索用法 `fabric-recall-playbook`(何时/如何 recall、懒取正文、失败路径);配置体检与对话式调整 `fabric-config`;store 运维 `fabric-store` / `fabric-sync`。
 - **Language**:渲染按 `~/.fabric/fabric-global.json` 的 `language` 字段(machine-wide tone)。
 - **Archive cadence nudge** (rc.36 / finish→archive): 显著 decision 收口或一批 Edit 达到 config `archive_edit_threshold`(默认 20) 后,在合适回合轻量自调 `fabric-archive`(同 turn 最多 1 次;非 task engine / 非 Stop-hook flood)。Stop hook 仅 soft threshold nudge,守 KT-DEC-0007 — archive 没建立频率会让 KB 慢速死掉。
 - **收口仪式** (W3 finish-gate): 一段工作收口时 —— 用户说"完成/收工/提交吧",或你刚跑完最后一道 gate 准备汇报 —— **显式走一遍归档判断并把结论说出来**,结论允许是"本段无可归档"(带一句理由即可)。与上面的 cadence nudge 是 OR 关系,不互相取代:cadence 管"改得够多了",仪式管"这件事做完了"。是 prompt 层仪式**不是 hook gate**(守 KT-DEC-0007) —— 判断本身零成本,真正的成本是想不起来判断。
