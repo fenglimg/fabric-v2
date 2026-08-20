@@ -147,6 +147,28 @@ describe("write endpoints over HTTP", () => {
     expect(((await res.json()) as { error: string }).error).toContain("unknown preset");
   });
 
+  // The FIFTH route, and the second irreversible one. Asserted together with a
+  // READ endpoint in the same case: membership in WRITE_ROUTES is PATH-level, so
+  // the way this goes wrong is a write endpoint sharing a path with a read one
+  // and someone carving an exception into the guard to un-405 the read
+  // (KT-PIT-0100). One case that pins both sides is what makes that
+  // unrepresentable rather than merely untried.
+  it("refuses GET on /api/projects/deregister while /api/integrations stays readable", async () => {
+    const { base } = await start();
+    expect((await fetch(`${base}/api/projects/deregister`, { method: "GET" })).status).toBe(405);
+    expect((await fetch(`${base}/api/integrations`, { method: "GET" })).status).toBe(200);
+  });
+
+  it("refuses a foreign Origin on /api/projects/deregister", async () => {
+    const { base } = await start();
+    const res = await fetch(`${base}/api/projects/deregister`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://evil.example" },
+      body: JSON.stringify({ key: "whatever", confirm: true }),
+    });
+    expect(res.status).toBe(403);
+  });
+
   // The FOURTH route, and the only one that can start a child process — so the
   // assertion that matters is not just "the guard covers it" but "an illegal
   // action is refused BEFORE anything is spawned".

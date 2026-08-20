@@ -78,6 +78,47 @@ export function regenerateBindingsSnapshot(
  * state the console must report rather than hide. Locating it is
  * project-discovery's job.
  */
+/**
+ * The snapshot files belonging to `projectId`, as absolute paths.
+ *
+ * Separate from deleting them so the console can SHOW the list before asking
+ * for confirmation and then delete exactly what it showed — one enumeration,
+ * not a preview implementation and a delete implementation that agree today
+ * (KT-PIT-0106).
+ *
+ * The match is on the `project_id` INSIDE each file, never on the filename:
+ * the filename is the workspace-binding id, which is only incidentally equal to
+ * the project id. `listBoundProjectIds` reads the field for the same reason, and
+ * a deleter that keyed off the name would remove the wrong file the moment that
+ * stops holding.
+ */
+export function findBindingsForProject(
+  projectId: string,
+  globalRootInput?: string,
+): string[] {
+  const globalRoot = globalRootInput ?? resolveGlobalRoot();
+  const dir = join(globalRoot, "state", "bindings");
+  let files: string[];
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const matches: string[] = [];
+  for (const file of files) {
+    if (!file.endsWith("_resolved.json")) continue;
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(join(dir, file), "utf8"));
+      if ((parsed as { project_id?: unknown } | null)?.project_id === projectId) {
+        matches.push(join(dir, file));
+      }
+    } catch {
+      continue; // a corrupt snapshot names no project, so it belongs to none
+    }
+  }
+  return matches;
+}
+
 export function listBoundProjectIds(globalRootInput?: string): string[] {
   const globalRoot = globalRootInput ?? resolveGlobalRoot();
   let files: string[];

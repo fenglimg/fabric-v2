@@ -66,6 +66,15 @@
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:340px}
   .phead .pcount{margin-left:auto;font-size:var(--fs-2);color:var(--muted-foreground);white-space:nowrap}
   .pbody{padding:0 14px 12px;border-top:1px solid var(--border)}
+  /* 注销区与设置区之间要有一道明确的分界:上面是可反复改的值,下面是一次性的
+     不可逆动作,挨着排会让人以为是同一类操作。 */
+  .pforget{margin-top:12px;padding-top:10px;border-top:1px dashed var(--border)}
+  .pfplan{margin-top:8px}
+  .pfplan .pfwhere{display:flex;gap:8px;align-items:baseline;padding:3px 0;
+    font-size:var(--fs-2)}
+  .pfplan .pfwhere .pfdetail{font-family:var(--mono);font-size:var(--fs-1);
+    color:var(--muted-foreground);word-break:break-all}
+  .pfplan .pfacts{display:flex;gap:8px;margin-top:10px}
   .addbar{display:flex;align-items:center;gap:8px;padding:12px 0 2px;flex-wrap:wrap}
   .addbar select{font:inherit;font-size:var(--fs-2);height:28px;padding:0 8px;
     color:var(--foreground);background:var(--card);border:1px solid var(--input);
@@ -280,6 +289,9 @@
           esc(JSON.stringify(target))+'">'+esc(s['projects.add'])+'</button></div>';
       }
     }
+    // 注销对每个项目都提供 —— 包括没有 project_id、因而下面一个设置控件都没有
+    // 的那种。恰恰是那种项目最需要被移走,而它在这一页原本只剩一句解释。
+    body+=forgetBlock(p,s);
 
     return '<div class="prow"><button class="phead" data-toggle="'+esc(p.projectId||p.path)+
       '" aria-expanded="'+(open?'true':'false')+'">'+
@@ -288,6 +300,36 @@
       (p.path?'<span class="ppath" title="'+esc(p.path)+'">'+esc(mid(p.path,34))+'</span>':'')+
       '<span class="pcount">'+esc(count)+'</span></button>'+
       (open?'<div class="pbody">'+body+'</div>':'')+'</div>';
+  }
+
+  // 两步:先问服务端"这会动哪些地方",把答案原样列出来,再要一次确认。计划不是
+  // 前端猜的 —— 同一个函数既产出这份清单也执行删除,所以列出来的就是会发生的。
+  function forgetBlock(p,s){
+    if(p.isCurrent) return '<div class="pforget"><div class="note">'+
+      esc(s['projects.forget-current'])+'</div></div>';
+    return '<div class="pforget">'+
+      '<button class="fx-btn ghost sm" data-forget="'+esc(p.key)+'">'+
+      esc(s['projects.forget'])+'</button>'+
+      '<div class="pfplan" id="pf'+esc(safeId(p.key))+'"></div></div>';
+  }
+
+  function safeId(v){ return String(v).replace(/[^a-z0-9]/gi,''); }
+
+  function planHtml(plan,s){
+    var where={registry:s['projects.forget-where-registry'],
+      config:s['projects.forget-where-config'],
+      bindings:s['projects.forget-where-bindings']};
+    if(!plan.items.length) return '<div class="note">'+esc(s['projects.forget-nothing'])+'</div>';
+    return '<div class="note">'+esc(s['projects.forget-intro'])+'</div>'+
+      plan.items.map(function(it){
+        return '<div class="pfwhere"><span>'+esc(where[it.where]||it.where)+'</span>'+
+          '<span class="pfdetail">'+esc(it.detail)+'</span></div>';
+      }).join('')+
+      '<div class="note warn">'+esc(s['projects.forget-cost'])+'</div>'+
+      '<div class="pfacts"><button class="fx-btn sm" data-forget-go="'+esc(plan.key)+'">'+
+      esc(s['projects.forget-confirm'])+'</button>'+
+      '<button class="fx-btn ghost sm" data-forget-no="'+esc(plan.key)+'">'+
+      esc(s['projects.forget-cancel'])+'</button></div>';
   }
 
   // 中间省略,不是末尾省略。未命名项目的名字就是它的 uuid,路径也常常只在最后
@@ -451,6 +493,29 @@
         });
       });
     });
+    // 展开计划走的是同一个写端点、只是不带 confirm —— 那一次调用在服务端是纯读,
+    // 所以"点开看看然后取消"在磁盘上确实什么都没发生,不靠前端自觉。
+    document.querySelectorAll('[data-forget]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var key=btn.getAttribute('data-forget');
+        var box=document.getElementById('pf'+safeId(key));
+        if(!box) return;
+        if(box.innerHTML){ box.innerHTML=''; return; }
+        btn.disabled=true;
+        fetch('/api/projects/deregister',{method:'POST',cache:'no-store',
+          headers:{'content-type':'application/json'},body:JSON.stringify({key:key})})
+        .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+        .then(function(res){
+          btn.disabled=false;
+          if(!res.ok){ toast(fmt(DATA.strings['projects.forget-failed'],
+            {error:(res.body&&res.body.error)||''}),true); return; }
+          box.innerHTML=planHtml(res.body.plan,DATA.strings);
+          bindForgetActions(box,res.body.plan);
+        })
+        .catch(function(e){ btn.disabled=false;
+          toast(fmt(DATA.strings['projects.forget-failed'],{error:String(e)}),true); });
+      });
+    });
     document.querySelectorAll('[data-add]').forEach(function(btn){
       btn.addEventListener('click',function(){
         var sel=document.getElementById(btn.getAttribute('data-add'));
@@ -461,6 +526,31 @@
           target:JSON.parse(btn.getAttribute('data-target'))},btn,
           function(b){ return fmt(DATA.strings.saved,{target:b.target}); });
       });
+    });
+  }
+
+  function bindForgetActions(box,plan){
+    var no=box.querySelector('[data-forget-no]');
+    if(no) no.addEventListener('click',function(){ box.innerHTML=''; });
+    var go=box.querySelector('[data-forget-go]');
+    if(!go) return;
+    go.addEventListener('click',function(){
+      go.disabled=true;
+      fetch('/api/projects/deregister',{method:'POST',cache:'no-store',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({key:plan.key,confirm:true})})
+      .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,body:j}; }); })
+      .then(function(res){
+        if(!res.ok){ go.disabled=false;
+          toast(fmt(DATA.strings['projects.forget-failed'],
+            {error:(res.body&&res.body.error)||''}),true); return; }
+        // 剩余数是服务端重新数出来的,不是这里减一 —— 静默失败会体现为数字没动。
+        toast(fmt(DATA.strings['projects.forget-done'],
+          {name:plan.name,count:res.body.remainingCount}));
+        load();
+      })
+      .catch(function(e){ go.disabled=false;
+        toast(fmt(DATA.strings['projects.forget-failed'],{error:String(e)}),true); });
     });
   }
 

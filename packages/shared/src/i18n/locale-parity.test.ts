@@ -257,8 +257,16 @@ describe("i18n locale parity census", () => {
   // 3 条结果:`done` / `mismatch`(确认时 N 个、实际删了 M 个 —— 服务端按当前磁盘
   // 重算,这个窗口不用锁去消除,而是照实报出来)/ `failed`。
   // 纯增量,按上面的豁免不重跑 dead-key scan。
+  // 2026-08-20 (项目注销): 1033 → 1045。净 +12,全部新增,全在
+  // `cli.console.config.projects.forget*`。控制台第二个不可逆能力,而这一个删的不是
+  // Fabric 自己留下的文件,是这台机器对一个项目的记忆 —— 所以文案里两条必须自己占
+  // 一个 key:`forget-cost`(知识还在库里,但不再属于任何项目、不会再浮现)与
+  // `forget-current`(站在里面的那个项目为什么不给注销)。
+  // 3 条 where 前缀是三处归属各一条,按项目实际命中哪几处逐条列出;`forget-nothing`
+  // 是三处都没有时的那句 —— 不列空清单让人以为要删的东西没被算进去。
+  // 纯增量,按上面的豁免不重跑 dead-key scan。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(1033);
+    expect(enKeys.length).toBe(1045);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {

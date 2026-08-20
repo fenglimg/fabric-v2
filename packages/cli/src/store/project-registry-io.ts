@@ -241,6 +241,40 @@ export async function deregisterProjectByPath(
 }
 
 /**
+ * Drop every registry entry carrying `projectId` — the console's deregister arm.
+ *
+ * By id rather than by path because that is what the caller has: the console's
+ * project list is merged on `project_id`, and two of its three sources cannot
+ * supply a path at all. The id is reversed back to paths HERE, against the same
+ * registry read the page rendered from, so the request never has to carry one
+ * (the deregister endpoint would otherwise be a body that names a directory to
+ * delete from).
+ *
+ * Plural on purpose: `registerProject` already tolerates one id under several
+ * paths (it prunes them on re-register), so an id-keyed removal that stopped at
+ * the first hit would leave the rest behind and report success.
+ *
+ * Deletion itself goes through {@link deregisterProjectByPath} rather than a
+ * second `delete registry.projects[...]` — one removal implementation, so a
+ * future change to what removal means cannot apply to only one of the callers.
+ *
+ * @returns the paths actually removed.
+ */
+export async function deregisterProjectById(
+  projectId: string,
+  globalRoot?: string,
+): Promise<string[]> {
+  const paths = (await listRegisteredProjects(globalRoot))
+    .filter((entry) => entry.projectId === projectId)
+    .map((entry) => entry.path);
+  const removed: string[] = [];
+  for (const path of paths) {
+    if (await deregisterProjectByPath(path, globalRoot)) removed.push(path);
+  }
+  return removed;
+}
+
+/**
  * List every registered project, with `stale` derived from disk at read time.
  *
  * Reading never writes — not even to create or normalize the file.

@@ -15,6 +15,10 @@ import {
 
 import { paint } from "../colors.js";
 import { applyCleanup, type CleanupRequest } from "../console/cleanup.js";
+import {
+  applyProjectDeregister,
+  type DeregisterRequest,
+} from "../console/project-deregister.js";
 import { collectGlobalConfigView } from "../console/global-config-view.js";
 import {
   applyGlobalConfigEdit,
@@ -83,6 +87,7 @@ const WRITE_ROUTES = new Set([
   "/api/repair",
   "/api/scan",
   "/api/cleanup",
+  "/api/projects/deregister",
 ]);
 
 const STATIC_ASSETS: Record<string, { file: string; type: string }> = {
@@ -406,6 +411,18 @@ export async function startPreviewServer(options: RunPreviewOptions = {}): Promi
             // by the same collectors the page rendered from.
             const result = await applyCleanup(
               (await readJsonBody(req)) as CleanupRequest | null,
+              projectRoot,
+            );
+            if (result.ok) sendJson(res, 200, result);
+            else sendJson(res, result.status, { error: result.error });
+            return;
+          }
+          if (pathname === "/api/projects/deregister") {
+            // The body names a ROW, not a directory, and an unconfirmed call
+            // writes nothing — it returns the plan the user is about to approve.
+            // See project-deregister.ts.
+            const result = await applyProjectDeregister(
+              (await readJsonBody(req)) as DeregisterRequest | null,
               projectRoot,
             );
             if (result.ok) sendJson(res, 200, result);

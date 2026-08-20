@@ -47,22 +47,30 @@
 
 ## W3 — 注销项目（唯一新写面，唯一不可逆）
 
-- [ ] `project-registry-io.ts` 补 `deregisterProjectById`（内部按 `project_id` 反查路径后复用既有 `deregisterProjectByPath`，不另写一份删除逻辑）
-- [ ] 全局配置补"删除 `projects[<id>]` 整段"的写函数（`applyGlobalConfigEdit` 只改单键，不覆盖此场景）
-- [ ] bindings 补"删除 `project_id` 匹配的 `*_resolved.json`"的写函数
-- [ ] 新建 handler `applyProjectDeregister(body, launchDir)`：body 只收 `{ projectId, scope }`，**不收路径**；三处归属从 `collectKnownProjects(launchDir)` 的返回对象里取
-- [ ] `preview.ts` 的 `WRITE_ROUTES` 加入 `/api/projects/deregister`
-- [ ] 拒绝分支：未知 id → 404；缺 id / 非字符串 → 400；`scope.kind==="machine"` → 400；**当前项目 → 409 并说明理由**
-- [ ] `remainingCount` 由重新跑 `collectKnownProjects` 得出，不用 `before - 1`
-- [ ] 切换器两步确认 UI：首点展开面板，逐条列出将被改动的具体位置（注册表行 / 配置段 / binding 文件名）→「确认注销」才 POST →取消则磁盘零变化
-- [ ] 用例：正向注销（三处都命中）/ 只有 id 无路径的项目（注册表跳过、另两处命中）/ 只在注册表的项目（另两处跳过）
-- [ ] 用例：四条拒绝分支各一条
-- [ ] 守卫用例：`GET /api/projects/deregister === 405` **且**同用例断言 `GET /api/integrations === 200`（机制级）
-- [ ] 变异：把"未被选中的项目零触碰"的过滤放宽，断言变红
-- [ ] **回滚点**：真机执行前先把 `~/.fabric/state/` 与 `fabric-global.json` 整体复制到一次性目录，在副本上跑一遍，逐项比对只动了该动的（AC3）
-- [ ] 真机：注销 werewolf-minigame-5sp3 / werewolf-minigame-vest-7sp4 / 3 个 id-only / 1 个未绑 store，切换器只剩 ccpm / pcf / werewolf-minigame（AC1）
+- [x] `project-registry-io.ts` 补 `deregisterProjectById`（内部按 `project_id` 反查路径后复用既有 `deregisterProjectByPath`，不另写一份删除逻辑）
+- [x] 全局配置补"删除 `projects[<id>]` 整段"的写函数（`applyGlobalConfigEdit` 只改单键，不覆盖此场景）
+- [x] bindings 补"删除 `project_id` 匹配的 `*_resolved.json`"的写函数
+- [x] 新建 handler `applyProjectDeregister(body, launchDir)`：body 只收 `{ projectId, scope }`，**不收路径**；三处归属从 `collectKnownProjects(launchDir)` 的返回对象里取
+- [x] `preview.ts` 的 `WRITE_ROUTES` 加入 `/api/projects/deregister`
+- [x] 拒绝分支：未知 id → 404；缺 id / 非字符串 → 400；`scope.kind==="machine"` → 400；**当前项目 → 409 并说明理由**
+- [x] `remainingCount` 由重新跑 `collectKnownProjects` 得出，不用 `before - 1`
+- [x] 切换器两步确认 UI：首点展开面板，逐条列出将被改动的具体位置（注册表行 / 配置段 / binding 文件名）→「确认注销」才 POST →取消则磁盘零变化
+- [x] 用例：正向注销（三处都命中）/ 只有 id 无路径的项目（注册表跳过、另两处命中）/ 只在注册表的项目（另两处跳过）
+- [x] 用例：四条拒绝分支各一条
+- [x] 守卫用例：`GET /api/projects/deregister === 405` **且**同用例断言 `GET /api/integrations === 200`（机制级）
+- [x] 变异：把"未被选中的项目零触碰"的过滤放宽，断言变红
+- [x] **回滚点**：真机执行前先把 `~/.fabric/state/` 与 `fabric-global.json` 整体复制到一次性目录，在副本上跑一遍，逐项比对只动了该动的（AC3）
+- [x] 真机：注销 werewolf-minigame-5sp3 / werewolf-minigame-vest-7sp4 / 3 个 id-only / 1 个未绑 store，切换器只剩 ccpm / pcf / werewolf-minigame（AC1）
 
 **回滚点**：本批唯一不可逆。副本演练通过之前不碰真实 `~/.fabric`。
+
+**W3 实测（2026-08-20，副本 7793 → 真机 7792）**
+
+- **偏离计划一处：请求体带的是 row key 而不是 `projectId`。** 计划假设每个项目都有 id，真机上不成立 —— `werewolf-minigame-8sp2` 是 `registry-only`（装了 Fabric 但从没绑过 store，于是 `.fabric/fabric-config.json` 里根本没有 `project_id`，KT-PIT-0102）。按 id 命名行会让**恰好最该被清掉的那个项目永久不可移除**。改为 `MergedProject.key`（有 id 用 id，无 id 用 `path:<path>`），服务端把 key 匹配回重新合并出的列表，然后只用**匹配到的那一行自己的字段**去删 —— 请求依然不能指向页面没显示过的东西（KT-PIT-0106）。计划里的 `scope.kind==="machine"` → 400 这条随之取消：body 不再收 scope。
+- **两步确认是服务端保证的，不是前端自觉**：不带 `confirm` 的同一个端点在服务端是纯读，返回计划。「点开看看再取消」磁盘零变化因此是构造性的 —— 副本上比对 9 个文件 + 全局配置的 sha，取消后逐行一致。
+- **变异 5 条全部杀掉**：① `deregisterProjectById` 去掉按 id 过滤 → 2 红（含「邻居项目逐字节不变」）；② bindings 改按文件名匹配而非文件内 `project_id` → 4 红；③ 去掉 `confirm` 门 → 1 红（正是「未确认写不了」那条）；④ 未知 key 兜底取第一行 → 404 那条红；⑤ 从 `WRITE_ROUTES` 里删掉这条路由 → 守卫 2 条红。
+- **副本演练（`/tmp/fabric-rehearsal`，整份 state + fabric-global.json 拷贝，stores 软链）**：9 → 3，逐项 diff 只少了 5 个 binding 文件、`projects.json` 变了一次，其余 sha 一致。
+- **真机（AC1 / AC3）**：同一套 UI 操作走完，`/api/scopes` 现在只剩 machine / ccpm / pcf / werewolf-minigame 且 `blockedByReason` 为空（那三行「另有 N 个…」的提示也一并消失）。逐项 diff 与副本形状完全一致；**`fabric-global.json` 逐字节未变** —— 被注销的 6 个项目没有一个在 `projects` 段里有条目，所以 config 那条臂在真机上没被触发（它由单测覆盖）。备份留在 `/tmp/fabric-real-backup-state` 与 `/tmp/fabric-real-backup-global.json`。
 
 ## W4 — 配色收敛（改动面最广，全部可逆）
 

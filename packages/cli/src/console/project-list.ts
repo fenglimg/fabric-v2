@@ -77,6 +77,22 @@ export type ProjectOrigin =
   | "current-only";
 
 export interface MergedProject {
+  /**
+   * How a request names THIS ROW. The id when there is one, and otherwise the
+   * path behind a `path:` marker.
+   *
+   * A `registry-only` project has no id at all — `project_id` is only written
+   * when a store is bound, so an install that never bound one has nothing but a
+   * directory (KT-PIT-0102). This machine has such a row today, and it is one
+   * the user wants to remove, so "name rows by project_id" would leave exactly
+   * the project that is hardest to reason about permanently unremovable.
+   *
+   * A key is NOT a path the server will act on. Endpoints re-derive this list
+   * and operate on the MATCHED ROW's own fields, so a key naming something the
+   * list does not contain resolves to nothing — the same "the set comes from the
+   * code that displayed it" rule `/api/cleanup` follows.
+   */
+  key: string;
   /** null only for `registry-only`. */
   projectId: string | null;
   /** null for `config-only` — unknown, not "none". */
@@ -150,6 +166,7 @@ export function mergeProjectList(input: {
     // it is always its own row — several such rows can coexist.
     if (projectId !== null) claimedIds.add(projectId);
     merged.push({
+      key: projectId ?? `path:${entry.path}`,
       projectId,
       path: entry.path,
       name: basename(entry.path),
@@ -183,6 +200,7 @@ export function mergeProjectList(input: {
     const isCurrent = id === currentProjectId;
     const path = isCurrent ? currentProjectPath : null;
     merged.push({
+      key: id,
       projectId: id,
       path,
       name: path === null ? id : basename(path),

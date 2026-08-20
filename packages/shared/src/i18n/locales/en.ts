@@ -80,6 +80,21 @@ export const enMessages: Messages = {
     "not registered (installed by an older version, or the repo has moved)",
   "cli.console.config.projects.stale": "the registered path no longer exists",
   "cli.console.config.projects.inherited": "inherited",
+  "cli.console.config.projects.forget": "Forget this project",
+  "cli.console.config.projects.forget-intro":
+    "Remove it from this machine. Every location that will be deleted is listed below; nothing is touched until you confirm.",
+  "cli.console.config.projects.forget-cost":
+    "This cannot be undone. Anything it archived into a knowledge base stays there, but it belongs to no project any more and will not surface in any repo.",
+  "cli.console.config.projects.forget-where-registry": "its row in this machine's registry",
+  "cli.console.config.projects.forget-where-config": "its settings segment in the global config",
+  "cli.console.config.projects.forget-where-bindings": "knowledge-base binding snapshot",
+  "cli.console.config.projects.forget-nothing": "This machine holds no record of it any more.",
+  "cli.console.config.projects.forget-confirm": "Forget it",
+  "cli.console.config.projects.forget-cancel": "Cancel",
+  "cli.console.config.projects.forget-current":
+    "This is the project the console is running in; it cannot be forgotten from here.",
+  "cli.console.config.projects.forget-done": "Forgot {name} — {count} projects left on this machine",
+  "cli.console.config.projects.forget-failed": "Could not forget it: {error}",
   "cli.console.config.stores.title": "Per knowledge base",
   "cli.console.config.stores.intro":
     "Properties of a knowledge base itself. They travel with the store and are shared by the whole team, so they belong to no single project.",

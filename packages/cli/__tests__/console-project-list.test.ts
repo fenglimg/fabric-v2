@@ -141,6 +141,7 @@ describe("mergeProjectList", () => {
     });
     expect(rows).toEqual([
       {
+        key: "p-here",
         projectId: "p-here",
         path: "/repos/my-app",
         name: "my-app",
@@ -174,6 +175,7 @@ describe("mergeProjectList", () => {
     });
     expect(rows).toEqual([
       {
+        key: "p-here",
         projectId: "p-here",
         path: "/repos/my-app",
         name: "my-app",
@@ -276,5 +278,30 @@ describe("mergeProjectList", () => {
       currentProjectPath: null,
     });
     expect(rows.map((r) => r.path)).toEqual(["/repos/one", "/repos/two"]);
+    // ...and each still gets its own way to be named by a request. Keying rows
+    // on `projectId` alone would give both the same key (null), so a request
+    // naming one of them would be a request naming either.
+    expect(new Set(rows.map((r) => r.key)).size).toBe(2);
+  });
+
+  it("gives every row a key, and never a bare path", () => {
+    // The key is how a request names a row. A registry entry with no
+    // `project_id` — an install that never bound a store (KT-PIT-0102) — still
+    // needs one, or it becomes the one project that can never be acted on.
+    // The `path:` marker keeps it from being mistaken for a directory the
+    // server should resolve: endpoints match keys against this list and then
+    // use the MATCHED ROW's own fields.
+    const rows = mergeProjectList({
+      registry: [reg("/repos/one"), reg("/repos/two", "p-two")],
+      configuredIds: ["p-cfg"],
+      boundIds: [],
+      currentProjectId: null,
+      currentProjectPath: null,
+    });
+    const byPath = Object.fromEntries(rows.map((r) => [r.path ?? r.projectId, r.key]));
+    expect(byPath["/repos/one"]).toBe("path:/repos/one");
+    expect(byPath["/repos/two"]).toBe("p-two");
+    expect(byPath["p-cfg"]).toBe("p-cfg");
+    expect(rows.every((r) => r.key.length > 0)).toBe(true);
   });
 });
