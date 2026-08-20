@@ -99,7 +99,13 @@ export const enMessages: Messages = {
   "cli.console.config.inherited-from": "Inherited from {source}; nothing set here",
   "cli.console.config.scope-note":
     'The switcher is on "{name}". This page is machine-wide, so changing scope does not change the values here — it only decides which row under "Per-project settings" opens first.',
-  "cli.console.config.reset": "Reset to default",
+  // Removing this layer's entry, not writing the default into it — the two
+  // differ in that removal hands the decision back to the layer below while
+  // writing the default pins it. "Reset to default" read as the latter, while
+  // the receipt after clicking (reset-done) correctly described the former.
+  "cli.console.config.reset": "Remove setting here",
+  "cli.console.config.multi-hint":
+    "Saving with nothing ticked means an explicit “none of them”. To withdraw the setting entirely and hand the decision back to the layer below, use “Remove setting here” — it appears only once this layer holds a value.",
   "cli.console.config.reset-done": "Removed from {target}; the layer below decides again.",
   "cli.console.config.preset.title": "Reminder frequency",
   "cli.console.config.preset.intro":
@@ -190,8 +196,16 @@ export const enMessages: Messages = {
   "cli.console.integrations.behaviors.unregistered":
     "The file is there but not registered in the client's config — it never fires.",
   "cli.console.integrations.behaviors.file-missing": "The script is not installed.",
-  "cli.console.integrations.behaviors.no-keys": "Nothing to tune.",
-  "cli.console.integrations.behaviors.shared": "Also affected by “{label}”, set under “{owner}” above.",
+  "cli.console.integrations.behaviors.no-keys":
+    "Nothing to tune here: this is either the record the other behaviours are computed from — switching it off would disable them too — or it simply does one thing.",
+  "cli.console.integrations.behaviors.shared":
+    "Also affected by “{label}”; the control for it is drawn under “{owner}”.",
+  "cli.console.integrations.behaviors.goto": "Jump to this setting",
+  "cli.console.integrations.behaviors.turn-off":
+    "To get fewer reminders there are three levels: setting “Prompt verbosity” to silent mutes all of them; “Reminders turned off for good” switches them off by type; and three more switches (cite accounting, AI-proposed archiving, semantic search) live on the Settings page.",
+  "cli.console.integrations.behaviors.turn-off-hook":
+    "Stopping a hook outright means editing the client's own config file, which the console does not do — it changes Fabric's settings, not Claude Code's or Codex's.",
+  "cli.console.integrations.behaviors.turn-off-link": "Open Settings",
   "cli.console.integrations.repair.title": "Repair",
   "cli.console.integrations.repair.intro":
     "Rewrite these files from this version's templates. Hand edits are overwritten; output appears below as it runs.",

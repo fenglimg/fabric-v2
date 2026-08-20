@@ -486,6 +486,7 @@ function chromeStrings(): Record<string, string> {
     "modified",
     "inherited-from",
     "scope-note",
+    "multi-hint",
     "reset",
     "reset-done",
     "preset.title",

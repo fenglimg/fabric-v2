@@ -567,6 +567,10 @@ function chromeStrings(): Record<string, string> {
     "behaviors.file-missing",
     "behaviors.no-keys",
     "behaviors.shared",
+    "behaviors.goto",
+    "behaviors.turn-off",
+    "behaviors.turn-off-hook",
+    "behaviors.turn-off-link",
     "repair.title",
     "repair.intro",
     "repair.install",
@@ -600,6 +604,7 @@ function chromeStrings(): Record<string, string> {
     "reset",
     "reset-done",
     "env-locked",
+    "multi-hint",
     // Provenance, borrowed for the same reason the buttons are: a behaviour row
     // and a settings row are the same row, and two vocabularies for one layer
     // would have this page call `defaults` something the settings page does not.

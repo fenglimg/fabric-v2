@@ -18,6 +18,18 @@
     border:1px solid currentColor;color:var(--muted-foreground);margin-left:6px}
   .tag.on{color:var(--primary)}
   .tag.off{color:var(--warning)}
+  /* 指向别处控件的引用。长得像正文里的一个词,不像按钮 —— 它做的事是导航,
+     不是提交,给它按钮的分量会让人以为点下去会改什么。 */
+  .goto{font:inherit;color:var(--primary);background:none;border:0;padding:0;
+    cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+  .goto:focus-visible{outline:2px solid var(--ring);outline-offset:2px;border-radius:3px}
+  /* 跳过去之后闪一下。只用背景色,不动尺寸 —— 高亮时改变布局会把它下面的行推走,
+     而读者的眼睛正盯着落点。 */
+  @keyframes frow-flash{from{background:var(--accent)}to{background:transparent}}
+  .frow.flash{animation:frow-flash 1.6s ease-out}
+  @media (prefers-reduced-motion:reduce){ .frow.flash{animation-duration:.01s} }
+  /* 关掉提醒的总导引。比普通卡片轻一档 —— 它是说明,不是这一段的主体。 */
+  .card.turnoff{background:var(--muted);border-style:dashed}
   /* 「这一页在说哪个项目」。等宽字用于路径 —— 它是要被拿去比对的字面量,不是散文。 */
   .scopeline{display:flex;align-items:center;gap:6px;margin:8px 0 0;
     font-size:var(--fs-1);font-family:var(--mono);color:var(--muted-foreground)}
@@ -129,7 +141,9 @@
           // 出处标签与配置页共用一个渲染器。这一页原先完全不画它,于是一个从
           // 全机器层继承下来的值,在这里和项目自己设的值长得一模一样 —— 而它们
           // 的「移除」按钮做的事完全不同。
-          return '<div class="frow'+(f.modified?' mod':'')+'">'+
+          // 每个 key 全页只画一次控件(owners 表保证),所以 key 就是这一行的唯一
+          // 锚点 —— 下面那些「控件画在别处」的引用靠它跳过来。
+          return '<div class="frow'+(f.modified?' mod':'')+'" id="k-'+esc(f.key)+'">'+
             '<div class="fmain">'+
             '<span class="flabel">'+esc(f.label)+'</span>'+
             '<span class="fkey">'+esc(f.key)+'</span>'+
@@ -140,8 +154,13 @@
     // 被多个 hook 读的 key 只画一次控件(在第一个读它的行为下),这里出一条指回去的
     // 引用 —— 同一个值画三个控件,存了一个另外两个就还显示旧值。
     var shared=b.shared.map(function(s){
-      return '<div class="note">'+fmt(S('behaviors.shared'),
-        {label:esc(s.label),owner:esc(s.owner)})+'</div>';
+      // 「在上面的 X 里调整」说了六遍,却从来没法点 —— 读者得自己在七张卡里找那个
+      // 名字。控件的位置是页面自己知道的事,让它带路,而不是描述路。
+      // 模板文本本身不含 HTML,所以先整体转义、再把两个占位符换成成品片段。
+      var link='<button type="button" class="goto" data-goto="'+esc(s.key)+'" title="'+
+        esc(S('behaviors.goto'))+'">'+esc(s.owner)+'</button>';
+      return '<div class="note">'+esc(S('behaviors.shared'))
+        .replace('{label}',esc(s.label)).replace('{owner}',link)+'</div>';
     }).join('');
     if(!keys&&!shared) keys='<div class="note">'+esc(S('behaviors.no-keys'))+'</div>';
     // 标题就是行为名。原本每张卡的标题都是同一句「调节项」—— 七个一模一样的
@@ -280,8 +299,18 @@
       SEL=DATA.clients.length?DATA.clients[0].id:null;
     var current=DATA.clients.filter(function(c){ return c.id===SEL; })[0];
 
+    // 「我想关掉某个提醒」是进这一页最常见的意图,而开关分散在三处、两页 ——
+    // 卡片逐张说「在别处调整」,却从没有一处说清那三处是什么。这一条把它说完,
+    // 并顺带承认控制台做不到的那件事(彻底停 hook 要改客户端配置),
+    // 免得读者在页面上找一个不存在的开关。
+    var turnOff='<div class="card turnoff">'+
+      '<div class="fdesc">'+esc(S('behaviors.turn-off'))+
+      ' <a class="goto" href="'+FabricScope.href('/config')+'">'+
+      esc(S('behaviors.turn-off-link'))+'</a></div>'+
+      '<div class="note">'+esc(S('behaviors.turn-off-hook'))+'</div></div>';
+
     document.getElementById('main').innerHTML=pageHead()+
-      sectionHead('activity',S('behaviors.title'),S('behaviors.intro'))+
+      sectionHead('activity',S('behaviors.title'),S('behaviors.intro'))+turnOff+
       DATA.behaviors.map(behaviorRow).join('')+'</section>'+
       sectionHead('folder',S('files.title'))+
       '<div class="split">'+clientList()+
@@ -306,6 +335,19 @@
     });
     document.querySelectorAll('[data-repair]').forEach(function(btn){
       btn.addEventListener('click',function(){ repair(btn); });
+    });
+    // 跳过去还要能认出来。滚动到位但不闪一下,读者落在一屏参数中间,还是得自己
+    // 数是哪一行 —— 引用指的是「那一个」,不是「那一带」。
+    document.querySelectorAll('[data-goto]').forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var row=document.getElementById('k-'+btn.getAttribute('data-goto'));
+        if(!row) return;
+        row.scrollIntoView({behavior:'smooth',block:'center'});
+        row.classList.remove('flash');
+        // 强制回流,否则同一行连点两次不会重放动画。
+        void row.offsetWidth;
+        row.classList.add('flash');
+      });
     });
     FabricField.bind(document,{
       post:post,

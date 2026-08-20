@@ -84,7 +84,12 @@ export const zhCNMessages: Messages = {
   "cli.console.config.inherited-from": "继承自{source},此处没有设置",
   "cli.console.config.scope-note":
     "顶栏当前选的是「{name}」。这一页是全机器的配置,换作用域不会换掉这里的值 —— 它只决定下面「按项目单独设置」先展开哪一个。",
-  "cli.console.config.reset": "恢复默认",
+  // 这个按钮做的是「把这一层的这条设置删掉」,不是「把值写回默认」—— 两者的区别
+  // 在于删掉之后下层还能再决定,写回默认则钉死了。原来叫「恢复默认」,读起来像后者,
+  // 而点完之后的回执(reset-done)说的却是前者:对的话说晚了一步。
+  "cli.console.config.reset": "移除此处设置",
+  "cli.console.config.multi-hint":
+    "全都不勾再保存,意思是明确地「一个都不关」;想把这条设置整个撤掉、交回下层决定,用「移除此处设置」—— 只有这一层真设过时它才会出现。",
   "cli.console.config.reset-done": "已从 {target} 移除,改由下层决定。",
   "cli.console.config.preset.title": "提醒频率",
   "cli.console.config.preset.intro":
@@ -164,8 +169,15 @@ export const zhCNMessages: Messages = {
   "cli.console.integrations.behaviors.inactive": "未运行",
   "cli.console.integrations.behaviors.unregistered": "文件在，但没登记进客户端配置 —— 不会被触发。",
   "cli.console.integrations.behaviors.file-missing": "脚本文件不在。",
-  "cli.console.integrations.behaviors.no-keys": "没有可调项。",
-  "cli.console.integrations.behaviors.shared": "也受「{label}」影响，在上面的「{owner}」里调整。",
+  "cli.console.integrations.behaviors.no-keys":
+    "这一项没有调节项：它要么是其他行为赖以计算的那份记录，关掉会让它们一起失灵，要么本来就只做一件事。",
+  "cli.console.integrations.behaviors.shared": "也受「{label}」影响，控件画在「{owner}」下面。",
+  "cli.console.integrations.behaviors.goto": "跳到这个设置",
+  "cli.console.integrations.behaviors.turn-off":
+    "想少收到提醒，有三个层次：把「提示详细程度」设成 silent 是全部静音；「永久关闭的提醒类型」是按类型关；另有三个开关（引用记账、AI 主动提议归档、语义检索）在配置页。",
+  "cli.console.integrations.behaviors.turn-off-hook":
+    "把某个 hook 彻底停掉需要改客户端自己的配置文件，控制台不做这件事 —— 它只改 Fabric 的设置，不改 Claude Code / Codex 的。",
+  "cli.console.integrations.behaviors.turn-off-link": "打开配置页",
   "cli.console.integrations.repair.title": "修复",
   "cli.console.integrations.repair.intro":
     "按当前版本的模板把这些文件重写一遍。手改过的内容会被覆盖，输出实时显示在下方。",

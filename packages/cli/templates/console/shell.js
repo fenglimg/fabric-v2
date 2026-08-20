@@ -360,7 +360,7 @@
      * @param f       one FieldView from /api/config or /api/integrations
      * @param target  the write target, serialized into the button's dataset
      * @param strings the page's chrome strings; needs `save`, `reset`,
-     *                `env-locked`
+     *                `env-locked`, and `multi-hint` for set-valued fields
      */
     control: function (f, target, strings) {
       if (!f.editable) {
@@ -445,6 +445,15 @@
           esc(f.effective) +
           '" />' +
           actions +
+          // A box of checkboxes with one Save button reads as one-way: there is
+          // no visible way to undo it, and "untick everything" and "withdraw the
+          // setting" look like the same gesture while meaning opposite things —
+          // an explicit empty list versus letting the layer below decide again.
+          // The reset button says the second, but only appears once this layer
+          // holds a value, so on a fresh field the distinction is invisible.
+          '<div class="note">' +
+          esc(strings["multi-hint"]) +
+          "</div>" +
           "</div>"
         );
       }

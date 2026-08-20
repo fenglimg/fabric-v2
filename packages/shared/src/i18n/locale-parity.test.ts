@@ -234,8 +234,19 @@ describe("i18n locale parity census", () => {
   // 没有任何地方能证明它生效了。
   // 同轮另有 `cli.console.config.reset` 等**值**变更(见 W2),值变更不进 census。
   // 纯增量,按上面的豁免不重跑 dead-key scan。
+  // 2026-08-20 (控制台可操作性 W2): 1013 → 1018。净 +5,全部是新增。这一批补的是
+  // 「页面说了在别处,却从没说过别处是哪里」:
+  // 4 条 `cli.console.integrations.behaviors.*` —— `goto`(跳转按钮的标题)、
+  // `turn-off`(关掉提醒的三个层次:全局静音 / 按类型关 / 配置页那三个开关)、
+  // `turn-off-hook`(彻底停一个 hook 要改客户端自己的配置,控制台不做 —— 说清做不到,
+  // 比让人在页面上找一个不存在的开关好)、`turn-off-link`(去配置页)。
+  // 1 条 `cli.console.config.multi-hint` —— 多选控件只有一个「保存」时读起来是单向的,
+  // 而「全不勾再保存」与「移除此处设置」看着像同一个手势、意思正好相反。
+  // 另有 `cli.console.config.reset` 改了**值**没改 key(「恢复默认」→「移除此处设置」:
+  // 它做的是删掉这一层的条目、把决定交回下层,不是把默认值写进来钉死),值变更不进 census。
+  // 纯增量,按上面的豁免不重跑 dead-key scan。
   it("key count matches the pinned census (bump ONLY after re-running the dead-key scan)", () => {
-    expect(enKeys.length).toBe(1013);
+    expect(enKeys.length).toBe(1018);
   });
 
   it("no key resurrects the deleted v1.8 dashboard namespace", () => {
