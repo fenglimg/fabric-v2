@@ -29,13 +29,21 @@
 
 ## W2 — token 冲突（单点改动 + 机制级回归闸）
 
-- [ ] 查出交集：既被共享外壳（`.navbar` / `.seg` / `.frow` / `.fx-*` / `.fctl`）消费、又被任一页面内联 `<style>` 重定义的 token 名
-- [ ] 该交集内的 token 在 `shell.css` 改用 `--fx-` 前缀，`:root` 与 `[data-theme="dark"]` 两处同步；不做全量重命名
-- [ ] 新增断言：解析 `shell.css` 取 `CHROME_TOKENS`，解析五个页面模板取各自重定义的 token 名，断言**交集为空**
-- [ ] 变异：让 `.seg:hover` 重新消费一个被页面重定义的名字，该断言必须变红
-- [ ] 真机五页实测 `getComputedStyle(.seg:hover).backgroundColor` 取值一致，且知识页该值 ≠ `--primary`（AC4）
+- [x] 查出交集：既被共享外壳（`.navbar` / `.seg` / `.frow` / `.fx-*` / `.fctl`）消费、又被任一页面内联 `<style>` 重定义的 token 名
+- [x] 该交集内的 token 在 `shell.css` 改用 `--fx-` 前缀，`:root` 与 `[data-theme="dark"]` 两处同步；不做全量重命名
+- [x] 新增断言：解析 `shell.css` 取 `CHROME_TOKENS`，解析五个页面模板取各自重定义的 token 名，断言**交集为空**
+- [x] 变异：让 `.seg:hover` 重新消费一个被页面重定义的名字，该断言必须变红
+- [x] 真机五页实测 `getComputedStyle(.seg:hover).backgroundColor` 取值一致，且知识页该值 ≠ `--primary`（AC4）
 
 **验证**：五页悬停数值比对 + 变异
+
+**W2 实测（2026-08-20，真机 7792）**
+
+- **交集实测为 6 个**：`--accent` / `--border` / `--radius` / `--radius-sm` / `--sans` / `--mono` —— 只有 `lumen.html` 重定义 token（其余四页的内联 `<style>` 一个 token 都不声明），所以交集完全由 lumen 的调色板与 `shell.css` 的消费面相交产生。
+- **改法**：`shell.css` 内 30 处 `var()` 消费点改读 `--fx-*`；旧名的**声明保留**（四个控制台页的内联样式仍在读 `--accent` / `--border` / `--radius` / `--mono`，而它们不重定义这些名字，因此不构成冲突）。`--fx-*` 必须是**字面值不是别名** —— 写成 `--fx-accent: var(--accent)` 会在下一跳重新继承页面的覆盖、把 bug 原样装回来，测试里有一条专门钉这点。
+- **回归闸**（`console-chrome-tokens.test.ts`，3 条）：解析 `shell.css` 的 `var()` 读取集 × 五个模板内联 `<style>` 的声明集，断言交集为空；另加一条**非空性守卫**（lumen 声明数 > 20 且含 `--accent`），否则 lumen 哪天不再声明调色板，交集断言会因为错误的原因变绿。解析前先剥 CSS 注释 —— 两个文件都在注释里引用了正在讨论的 token 名。
+- **变异**：把 `.seg:hover` 的 `background` 改回 `var(--accent)`，断言变红且直接点名 `lumen.html: --accent`。
+- **真机五页**：`--fx-accent` 五页一致均为 `#f4f4f5`；知识页上 `--accent` = `--primary` = `#2563eb` 而 `--fx-accent` ≠ 二者（AC4 / AC5）。悬停「关联图」实拍为淡灰药丸，视觉重量低于选中态。
 
 ## W3 — 注销项目（唯一新写面，唯一不可逆）
 

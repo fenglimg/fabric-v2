@@ -138,6 +138,36 @@
   --scope-project-color: #2563eb;
   --scope-personal-color: #7c3aed;
 
+  /* --- chrome tokens (fx-) -----------------------------------------------
+   * The tokens the SHARED CHROME reads. Everything in this file resolves its
+   * colours, radii and fonts through these six names and no others.
+   *
+   * They exist because a token name is only as private as the pages that load
+   * this file. lumen.html declares its own `:root` AFTER the `<link>` to this
+   * stylesheet, so any name it happens to reuse silently wins here — and it
+   * reuses `--accent`, which it means as "brand blue" while this file means it
+   * as "the pale grey a row goes when you hover it". The nav tab strip is
+   * shared chrome, so on the knowledge page alone `.seg:hover` was painted
+   * solid #2563eb: an unselected tab louder than the selected one. Nothing in
+   * lumen's stylesheet mentions `.seg`; the collision was one level below the
+   * selector, at the token.
+   *
+   * These MUST hold literal values, never `var(--accent)`. An alias would just
+   * re-inherit the page's override one hop later and restore the bug.
+   *
+   * The un-prefixed names below stay declared: the four console pages read
+   * them from their own inline styles, and none of those pages redefines them,
+   * so they are not part of the collision. `console-chrome-tokens.test.ts`
+   * asserts the two sets stay disjoint. */
+  --fx-accent: #f4f4f5;
+  --fx-border: #e4e4e7;
+  --fx-radius: 10px;
+  --fx-radius-sm: 6px;
+  --fx-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --fx-mono: "Fira Code", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas,
+    monospace;
+
   /* --- legacy aliases ----------------------------------------------------
    * lumen.html (zero-regression protected, cannot be edited) and graph.html
    * consume these names. They are NOT dead — they are the reason those two
@@ -150,7 +180,7 @@
   --bg: var(--canvas);
   --surface: var(--card);
   --surface-2: var(--muted);
-  --surface-hover: var(--accent);
+  --surface-hover: var(--fx-accent);
   --border-strong: var(--input);
   --text: var(--foreground);
   --text-secondary: var(--muted-foreground);
@@ -198,6 +228,12 @@
   --ring: #60a5fa;
   --canvas: #09090b;
 
+  /* Chrome tokens, dark. Only the two that actually differ; radii and fonts
+   * are theme-invariant, so re-declaring them here would just be a second
+   * place to forget. */
+  --fx-accent: #27272a;
+  --fx-border: rgba(255, 255, 255, 0.1);
+
   --accent-light: rgba(96, 165, 250, 0.14);
   --edge: rgba(160, 160, 160, 0.26);
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
@@ -212,7 +248,7 @@ body {
   margin: 0;
   background: var(--canvas);
   color: var(--foreground);
-  font-family: var(--sans);
+  font-family: var(--fx-sans);
   font-size: var(--fs-4);
   -webkit-font-smoothing: antialiased;
 }
@@ -287,7 +323,7 @@ body {
   height: 52px;
   padding: 0 16px;
   background: var(--card);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--fx-border);
 }
 
 .navbar .nav-title {
@@ -366,7 +402,7 @@ body {
 }
 
 .seg:hover {
-  background: var(--accent);
+  background: var(--fx-accent);
   color: var(--foreground);
 }
 
@@ -412,7 +448,7 @@ body {
 }
 
 .seg.active:hover {
-  background: var(--accent);
+  background: var(--fx-accent);
 }
 
 .seg[disabled],
@@ -446,8 +482,8 @@ body {
 }
 
 .scope-select:hover {
-  border-color: var(--border);
-  background: var(--accent);
+  border-color: var(--fx-border);
+  background: var(--fx-accent);
 }
 
 .scope-select:focus-visible {
@@ -506,11 +542,11 @@ body {
 .fx-btn.ghost {
   color: var(--foreground);
   background: transparent;
-  border-color: var(--border);
+  border-color: var(--fx-border);
 }
 
 .fx-btn.ghost:hover {
-  background: var(--accent);
+  background: var(--fx-accent);
   opacity: 1;
 }
 
@@ -521,7 +557,7 @@ body {
 }
 
 .fx-btn.quiet:hover {
-  background: var(--accent);
+  background: var(--fx-accent);
   color: var(--foreground);
   opacity: 1;
 }
@@ -555,7 +591,7 @@ body {
 }
 
 .fx-icon-btn:hover {
-  background: var(--accent);
+  background: var(--fx-accent);
   color: var(--foreground);
 }
 
@@ -585,7 +621,7 @@ body {
   flex-wrap: wrap;
   padding-bottom: 14px;
   margin-bottom: 18px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--fx-border);
 }
 
 .fx-page-title {
@@ -646,8 +682,8 @@ body {
 
 .fx-card {
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--fx-border);
+  border-radius: var(--fx-radius);
   padding: 14px 16px;
   box-shadow: none;
 }
@@ -693,8 +729,8 @@ body {
   gap: 6px;
   padding: 14px 16px;
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--fx-border);
+  border-radius: var(--fx-radius);
 }
 
 .fx-stat-label {
@@ -716,7 +752,7 @@ body {
 }
 
 .fx-stat-value.mono {
-  font-family: var(--mono);
+  font-family: var(--fx-mono);
   font-size: var(--fs-5);
 }
 
@@ -730,7 +766,7 @@ body {
   padding: 9px 0;
   font-size: var(--fs-3);
   line-height: var(--lh-normal);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--fx-border);
 }
 
 .fx-kv:last-child {
@@ -764,7 +800,7 @@ body {
   line-height: 1;
   white-space: nowrap;
   border-radius: 999px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--fx-border);
   color: var(--muted-foreground);
   background: transparent;
   vertical-align: middle;
@@ -816,14 +852,14 @@ body {
   font-weight: var(--fw-medium);
   color: var(--foreground);
   white-space: nowrap;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--fx-border);
 }
 
 .fx-table td {
   padding: 8px 10px;
   font-weight: var(--fw-medium);
   color: var(--foreground);
-  border-bottom: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--fx-border);
   vertical-align: middle;
 }
 
@@ -855,7 +891,7 @@ body {
   gap: 16px;
   height: 34px;
   margin-bottom: 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--fx-border);
   overflow-x: auto;
 }
 
@@ -930,11 +966,11 @@ body {
 
 .fx-empty-body code,
 .fx-code {
-  font-family: var(--mono);
+  font-family: var(--fx-mono);
   font-size: var(--fs-2);
   background: var(--muted);
   color: var(--foreground);
-  border-radius: var(--radius-sm);
+  border-radius: var(--fx-radius-sm);
   padding: 1px 5px;
 }
 
@@ -953,7 +989,7 @@ body {
 }
 
 .fx-mono {
-  font-family: var(--mono);
+  font-family: var(--fx-mono);
 }
 
 /* --- truncated identifiers ------------------------------------------------
@@ -972,7 +1008,7 @@ body {
 }
 
 .fx-ident-text {
-  font-family: var(--mono);
+  font-family: var(--fx-mono);
   font-size: var(--fs-2);
   color: var(--foreground);
   overflow: hidden;
@@ -1057,12 +1093,12 @@ body {
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  font-family: var(--mono);
+  font-family: var(--fx-mono);
   font-size: var(--fs-2);
   font-weight: var(--fw-medium);
   color: var(--muted-foreground);
   background: var(--muted);
-  border-radius: var(--radius-sm);
+  border-radius: var(--fx-radius-sm);
 }
 
 /* --- config field control ------------------------------------------------
@@ -1087,7 +1123,7 @@ body {
    * — see `.frow.mod::before`. */
   position: relative;
   padding: 7px 0 7px 14px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--fx-border);
   transition: var(--tx);
 }
 
@@ -1141,7 +1177,7 @@ body {
 }
 
 .fkey {
-  font-family: var(--mono);
+  font-family: var(--fx-mono);
   font-size: var(--fs-1);
   color: var(--muted-foreground);
 }
