@@ -376,10 +376,23 @@
       }
       var id = "c" + Math.random().toString(36).slice(2, 9);
       var t = esc(JSON.stringify(target));
-      // "Restore default" appears only where THIS layer actually holds a value.
-      // Offering it on an inherited row gives you a button that does nothing.
-      var reset = f.modified
-        ? '<button class="fx-btn ghost sm" data-reset="' +
+      // "Remove the setting made here" appears only where THIS layer actually
+      // holds a value. Offering it on an inherited row gives you a button that
+      // does nothing.
+      //
+      // It is NOT inside `.fx-actions`. The two write actions look alike and sit
+      // side by side, but they become available for opposite reasons:
+      //
+      //   save    — once the control's value differs from what it loaded with
+      //   remove  — whenever this layer holds a value, REGARDLESS of the control
+      //
+      // They shared the dirty-gated wrapper until 08-20, which made the remove
+      // button unreachable in practice: withdrawing a setting and letting the
+      // layer below decide again is precisely the gesture that does not touch
+      // the value, so the control never became dirty and the button never
+      // appeared. Every row on the integrations page was in that state.
+      var revert = f.modified
+        ? '<button class="fx-btn ghost sm fx-revert" data-reset="' +
           esc(f.key) +
           '" data-target="' +
           t +
@@ -397,15 +410,15 @@
         '">' +
         esc(strings.save) +
         "</button>";
-      // Both write actions live inside one wrapper that CSS hides until the
-      // control is dirty. Sixteen permanently-lit Save buttons on a page where
-      // nothing has been edited is sixteen invitations to press something that
-      // would do nothing — and it hides the one row you actually changed.
+      // Save exists in the DOM at all times but is only shown once the control
+      // is dirty. Sixteen permanently-lit Save buttons on a page where nothing
+      // has been edited is sixteen invitations to press something that would do
+      // nothing — and it hides the one row you actually changed.
       //
       // Hidden rather than re-rendered on change: re-rendering the row would
       // drop focus and caret position mid-typing, which is a worse bug than the
       // one being fixed.
-      var actions = '<div class="fx-actions">' + reset + save + "</div>";
+      var actions = '<div class="fx-row">' + revert + '<div class="fx-actions">' + save + "</div></div>";
 
       if (f.widget === "multiselect") {
         // The checkboxes only update the hidden input; saving still reads
@@ -440,7 +453,7 @@
           esc(f.effective) +
           '"><div class="chk">' +
           boxes +
-          '</div><input type="hidden" id="' +
+          '</div><input type="hidden" data-value-el id="' +
           id +
           '" value="' +
           esc(f.effective) +
@@ -462,7 +475,7 @@
       var input;
       if (f.widget === "select") {
         input =
-          '<select id="' +
+          '<select data-value-el id="' +
           id +
           '">' +
           (f.enumValues || [])
@@ -480,7 +493,7 @@
             .join("") +
           "</select>";
       } else {
-        input = '<input type="text" id="' + id + '" value="' + esc(f.effective) + '" />';
+        input = '<input type="text" data-value-el id="' + id + '" value="' + esc(f.effective) + '" />';
       }
       return (
         '<div class="fctl" data-dirty="false" data-initial="' +
@@ -506,12 +519,29 @@
       // loaded with — not when it has been touched. Typing a character and
       // deleting it again leaves you where you started, and the row should say
       // so rather than keep offering to save a no-op.
+      //
+      // The value is read from the element MARKED as carrying it, never from
+      // "the first input or select in the subtree". A set-valued control is a
+      // row of checkboxes followed by the hidden input that actually holds the
+      // comma-joined value, so document order hands you a checkbox — and the
+      // previous version special-cased that by treating a checkbox as the empty
+      // string. The result was a control whose measured value was the constant
+      // "" no matter what you ticked: on an unset field it matched the empty
+      // initial and the row was permanently clean (Save never appeared, ticking
+      // boxes did nothing), and on a field this layer had set it never matched
+      // and the row was permanently dirty. Same bug, opposite symptom.
+      //
+      // An explicit marker also keeps the three widgets on one code path, which
+      // is the property that made the bug possible to miss: text and select
+      // worked by accident of document order.
       function refresh(ctl) {
         if (!ctl) return;
-        var el = ctl.querySelector("input, select");
+        var el = ctl.querySelector("[data-value-el]");
         if (!el) return;
-        var now = el.type === "checkbox" ? "" : String(el.value);
-        ctl.setAttribute("data-dirty", now === ctl.getAttribute("data-initial") ? "false" : "true");
+        ctl.setAttribute(
+          "data-dirty",
+          String(el.value) === ctl.getAttribute("data-initial") ? "false" : "true",
+        );
       }
 
       scope.querySelectorAll(".fctl").forEach(function (ctl) {

@@ -1210,11 +1210,26 @@ body {
   cursor: not-allowed;
 }
 
-/* The write actions exist in the DOM at all times but are only shown once the
- * control's value differs from what it loaded with. Sixteen permanently-lit
- * Save buttons on a page where nothing has been edited is sixteen invitations
- * to press something that would do nothing. Hiding rather than re-rendering
- * keeps focus and scroll position intact while you type. */
+/* The two write actions sit side by side but appear for opposite reasons, so
+ * they are gated separately. `.fx-row` is only the shared layout; it carries no
+ * visibility rule of its own.
+ *
+ * Save exists in the DOM at all times but is only shown once the control's
+ * value differs from what it loaded with. Sixteen permanently-lit Save buttons
+ * on a page where nothing has been edited is sixteen invitations to press
+ * something that would do nothing. Hiding rather than re-rendering keeps focus
+ * and scroll position intact while you type.
+ *
+ * `.fx-revert` is NOT gated on dirty. Withdrawing a setting so the layer below
+ * decides again is the one gesture that does not change the control's value, so
+ * gating it on dirty made it unreachable — it is rendered only where this layer
+ * holds a value, and that condition is already the right one. */
+.fx-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .fx-actions {
   display: flex;
   align-items: center;
@@ -1275,7 +1290,7 @@ body {
   max-width: 380px;
 }
 
-.fctl.multi .fx-actions {
+.fctl.multi .fx-row {
   justify-content: flex-end;
 }
 

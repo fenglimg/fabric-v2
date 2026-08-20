@@ -58,6 +58,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "jsdom": "^30.0.1",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3"
   }
