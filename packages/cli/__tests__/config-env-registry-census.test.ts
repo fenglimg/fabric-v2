@@ -23,7 +23,7 @@
  * real reader by accident.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -33,14 +33,22 @@ import { getPanelFields, PANEL_ENV_OVERRIDES } from "@fenglimg/fabric-shared";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
-// Where a config reader can live. `.claude/hooks` is in the list because two of
-// the four overrides are read ONLY there — a census over packages/ alone would
-// report them as unread and delete them from the registry.
+// Where a config reader can live. The hook TEMPLATES are in the list because two
+// of the four overrides are read ONLY in a hook — a census over packages/*/src
+// alone reports them as unread and would delete them from the registry.
+//
+// The templates, not the installed `.claude/hooks/`. The installed copy is
+// produced by `fabric install` and is untracked, so it exists on a developer's
+// machine and NOT in a fresh checkout: this census was green locally and red in
+// CI with exactly those two entries, because `walk` treats a missing root as an
+// empty one. The template is the tracked source the installed copy is stamped
+// from — `test:upgrade-e2e` pins them byte-identical — so scanning it is both
+// checkout-independent and closer to the truth.
 const SCAN_ROOTS = [
   join(REPO_ROOT, "packages", "cli", "src"),
   join(REPO_ROOT, "packages", "server", "src"),
   join(REPO_ROOT, "packages", "shared", "src"),
-  join(REPO_ROOT, ".claude", "hooks"),
+  join(REPO_ROOT, "packages", "cli", "templates", "hooks"),
 ];
 
 const SOURCE_FILE = /\.(ts|mts|cts|js|mjs|cjs)$/;
@@ -119,6 +127,18 @@ describe("PANEL_ENV_OVERRIDES census", () => {
     // exclusion list would otherwise have to chase.
     expect(readEnvNames("set it with FABRIC_NUDGE_MODE=silent").size).toBe(0);
     expect(readEnvNames(`nudge_mode: "FABRIC_NUDGE_MODE",`).size).toBe(0);
+  });
+
+  it("every scan root exists, so no reader can go missing quietly", () => {
+    // `walk` swallows a missing root and returns nothing, which reads exactly
+    // like "this root contains no readers". That is how a root only present on a
+    // machine where `fabric install` had run made this census pass locally and
+    // fail in CI: the readers did not disappear, the place they live did.
+    // Asserting the roots exist turns "I could not look" into its own failure,
+    // separate from "I looked and found nothing".
+    for (const root of SCAN_ROOTS) {
+      expect(existsSync(root), `scan root missing: ${root}`).toBe(true);
+    }
   });
 
   it("the census finds readers at all", () => {
