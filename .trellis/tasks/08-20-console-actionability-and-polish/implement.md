@@ -73,7 +73,9 @@
 - [x] 全量 `pnpm -r test`
 - [x] `ui-metrics-probe.mjs` 静态半通过
 - [x] 九条逐条对照 AC1–AC13 勾验，未达成的写明原因而不是删判据
-- [ ] 归档判断：本轮若产出可复用教训（如"报告了却无法处置的状态是一类 UI 缺陷"），走 `fabric-archive`
+- [x] 归档判断：走了 `fabric-archive`。**归档 1 条、不归档 1 条**。
+  - **已落 pending**（store `fabric-team`）：`knowledge/pending/pitfalls/reused-age-fn-sign-bug-at-tighter-floor.md` —— 「复用一个为宽松阈值写的年龄判据到更紧的下限前，必须重新验算它在新边界的行为：旧下限可能一直在吸收一个符号错误」。`fab_recall` 查过近邻（KT-PIT-0108 同键双消费方、KT-PIT-0071 计数口径），无重复；pending backlog 只有 1 条无关条目，不触发复审 nudge。
+  - **判定不归档**：「报告了却无法处置的状态是一类 UI 缺陷」。它是本任务的出发点、不是本轮新得的判断，且写成知识条目后只是一句无触发条件、无检测线索的正确废话（活化闸的 `reached-but-inert`）。真正可复用的那一半已经落在 KT-PIT-0106/0107（读写集合必须同源、结果计数必须重读而非算差）里。
 
 ### AC1–AC13 逐条勾验
 
