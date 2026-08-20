@@ -18,7 +18,10 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "08-19-console-interface-quality",
+    "08-20-console-actionability-and-polish"
+  ],
   "parent": "08-17-fabric-console",
   "relatedFiles": [],
   "notes": "",

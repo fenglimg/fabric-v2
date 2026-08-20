@@ -55,7 +55,12 @@
 - [x] 浏览器侧 reader pump 已实跑（2026-08-19，`/integrations` 真实页面 + 桩流）。两条分支都走到：
   - **成功流**：请求体 `{"action":"doctor-fix","scope":"<id>"}`，无路径（与服务端按枚举拼 argv 的设计一致）；点击后两个按钮同时 `disabled`、`#rout` 由 `hidden` 转可见；三个 chunk 逐块累加（`""` → `fabric doctor --fix\n` → `+ ✓ 42 项通过\n` → `+ exit code: 0\n`），确认是边跑边显示而不是跑完一次性灌进去；结束时先出「已结束，页面已重新读取文件状态」的 toast，再 `load()` 重绘 —— 重绘换掉了 `#rout` 节点而正文从 `ROUT` 原样画回，即注释声称的行为；按钮在 `load()` 落地后恢复可用（1200ms 采样时仍 disabled，是 `load()` 在途，非卡死）。
   - **拒绝流**：400 + JSON `{error}` → 错误原文进 `.toast.bad`，按钮立刻恢复，`#rout` 保持空 —— 没有留下一段假装跑过的旧输出。
-- [ ] **仍未做**：真实命令的端到端执行。`install` / `doctor --fix` 会写用户的真实安装树与共享 store，需明确授权。2026-08-19 实测 `fabric doctor` 本仓有 7 项待处理，`--fix` 会：恢复 bootstrap 快照（会盖掉 `AGENTS.md` / `.fabric/AGENTS.md` / `.claude/settings.json` 的未提交改动）、轮转 `events.jsonl`、**改写共享 team store 的知识正文**（去重段落 / 重命名 `## Session context` / 合并 `tech_stack` 进 `tags`）、把游离 `.fabric` 目录改名为 `.fabric.stale-<ts>`（KT-PIT-0051 记录过它两次误伤测试夹具）。即"这一按不是验证，是一次真实变更"。
+- [x] **已实跑**：真实命令的端到端执行（2026-08-20，用户明确授权后按下 `/integrations` 的「体检并修复」）。跑前做了完整备份：`/tmp/pcf-predoctor/` 存 `uncommitted.patch` + 三份 bootstrap 快照 + `counters.json` + store HEAD `96f4c4b1`，并先把三个未提交的 bootstrap 文件提交为 `275fc46d`，让 `--fix` 双向可逆。结果：
+  - **真实输出**：`Applied 3 deterministic doctor fixes. No manual errors remain.` + `Applied 30 apply-lint mutations. No manual errors remain.`，共 4954 字符，主体是 `knowledge_session_hints_stale_cleanup` 删掉 11 个 14 天以上的 `.fabric/.cache/archive-hint-shown-*.json`。
+  - **没发生的事**：三份 bootstrap 文件与 `275fc46d` 零差异（快照恢复是幂等的，本仓本来就是最新）；`events.jsonl` 停在 5565942 字节没轮转；team store 的 `git log` 头仍是 `96f4c4b1`，知识正文一行没改 —— 跑前预判里最重的那三项都没触发。
+  - **唯一的真实副作用**：把测试夹具 `packages/cli/__tests__/fixtures/cocos-stub/.fabric/` 改名成 `.fabric.stale-2026-08-20T02-35-24-457Z/`，即 KT-PIT-0051 记过的第三次误伤。已 `rm -rf` 该目录 + `git checkout` 复原，`forensic-shadow-mirroring.test.ts` 2 passed。
+  - **一个 UI 观察**：真实运行期间 `#rout` 全程为空、两个按钮 disabled、只有「正在运行」toast —— 命令是一次性输出而非流式，所以桩流验过的逐块累加在真实命令上看不到。等到结束才一次性显示全文。这不是 pump 的 bug（桩流已证明 pump 正确），是真实命令本身不分块吐。
+- [ ] （已作废，保留原始预判以便对照）2026-08-19 实测 `fabric doctor` 本仓有 7 项待处理，`--fix` 会：恢复 bootstrap 快照（会盖掉 `AGENTS.md` / `.fabric/AGENTS.md` / `.claude/settings.json` 的未提交改动）、轮转 `events.jsonl`、**改写共享 team store 的知识正文**（去重段落 / 重命名 `## Session context` / 合并 `tech_stack` 进 `tags`）、把游离 `.fabric` 目录改名为 `.fabric.stale-<ts>`（KT-PIT-0051 记录过它两次误伤测试夹具）。即"这一按不是验证，是一次真实变更"。
 
 ## W4 全局项目发现（切换器只看得见一个项目）
 

@@ -54,7 +54,14 @@
   --warning: #d97706;
   --border: #e4e4e7;
   --input: #d4d4d8;
-  --ring: #a1a1aa;
+  /* The focus ring is the SELECTED colour, not a darker grey. It used to be
+   * #a1a1aa, one step from --input (#d4d4d8) and --border (#e4e4e7) — so a
+   * keyboard user tabbing through a row of selects saw the border go very
+   * slightly darker and had to hunt for which control was live. Every use of
+   * this token is a `:focus-visible` outline (nothing else reads it), so moving
+   * it onto --primary also puts focus into the same vocabulary as the active nav
+   * tab and the "set here" row mark: blue means "this one". */
+  --ring: #2563eb;
 
   /* The page canvas is one step off pure white so that --card (pure white) and
    * --muted (#f4f4f5) both read as distinct layers against it without needing a
@@ -185,7 +192,10 @@
    * they were sampled against. */
   --border: rgba(255, 255, 255, 0.1);
   --input: rgba(255, 255, 255, 0.15);
-  --ring: #71717a;
+  /* Dark's --primary, for the reason given beside the light token. A grey ring
+   * is even weaker here: on #09090b the old #71717a barely separated from the
+   * translucent-white borders around it. */
+  --ring: #60a5fa;
   --canvas: #09090b;
 
   --accent-light: rgba(96, 165, 250, 0.14);
@@ -268,7 +278,12 @@ body {
   z-index: 30;
   display: flex;
   align-items: center;
-  gap: 2px;
+  /* 6px, not 2px. Hover paints the whole tab box, and at 2px the two fills read
+   * as one band sliding sideways under the cursor rather than as five separate
+   * targets — the gap has to be wide enough to survive being filled on both
+   * sides, which 2px is not. 6px is still tighter than the 8px between the tab
+   * group and the scope switcher, so the group still reads as a group. */
+  gap: 6px;
   height: 52px;
   padding: 0 16px;
   background: var(--card);
@@ -370,14 +385,29 @@ body {
   background: transparent;
 }
 
+/* The indicator sits FLUSH with the navbar's bottom edge, spans the whole tab,
+ * and is 3px thick.
+ *
+ * It used to be a 2px hairline at `bottom: -11px` — half a pixel past the bar,
+ * straddling the 1px border it was drawn over. Two lines a fraction apart do not
+ * read as "this tab is selected"; they read as one line that failed to align.
+ * On top of that it was inset to the text width, so what survived visually was
+ * almost entirely the colour change, and colour alone is exactly what AC10 says
+ * is not enough (and what a red-green reader cannot use at all).
+ *
+ * The offset is deliberately deep enough to COVER the navbar's 1px bottom border
+ * rather than stop just short of it: the tab is centred in a 51px content box,
+ * so any offset that tries to land exactly on the border leaves a half-pixel of
+ * grey under the indicator — the very "two lines that failed to align" this is
+ * replacing. Overshooting is invisible; stopping short is not. */
 .seg.active::after {
   content: "";
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: 0;
+  right: 0;
   bottom: -11px;
-  height: 2px;
-  border-radius: 2px;
+  height: 4px;
+  border-radius: 2px 2px 0 0;
   background: var(--primary);
 }
 
@@ -1051,11 +1081,13 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px 14px;
   align-items: center;
-  padding: 7px 0 7px 11px;
+  /* The 14px left inset is unconditional so that marking a row cannot shift it
+   * sideways. It used to be `3px transparent border + 11px padding`; it is now
+   * all padding, because the mark became a positioned bar rather than a border
+   * — see `.frow.mod::before`. */
+  position: relative;
+  padding: 7px 0 7px 14px;
   border-bottom: 1px solid var(--border);
-  /* The "modified" bar reserves its width unconditionally (3px + padding) —
-   * otherwise setting one field shifts the whole row sideways. */
-  border-left: 3px solid transparent;
   transition: var(--tx);
 }
 
@@ -1063,8 +1095,22 @@ body {
   border-bottom: none;
 }
 
-.frow.mod {
-  border-left-color: var(--primary);
+/* The mark is inset from the row's top and bottom and rounded on its open side,
+ * so three marked rows in a row read as three marks. As a `border-left` it could
+ * be neither: a border runs the full height by definition, so consecutive marked
+ * rows fused into one unbroken line down the card and the count stopped being
+ * legible — the same "one continuous band" failure the navbar had, one level
+ * down. Square-ended and full-bleed, it also read as a container edge rather
+ * than as a mark ON the row. */
+.frow.mod::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--primary);
 }
 
 .frow:hover {

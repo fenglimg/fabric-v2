@@ -178,6 +178,10 @@
     position: relative;
     z-index: 10;
     flex-shrink: 0;
+    /* 上移 1px,让下面那条三色渐变条正好盖住导航条的 1px 下边框。原来两条线只差
+       1px 并排,读起来是「有一条线没画齐」而不是两个分区 —— 一个装饰条和一个结构
+       边界抢同一个位置,谁都不像故意的。现在只剩一条,而且是有意义的那条。 */
+    margin-top: -1px;
   }
   [data-theme="dark"] header {
     background: rgba(18, 19, 26, 0.7);
@@ -189,33 +193,8 @@
     background: linear-gradient(90deg, var(--scope-team-color), var(--scope-project-color), var(--scope-personal-color));
   }
 
-  .brand {
-    font-weight: 700;
-    font-size: 16px;
-    letter-spacing: -0.02em;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text);
-  }
-  .brand span {
-    color: var(--text-tertiary);
-    font-weight: 400;
-  }
-  .brand-logo {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, var(--scope-team-color), var(--scope-personal-color));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    font-weight: 800;
-    font-size: 13px;
-    letter-spacing: 0;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-  }
+  /* `.brand` / `.brand-logo` 随那个页头一起删了。留着一份没有元素的规则,下一个人
+     只能靠 grep 才知道它是死的 —— 而 `#fff` 与 rgba 硬编码色号也正好跟着一起走。 */
 
   .search-wrapper {
     position: relative;
@@ -1235,11 +1214,10 @@
   </div>
 
   <!-- Header -->
+  <!-- 这里曾经有第二个品牌标识(「Aurora×Terminal · Lumen」+ L 徽标)。导航条上
+       已经写着「Fabric 控制台」,同屏两个名字、且互相不认识,读者只能得出「这是两个
+       东西」。留下的是导航条那一个 —— 它五页都在,并且说的是这个产品的名字。 -->
   <header>
-    <div class="brand">
-      <div class="brand-logo">L</div>
-      Aurora×Terminal <span>· Lumen</span>
-    </div>
     <div class="search-wrapper">
       <span class="search-icon" id="search-icon-placeholder"></span>
       <input id="search" type="search" placeholder="输入关键字、tag、scope 或 type (按 / 聚焦)..." autocomplete="off" />
